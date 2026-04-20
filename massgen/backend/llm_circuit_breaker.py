@@ -226,7 +226,7 @@ class LLMCircuitBreaker:
         self._metrics = metrics
         self._store: Any = store
         if adaptive is not None:
-            adaptive_base = adaptive._base
+            adaptive_base = adaptive.base_config
             if adaptive_base.max_failures != self.config.max_failures or adaptive_base.reset_time_seconds != self.config.reset_time_seconds:
                 raise ValueError(
                     "AdaptiveController.base_config must match LLMCircuitBreaker.config "
@@ -374,11 +374,17 @@ class LLMCircuitBreaker:
         if self._adaptive is not None:
             self._adaptive.record_outcome(True)
 
+        # Capture effective thresholds once so every branch (log fields,
+        # store arg, transition deadline) sees a consistent value and we
+        # avoid re-acquiring the adaptive lock on the failure hot path.
+        effective_max = self._effective_max_failures()
+        effective_reset = self._effective_reset_time()
+
         if self._store is not None:
             new_state = self._store.atomic_record_failure(
                 self.backend_name,
-                self._effective_max_failures(),
-                self._effective_reset_time(),
+                effective_max,
+                effective_reset,
             )
             failure_count = int(new_state["failure_count"])
             new_state_str = new_state["state"]
@@ -393,7 +399,7 @@ class LLMCircuitBreaker:
                     self._log(
                         "Failure recorded",
                         failure_count=failure_count,
-                        max_failures=self._effective_max_failures(),
+                        max_failures=effective_max,
                         error_type=error_type,
                     )
                     return
@@ -429,7 +435,7 @@ class LLMCircuitBreaker:
                 self._log(
                     "Failure recorded",
                     failure_count=failure_count,
-                    max_failures=self.config.max_failures,
+                    max_failures=effective_max,
                     error_type=error_type,
                 )
             return
@@ -445,7 +451,7 @@ class LLMCircuitBreaker:
                 self._state = CircuitState.OPEN
                 if self._adaptive is not None:
                     self._adaptive.record_open()
-                self._open_until = now + self._effective_reset_time()
+                self._open_until = now + effective_reset
                 self._half_open_probe_active = False
                 self._log(
                     "Probe failed, circuit breaker re-opened",
@@ -455,7 +461,7 @@ class LLMCircuitBreaker:
                 if self._metrics is not None:
                     _transition_args = (self.backend_name, "half_open", "open")
 
-            elif self._failure_count >= self._effective_max_failures():
+            elif self._failure_count >= effective_max:
                 if prev_state == CircuitState.OPEN:
                     # Already OPEN -- do not refresh the deadline, re-log the
                     # transition, or emit an open -> open metric. Repeated
@@ -463,14 +469,14 @@ class LLMCircuitBreaker:
                     self._log(
                         "Failure recorded",
                         failure_count=self._failure_count,
-                        max_failures=self._effective_max_failures(),
+                        max_failures=effective_max,
                         error_type=error_type,
                     )
                 else:
                     self._state = CircuitState.OPEN
                     if self._adaptive is not None:
                         self._adaptive.record_open()
-                    self._open_until = now + self._effective_reset_time()
+                    self._open_until = now + effective_reset
                     self._log(
                         "Circuit breaker opened",
                         failure_count=self._failure_count,
@@ -482,7 +488,7 @@ class LLMCircuitBreaker:
                 self._log(
                     "Failure recorded",
                     failure_count=self._failure_count,
-                    max_failures=self.config.max_failures,
+                    max_failures=effective_max,
                     error_type=error_type,
                 )
 

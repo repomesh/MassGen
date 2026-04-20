@@ -116,6 +116,15 @@ class AdaptiveController:
         self._lock = threading.Lock()
         self._clock: Callable[[], float] = clock or time.monotonic
 
+    @property
+    def base_config(self) -> LLMCircuitBreakerConfig:
+        """Return the baseline ``LLMCircuitBreakerConfig`` used by this controller.
+
+        Exposed so callers (e.g. ``LLMCircuitBreaker.__init__``) can validate
+        consistency without reaching into private state.
+        """
+        return self._base
+
     def record_outcome(self, is_failure: bool) -> None:
         """Update failure-rate EWMA with a single request outcome.
 
