@@ -568,6 +568,7 @@ class LLMCircuitBreaker:
                 duration = self._effective_reset_time()
             computed_open_until = now + duration
             prev_state_value = CircuitState.CLOSED.value
+            cas_applied = False
             _MAX_CAS_ATTEMPTS = 5
             for _attempt in range(_MAX_CAS_ATTEMPTS):
                 current = self._store.get_state(self.backend_name)
@@ -584,23 +585,26 @@ class LLMCircuitBreaker:
                 }
                 applied = self._store.cas_state(self.backend_name, prev_state_value, updates)
                 if applied:
+                    cas_applied = True
                     if self._adaptive is not None and prev_state_value != CircuitState.OPEN.value:
                         self._adaptive.record_open()
                     break
                 # CAS conflict -- retry with refreshed state
-            else:
+            if not cas_applied:
                 # All CAS attempts exhausted. Blind set_state risks overwriting a
                 # fresher open_until written by a concurrent writer. Log a warning
-                # and rely on the circuit to self-heal via the next record_failure.
+                # and return without emitting a force-open log or transition
+                # metric, since no state change actually occurred.
                 self._log(
                     "force_open: CAS exhausted after 5 attempts; skipping fallback set_state",
                     open_for_seconds=duration,
                 )
+                return
             self._log(
                 f"Circuit breaker force-opened: {reason}",
                 open_for_seconds=duration,
             )
-            if self._metrics is not None:
+            if self._metrics is not None and prev_state_value != CircuitState.OPEN.value:
                 self._safe_emit(
                     self._metrics.record_state_transition,
                     self.backend_name,
@@ -624,7 +628,7 @@ class LLMCircuitBreaker:
             if self._adaptive is not None and prev_state != CircuitState.OPEN:
                 self._adaptive.record_open()
             self._log(f"Circuit breaker force-opened: {reason}", open_for_seconds=duration)
-            if self._metrics is not None:
+            if self._metrics is not None and prev_state != CircuitState.OPEN:
                 _transition_args = (self.backend_name, prev_state.value, "open")
 
         if _transition_args is not None and self._metrics is not None:

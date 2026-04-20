@@ -304,8 +304,12 @@ class TestCircuitBreakerIntegration:
         transitions = calls["transitions"]
         assert any(t["to_state"] == "open" for t in transitions)
 
-    def test_force_open_from_open_records_open_to_open(self) -> None:
-        """force_open() from OPEN state emits open->open transition."""
+    def test_force_open_from_open_does_not_emit_open_to_open(self) -> None:
+        """force_open() on an already-OPEN breaker must not emit an open->open transition.
+
+        Repeated force_open calls extend the deadline via the CAS merge but do
+        not constitute a fresh state transition, so the metric must stay quiet.
+        """
         cb, calls = self._make_cb()
 
         cb.force_open(reason="first")
@@ -315,7 +319,7 @@ class TestCircuitBreakerIntegration:
         cb.force_open(reason="second")
 
         transitions = calls["transitions"]
-        assert any(t["from_state"] == "open" and t["to_state"] == "open" for t in transitions)
+        assert not any(t["from_state"] == "open" and t["to_state"] == "open" for t in transitions), f"Unexpected open->open transition emitted: {transitions}"
 
     def test_cb_reset_emits_transition_metric(self) -> None:
         """reset() from OPEN emits open->closed state transition metric."""
