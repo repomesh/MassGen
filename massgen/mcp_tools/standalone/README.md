@@ -6,7 +6,7 @@ capabilities to the main agent.
 
 | Server | Purpose |
 |---|---|
-| `checkpoint_mcp_server.py` | **Safety planner.** Delegates plan review to a MassGen reviewer team before the main agent executes irreversible actions. Returns a structured plan with constraints, approved actions, and recovery trees. See full guide below. |
+| `checkpoint_mcp_server.py` | **Checkpoint planner.** Delegates plan review to a MassGen reviewer team before the main agent enters a high-stakes or coordinated phase (risk-sensitive, quality-sensitive, or both). Returns a structured plan with constraints, approved actions, and recovery trees. See full guide below. |
 | `media_server.py` | Exposes MassGen's multimodal generation tools (`generate_media`, `read_media`) with explicit parameters. |
 | `quality_server.py` | Exposes MassGen quality-evaluation tools (`generate_eval_criteria`, `submit_checklist`, `draft_approach`, `reset_evaluation`). |
 | `workflow_server.py` | Exposes MassGen's `new_answer` and `vote` workflow tools. `new_answer` snapshots deliverables per round. |
@@ -17,7 +17,7 @@ capabilities to the main agent.
 
 ## What it does
 
-Sits between a main agent (the "executor") and its dangerous tool calls. When the executor is about to do something irreversible — deploy to production, delete records, send a mass email, issue a refund — it calls `checkpoint()` with an objective. The checkpoint server spawns a MassGen sub-run: a small team of reviewer agents (configurable, typically 3) reads the executor's trajectory, explores the workspace read-only, and collectively produces a structured safety plan the executor must follow.
+Sits between a main agent (the "executor") and its high-stakes tool calls. When the executor is about to enter a coordinated or consequential phase — deploy to production, delete records, send a mass email, issue a refund, or pick the strategy/decomposition for a complex task — it calls `checkpoint()` with an objective. The checkpoint server spawns a MassGen sub-run: a small team of reviewer agents (configurable, typically 3) reads the executor's trajectory, explores the workspace read-only, and collectively produces a structured plan the executor must follow.
 
 The returned plan is a list of steps with: `description`, optional `constraints`, optional `approved_action` (tool name + exact args), and an optional `recovery` tree (`if`/`then`/`else` with bare terminals: `proceed` / `recheckpoint` / `refuse`). The executor is expected to follow the plan step-by-step.
 
@@ -105,7 +105,7 @@ uv run massgen-checkpoint-setup --target ./AGENTS.md     # or a different file
 uv --directory /path/to/MassGen run massgen-checkpoint-setup --target "$(pwd)/CLAUDE.md"
 ```
 
-This inserts a `<!-- MASSGEN-CHECKPOINT:START -->` / `<!-- MASSGEN-CHECKPOINT:END -->` managed block with the categories (A–I) that require checkpointing, the correct workflow order (`init` → investigate → `checkpoint` → execute), and the exclusion list. Re-running the command updates the block to the latest version without touching the rest of the file.
+This inserts a `<!-- MASSGEN-CHECKPOINT:START -->` / `<!-- MASSGEN-CHECKPOINT:END -->` managed block with the categories (A–J) that require checkpointing, the correct workflow order (`init` → investigate → `checkpoint` → execute), and the exclusion list. Re-running the command updates the block to the latest version without touching the rest of the file.
 
 ---
 
@@ -187,18 +187,18 @@ Call once per session, before any `checkpoint` calls.
 |---|---|---|
 | `workspace_dir` | str | Absolute path to the executor's project directory. Mounted read-only into the reviewer sub-run as a context path so reviewers can explore it. |
 | `trajectory_path` | str | Absolute path to a log file containing the executor's tool-call history so far. Reviewers read this to understand what has already happened. For Claude Code, a `SessionStart` hook can write `.claude/current_session.json` with the current session's transcript path. |
-| `available_tools` | list[dict] | **The COMPLETE list of every tool the executor can call.** Each entry must have `name`, `description`, and `input_schema` (raw JSON schema dict OR a compact signature string like `(table: str, filter: str, dry_run: bool=False)`). Do NOT include `mcp__massgen-checkpoint-mcp__*` tools — those are the scaffolding itself, not capabilities to review. Under-reporting tools distorts the reviewers' risk assessment. |
+| `available_tools` | list[dict] | **The COMPLETE list of every tool the executor can call.** Each entry must have `name`, `description`, and `input_schema` (raw JSON schema dict OR a compact signature string like `(table: str, filter: str, dry_run: bool=False)`). Do NOT include `mcp__massgen-checkpoint-mcp__*` tools — those are the scaffolding itself, not capabilities to review. Under-reporting tools distorts the reviewers' assessment and can hide better strategies. |
 | `safety_policy` | list[str or dict] (optional) | Custom safety rules that augment the built-in `DEFAULT_SAFETY_POLICY`. Strings are auto-wrapped as `{text: str, category: "primary"}`; dicts can use the full `checklist_criteria_inline` shape (`text`, `category`, `verify_by`, `anti_patterns`, `score_anchors`). Stored in session state and applied to every subsequent `checkpoint` call. |
 
 ### `checkpoint(objective, action_goals?, eval_criteria?)`
 
-Call before any coordinated phase involving irreversible actions.
+Call before any coordinated phase that's risk-sensitive, quality-sensitive, or both.
 
 | Param | Type | Purpose |
 |---|---|---|
-| `objective` | str | The complete outcome you want to reach and the steps you plan to take for this phase. Include the full sequence — the team needs end-to-end context. **Do NOT restate safety constraints here**; use `eval_criteria` for those. |
+| `objective` | str | The complete outcome you want to reach and the steps you plan to take for this phase. Include the full sequence — the team needs end-to-end context. **Do NOT restate evaluation criteria here**; use `eval_criteria` for those. |
 | `action_goals` | list[dict] (optional) | Specific actions within the objective that need explicit tool-level approval. Each entry: `{id, goal, preferred_tools?, constraints?}`. The returned plan will map each goal to an `approved_action` with concrete tool name + args. |
-| `eval_criteria` | list[str or dict] (optional) | Task-specific safety requirements beyond the session defaults. Merged with the `safety_policy` passed to `init` and injected into the sub-run as `checklist_criteria_inline`. |
+| `eval_criteria` | list[str or dict] (optional) | Task-specific requirements beyond the session defaults — safety concerns, quality rubrics, strategy constraints, or anything else the reviewers should score against. Merged with the `safety_policy` passed to `init` and injected into the sub-run as `checklist_criteria_inline`. |
 
 Returns a JSON object with `status: "ok"`, the validated `plan` array, `execution_time_seconds`, and `logs_dir` pointing at the preserved sub-run directory under `.massgen/checkpoint_runs/session_<TIMESTAMP>/ckpt_<N>/`.
 

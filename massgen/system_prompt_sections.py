@@ -208,6 +208,135 @@ def _checklist_confidence_cutoff(effective_threshold: int) -> int:
     return max(4, int(10 - effective_threshold * 0.5))
 
 
+def build_fast_mode_guidance(
+    max_verifications_per_round: int | None,
+    max_internal_fix_loops: int | None,
+    skip_redundant_scaffolding: bool,
+    scaffolding_exists: bool,
+) -> str:
+    """Compose initial-system-prompt guidance for the `--fast` preset's knobs.
+
+    Returns an empty string when no knob is active. The guidance leads with a
+    general principle — *fix broken, defer imperfect* — and each knob emits a
+    concrete application of it. Caller inlines the result into the agent's
+    system prompt so behavior is shaped from turn 0 (mid-stream injection is
+    not reliable across agentic backends).
+    """
+    any_knob_active = max_verifications_per_round is not None or max_internal_fix_loops is not None or (skip_redundant_scaffolding and scaffolding_exists)
+    if not any_knob_active:
+        return ""
+
+    sections: list[str] = [
+        "**Within-round discipline: fix broken, defer imperfect.**\n\n"
+        "Your job in one round: (1) produce a *working* candidate — not a "
+        "polished one, (2) write what's imperfect as Known Gaps in the "
+        "changedoc, (3) submit.\n\n"
+        "Use these mechanical tests to classify what verification surfaces:\n\n"
+        "- **BROKEN** — *the artifact fails on a vanilla run.* This is a "
+        "question of **functional integrity**: can the artifact be used "
+        "end-to-end without failure? Concrete markers: won't render, "
+        "syntax error / stack trace in the file being produced, empty file "
+        "(0 bytes), tool returned an error result, tests crash on "
+        "invocation. → Fix within round, once, then submit.\n"
+        "- **IMPERFECT** — *the artifact works end-to-end but could be "
+        "better.* This is a question of **content quality**: is what the "
+        "artifact produces/depicts as good as it could be? Examples: "
+        "spacing, word choice, style, authenticity of depicted content, "
+        "a refactor you'd like, an edge case not in the initial coverage. "
+        "→ Record as a Known Gap and submit. Next round.\n\n"
+        "**Scope rule:** BROKEN is about FUNCTIONAL INTEGRITY, not "
+        "CONTENT QUALITY. If the artifact runs/renders/passes-tests, it is "
+        "not BROKEN — any further observation about what it depicts or how "
+        "good the content is belongs in IMPERFECT. When you can describe "
+        "the same observation either way, choose IMPERFECT.",
+    ]
+
+    if max_verifications_per_round is not None:
+        sections.append(
+            "**Round lifecycle: three phases, no revisits.**\n\n"
+            "Your round runs in three phases, in order. You do NOT go back.\n\n"
+            "**PHASE 1 \u2014 START-OF-ROUND VERIFICATION.**\n"
+            "- Round 0: **SKIP** this phase. You have no inherited candidate "
+            "to verify. Go directly to PHASE 2.\n"
+            "  - **Absolute ban (no exceptions):** in round 0 you do NOT call "
+            "`read_media`, `screenshot`, `pytest`, or any inspect/validate "
+            "tool on your OWN output. Zero self-verification of round-0 "
+            "output \u2014 the next agent's PHASE 1 is the first quality "
+            "gate. Trust your build, submit, and let the next round's "
+            "verification catch any failure.\n"
+            "- Round N > 0:\n"
+            "  - Perform exactly ONE *holistic look* at the candidate you "
+            "inherited (your own workspace after restart, or a peer's "
+            "workspace if their `new_answer` triggered your restart).\n"
+            "  - A holistic look is one inspection session where you examine "
+            "every side of the candidate. Looking widely is fine \u2014 the budget "
+            "is NOT a tool-call counter. Multiple `read_media` / `screenshot` "
+            "/ `pytest` calls to cover different pages or test suites are "
+            "all part of the SAME look. Retrying with corrected args when a "
+            "call errored is also part of the same look.\n"
+            "  - Write a single DEC entry to `tasks/changedoc.md` with "
+            "scores, concrete gaps, and the 1\u20133 you will target in PHASE 2.\n"
+            "  - Submit the checklist once for this round (in PHASE 1).\n"
+            "  - Do NOT edit any files in PHASE 1.\n\n"
+            "**PHASE 2 \u2014 BUILD.**\n"
+            "- Edit / write files to address the gaps you recorded in PHASE 1 "
+            "(or, in round 0, to produce an initial working candidate).\n"
+            "- **No verification in PHASE 2.** No `read_media` of your own "
+            'output. No re-running the checklist. No "let me just check." '
+            "If you find yourself wanting to verify, record the thought as a "
+            "Known Gap in the changedoc and keep building \u2014 next round's "
+            "PHASE 1 will verify.\n"
+            "- A tool error during BUILD (wrong path, bad arg) may be "
+            "retried \u2014 you are fixing the tool invocation, not verifying "
+            "the artifact.\n\n"
+            "**PHASE 3 \u2014 END-OF-ROUND.**\n"
+            "- Submit via `new_answer` or `vote`.\n"
+            '- **No verification. No "one last look."** The next agent\'s '
+            "PHASE 1 is where quality judgment happens. Trust it.",
+        )
+
+    if max_internal_fix_loops is not None and max_internal_fix_loops == 0:
+        sections.append(
+            "**No fix loops.** Within-round verify\u2192edit\u2192verify loops are "
+            "impossible under the three-phase model \u2014 PHASE 2 (BUILD) has no "
+            "verification calls, so there is no cycle to enter. If a PHASE 1 "
+            "holistic look reveals the candidate is BROKEN (won't render, "
+            "crashed, empty), PHASE 2 repairs it once. If it reveals the "
+            "candidate is IMPERFECT but working, PHASE 2 improves it based on "
+            "the gaps recorded \u2014 without re-verifying. All imperfections "
+            "discovered AFTER PHASE 1 go into the changedoc as Known Gaps "
+            "for the next round.",
+        )
+    elif max_internal_fix_loops is not None and max_internal_fix_loops > 0:
+        sections.append(
+            f"**Fix loops capped at {max_internal_fix_loops} per round.** "
+            "After the cap is reached, stop editing, write remaining issues "
+            "as Known Gaps in the changedoc, and submit. Further edits "
+            "belong in the next round.",
+        )
+
+    if skip_redundant_scaffolding and scaffolding_exists:
+        sections.append(
+            "**Do NOT rebuild scaffolding.** `CONTEXT.md`, "
+            "`tasks/changedoc.md`, and any task plan already exist in your "
+            "workspace from a prior round. Read them. Append new DEC entries "
+            "to the existing changedoc; do not `cat > tasks/changedoc.md` "
+            "(that erases prior decisions) and do not re-run "
+            "`mkdir -p tasks memory/short_term`. Rebuilding scaffolding is "
+            "the canonical form of within-round imperfection-seeking.",
+        )
+
+    sections.append(
+        "**Why this rule exists:** rounds are cheap; within-round loops are "
+        "expensive and often regression-prone (fixing X while breaking Y). "
+        "An imperfect-but-working candidate plus 5 well-written Known Gaps "
+        "produces a better next round than a polished candidate that "
+        "consumed the round and regressed two other things.",
+    )
+
+    return "\n\n".join(sections)
+
+
 def _build_criteria_failure_bullets(
     custom_checklist_items: list[str] | None = None,
     item_verify_by: dict[str, str] | None = None,
@@ -1801,6 +1930,49 @@ task early regardless of the context remaining."""
 
 # Task Persistence guidance sourced from Anthropic Claude prompting best practices:
 # https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#context-awareness-and-multi-window-workflows
+
+
+class FastModeGuidanceSection(SystemPromptSection):
+    """Initial-system-prompt guidance for `--fast` preset / orthogonal speed knobs.
+
+    Exists because the agentic backends do not allow mid-stream injection during
+    model thinking — so the only reliable lever is shaping behavior from turn 0
+    via the system prompt. Gated entirely by the three coordination knobs:
+    `max_verifications_per_round`, `max_internal_fix_loops`,
+    `skip_redundant_scaffolding`. Produces no content when all three are at
+    their inactive defaults.
+
+    Priority CRITICAL (matches OutputFirstVerificationSection) so the
+    fast-mode rules become part of the agent's baseline operating model,
+    not an addendum read after the iterative loop has been established.
+    Non-fast sections (EvolvingSkills, evaluation, workspace structure)
+    render later in the prompt.
+    """
+
+    def __init__(
+        self,
+        max_verifications_per_round: int | None,
+        max_internal_fix_loops: int | None,
+        skip_redundant_scaffolding: bool,
+        scaffolding_exists: bool,
+    ):
+        super().__init__(
+            title="Fast Mode Guidance",
+            priority=Priority.CRITICAL,
+            xml_tag=None,
+        )
+        self.max_verifications_per_round = max_verifications_per_round
+        self.max_internal_fix_loops = max_internal_fix_loops
+        self.skip_redundant_scaffolding = skip_redundant_scaffolding
+        self.scaffolding_exists = scaffolding_exists
+
+    def build_content(self) -> str:
+        return build_fast_mode_guidance(
+            max_verifications_per_round=self.max_verifications_per_round,
+            max_internal_fix_loops=self.max_internal_fix_loops,
+            skip_redundant_scaffolding=self.skip_redundant_scaffolding,
+            scaffolding_exists=self.scaffolding_exists,
+        )
 
 
 class GPT5GuidanceSection(SystemPromptSection):
@@ -5654,15 +5826,46 @@ class EvolvingSkillsSection(SystemPromptSection):
     reference the plan and capture task-specific learnings.
     """
 
-    def __init__(self, plan_context: dict | None = None):
+    def __init__(self, plan_context: dict | None = None, fast_iteration_mode: bool = False):
         super().__init__(
             title="Evolving Skills",
             priority=6,  # After core_behaviors(4), task_planning(5)
             xml_tag="evolving_skills",
         )
         self.plan_context = plan_context
+        self.fast_iteration_mode = fast_iteration_mode
 
     def build_content(self) -> str:
+        # Swap the Verification & Improvement template between the iterative
+        # "until X" default (for normal mode) and a one-pass variant (when
+        # fast_iteration_mode is active). The "until polished / until quality
+        # meets bar / until working correctly" language is the canonical form
+        # of within-round imperfection-seeking and directly contradicts the
+        # fast-mode rule of one holistic look per round.
+        if self.fast_iteration_mode:
+            _verification_improvement_section = """## Verification & Improvement
+Verification happens in PHASE 1 of the NEXT round against the inherited \
+candidate — not before submit in this round.
+
+This round:
+- For code: Build it in PHASE 2. Submit in PHASE 3. Any edge cases or \
+refactors you wish you could verify → Known Gaps in changedoc.
+- For websites/UIs: Build in PHASE 2. Submit in PHASE 3. Any polish/layout \
+thoughts → Known Gaps.
+- For files: Build / update in PHASE 2, submit in PHASE 3. Open-and-inspect \
+style review is next round's PHASE 1 work.
+- For data: Build the dataset in PHASE 2, submit in PHASE 3. Accuracy \
+validation is next round's PHASE 1 work.
+
+(Cross-round iteration is how quality emerges — not within-round loops.)"""
+        else:
+            _verification_improvement_section = """## Verification & Improvement
+How to verify and iterate on output (output-first approach):
+- For code: Run it, fix issues, rerun until working correctly
+- For websites/UIs: Interact and capture evidence (screenshots for layout, recordings for behavior), adjust, re-verify until polished
+- For files: Open and inspect, refine content, re-check until quality meets bar
+- For data: Validate format/values, fix accuracy issues, re-validate until correct"""
+
         base_content = """## Evolving Skills
 
 **REQUIRED**: Before starting work on any task, you MUST create an evolving skill - a detailed workflow plan.
@@ -5728,12 +5931,7 @@ Python scripts you'll write. Document BEFORE writing them:
 - Files this workflow produces
 - Formats and locations
 
-## Verification & Improvement
-How to verify and iterate on output (output-first approach):
-- For code: Run it, fix issues, rerun until working correctly
-- For websites/UIs: Interact and capture evidence (screenshots for layout, recordings for behavior), adjust, re-verify until polished
-- For files: Open and inspect, refine content, re-check until quality meets bar
-- For data: Validate format/values, fix accuracy issues, re-validate until correct
+__VERIFICATION_IMPROVEMENT_BLOCK__
 
 ## Learnings
 (Add after execution)
@@ -5804,6 +6002,10 @@ When creating your evolving skill:
 4. **Keep minimal**: Don't duplicate the entire plan in your skill - focus on execution details and improvements
 """
 
+        base_content = base_content.replace(
+            "__VERIFICATION_IMPROVEMENT_BLOCK__",
+            _verification_improvement_section,
+        )
         return base_content
 
 
@@ -5829,12 +6031,15 @@ class OutputFirstVerificationSection(SystemPromptSection):
     def build_content(self) -> str:
         if self.fast_iteration_mode:
             _loop_intro = """\
-## Output-First Verification
+## Output-First Verification (three-phase round lifecycle)
 
-**Core Principle: Experience your work exactly as a user would - through dynamic interaction, not just static observation.**
+**Core Principle: Experience your work exactly as a user would — through dynamic interaction, not just static observation.**
 
-Verify your output works, then submit. Fix anything broken, but do not loop to polish — \
-submit with Known Gaps and let the next round handle refinements."""
+Verification is structured as **PHASE 1 of each round N>0** (round 0 skips PHASE 1). \
+Build happens in **PHASE 2** with **no verification calls**. \
+Submission is **PHASE 3** with **no "one last look"**. \
+Every imperfection discovered during PHASE 1 goes into the changedoc as a \
+Known Gap for the next round, not as a within-round polish target."""
         else:
             _loop_intro = """\
 ## Output-First Iteration
@@ -5888,8 +6093,8 @@ When in doubt: *does this move?* → video. *Does it stay still?* → screenshot
 Before considering any interactive artifact complete, ask:
 1. **What will users click/interact with?** → Do it. Does it work?
 2. **What will users type/input?** → Try it. Does it respond correctly?
-3. **What paths will users take?** → Navigate them all. Any broken routes?
-4. **How will users break it?** → Try to break it. Does it handle errors gracefully?
+3. **What paths will users take?** → __UX_PATHS__
+4. **How will users break it?** → __UX_BREAK__
 
 ### Why this matters:
 - A website screenshot can look perfect while half the links are broken
@@ -5899,26 +6104,64 @@ Before considering any interactive artifact complete, ask:
 
 **The goal is to verify INTERACTION OUTCOMES, not just visual appearance.**
 
-### Apply at every stage:
-1. **During development** - implement a logical group of changes, then verify the integrated result. Do NOT verify after every individual change
-2. **Before answering** - full interaction test on new or changed work; if prior-round verification
-   already covered unchanged parts through this loop, that evidence stands
-3. **During evaluation** - judge by interaction results, improve if gaps found
+__APPLY_AT_STAGES__
 
-### Iteration examples:
-- **Websites**: Visit all pages → click every nav link → found 2 broken links → fix routes → re-test all links → confirm working
-- **Games**: Play game → controls unresponsive → fix input handling → replay → confirm smooth gameplay
-- **Interactive tools**: Use all features → export fails on large files → add chunking → re-test export → confirm fixed
-- **Code**: Run with test inputs → crashes on empty array → add validation → rerun with edge cases → confirm robust
+__ITERATION_EXAMPLES__
 
 ### Finalization:
 - Confirm via interaction testing that the output meets the quality bar before finalizing your evaluation."""
 
         if self.fast_iteration_mode:
+            ux_paths = "Walk the critical path in PHASE 1 (next round's agent does this against your submission). Additional paths are next-round work unless broken."
+            ux_break = "Try one plausible failure mode during PHASE 1 if applicable. Additional break-tests are next-round work."
+            apply_stages = (
+                "### Apply to the round lifecycle (fast mode):\n"
+                "1. **PHASE 1 (round N>0 only)** — one holistic look at the "
+                "inherited candidate. Record scores + gaps in the changedoc.\n"
+                "2. **PHASE 2 (BUILD)** — implement against the gaps. "
+                "NO verification calls in this phase. If you want to "
+                '"check", it becomes a Known Gap for next round\'s PHASE 1.\n'
+                "3. **PHASE 3 (END-OF-ROUND)** — submit. No verify, no "
+                '"one last look". Next agent\'s PHASE 1 is the quality gate.'
+            )
+            iter_examples = (
+                "### Cross-round iteration examples (verification happens in next round's PHASE 1):\n"
+                "- **Websites**: [R1 PHASE 1] verify inherited site → find 2 broken links; "
+                "[R1 PHASE 2] fix routes; [R1 PHASE 3] submit; [R2 PHASE 1] next agent re-verifies.\n"
+                "- **Games**: [R1 PHASE 1] verify → controls unresponsive; "
+                "[R1 PHASE 2] fix input handling; [R1 PHASE 3] submit; next round's PHASE 1 replays.\n"
+                "- **Interactive tools**: [R1 PHASE 1] verify → export fails on large files; "
+                "[R1 PHASE 2] add chunking; submit; next round validates chunked export in its PHASE 1.\n"
+                "- **Code**: [R1 PHASE 1] run tests → crashes on empty array; "
+                "[R1 PHASE 2] add validation; submit; next round's PHASE 1 runs the edge-case suite."
+            )
+        else:
+            ux_paths = "Navigate them all. Any broken routes?"
+            ux_break = "Try to break it. Does it handle errors gracefully?"
+            apply_stages = (
+                "### Apply at every stage:\n"
+                "1. **During development** - implement a logical group of changes, then verify the integrated result. Do NOT verify after every individual change\n"
+                "2. **Before answering** - full interaction test on new or changed work; if prior-round verification\n"
+                "   already covered unchanged parts through this loop, that evidence stands\n"
+                "3. **During evaluation** - judge by interaction results, improve if gaps found"
+            )
+            iter_examples = (
+                "### Iteration examples:\n"
+                "- **Websites**: Visit all pages → click every nav link → found 2 broken links → fix routes → re-test all links → confirm working\n"
+                "- **Games**: Play game → controls unresponsive → fix input handling → replay → confirm smooth gameplay\n"
+                "- **Interactive tools**: Use all features → export fails on large files → add chunking → re-test export → confirm fixed\n"
+                "- **Code**: Run with test inputs → crashes on empty array → add validation → rerun with edge cases → confirm robust"
+            )
+
+        base = base.replace("__UX_PATHS__", ux_paths).replace("__UX_BREAK__", ux_break).replace("__APPLY_AT_STAGES__", apply_stages).replace("__ITERATION_EXAMPLES__", iter_examples)
+
+        if self.fast_iteration_mode:
             base += (
-                "\n\n**Fast iteration**: Verify your output works end-to-end, fix anything broken, "
-                "then submit. Do not loop through multiple improve→verify cycles within one round — "
-                "note remaining improvements as Known Gaps and let the next round handle them."
+                "\n\n**Fast iteration (three-phase round lifecycle)**: "
+                "PHASE 1 verifies the inherited candidate (skip for round 0). "
+                "PHASE 2 builds without verification. PHASE 3 submits. "
+                "Do NOT verify within PHASE 2 or PHASE 3 — "
+                "next round's PHASE 1 is the quality gate."
             )
 
         return base

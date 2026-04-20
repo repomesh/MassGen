@@ -31,11 +31,17 @@ async def call_openai(
     model: str,
     system_prompt: str | None = None,
     previous_response_id: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[str, str | None]:
     """Call OpenAI Responses API for image understanding.
 
     Returns (response_text, response_id) tuple. The response_id can be passed
     back as previous_response_id for follow-up conversations.
+
+    ``reasoning_effort`` defaults to ``None`` (API default — legacy behavior).
+    Pass ``"low"`` for latency-bounded callers (the `--fast` preset wires this
+    in via ``multimodal_config.image.reasoning_effort``) or ``"medium"`` /
+    ``"high"`` when depth matters more than latency.
     """
     from openai import AsyncOpenAI
 
@@ -54,7 +60,9 @@ async def call_openai(
             },
         )
 
-    logger.info(f"[image_backends] Using OpenAI {model} for {len(loaded_images)} image(s)")
+    logger.info(
+        f"[image_backends] Using OpenAI {model} for {len(loaded_images)} image(s) " f"(reasoning_effort={reasoning_effort!r})",
+    )
 
     create_kwargs: dict = {
         "model": model,
@@ -64,6 +72,10 @@ async def call_openai(
         create_kwargs["instructions"] = system_prompt
     if previous_response_id:
         create_kwargs["previous_response_id"] = previous_response_id
+    # Only GPT-5.x models support reasoning_effort on the Responses API.
+    # Older models (gpt-4o, gpt-4.1, etc.) will reject the param.
+    if reasoning_effort is not None and model.startswith("gpt-5"):
+        create_kwargs["reasoning"] = {"effort": reasoning_effort}
 
     response = await client.responses.create(**create_kwargs)
 

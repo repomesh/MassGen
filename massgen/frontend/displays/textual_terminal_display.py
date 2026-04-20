@@ -3258,13 +3258,17 @@ if TEXTUAL_AVAILABLE:
             for class_name in ("wrapping-up", "blocked"):
                 answer_widget.remove_class(class_name)
 
-            if not is_execution_phase:
+            active_states = [timeout_state for timeout_state in self._timeout_states.values() if timeout_state.get("active_timeout")]
+
+            # Only expose the Answer Now control when at least one agent has a
+            # soft timeout configured — otherwise the click is a no-op because
+            # the orchestrator has no wrap-up hook to trigger.
+            if not is_execution_phase or not active_states:
                 answer_widget.add_class("hidden")
                 return
 
             answer_widget.remove_class("hidden")
 
-            active_states = [timeout_state for timeout_state in self._timeout_states.values() if timeout_state.get("active_timeout")]
             wrapping_states = [timeout_state for timeout_state in active_states if timeout_state.get("soft_timeout_fired")]
             pending_states = [timeout_state for timeout_state in active_states if timeout_state.get("wrap_up_requested") and not timeout_state.get("soft_timeout_fired")]
 

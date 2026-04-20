@@ -266,6 +266,12 @@ class CoordinationConfig:
     checkpoint_gated_patterns: list[str] = field(default_factory=list)  # fnmatch patterns for gated tools
     web_review: bool = False  # Enable change review modal in WebUI (requires --web)
     fast_iteration_mode: bool = False  # Streamline post-candidate phases to submit faster and iterate across rounds
+    # Orthogonal speed knobs — set individually or together via `--fast` preset.
+    # All enforcement is prompt-only (no hook injection) so these shape initial
+    # system-prompt guidance, not mid-stream behavior.
+    max_verifications_per_round: int | None = None  # None = unlimited; e.g. 1 = one verify pass then submit
+    max_internal_fix_loops: int | None = None  # None = unlimited; 0 = no fix-after-verify loops within a round
+    skip_redundant_scaffolding: bool = False  # When True + scaffolding files exist, prompt agents to continue instead of recreating
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -1229,6 +1235,9 @@ class AgentConfig:
             "checkpoint_gated_patterns": self.coordination_config.checkpoint_gated_patterns,
             "web_review": self.coordination_config.web_review,
             "fast_iteration_mode": self.coordination_config.fast_iteration_mode,
+            "max_verifications_per_round": self.coordination_config.max_verifications_per_round,
+            "max_internal_fix_loops": self.coordination_config.max_internal_fix_loops,
+            "skip_redundant_scaffolding": self.coordination_config.skip_redundant_scaffolding,
         }
 
         # Handle debug fields
