@@ -225,6 +225,7 @@ async def understand_image(
     system_prompt: str | None = None,
     previous_response_id: str | None = None,
     conversation_messages: list[dict] | None = None,
+    reasoning_effort: str | None = "low",
 ) -> ExecutionResult:
     """
     Understand and analyze one or more images using OpenAI's gpt-5.4 API.
@@ -390,6 +391,7 @@ async def understand_image(
                             model,
                             system_prompt=system_prompt,
                             previous_response_id=previous_response_id,
+                            reasoning_effort=reasoning_effort,
                         )
                 except Exception as native_err:
                     logger.warning(
@@ -401,6 +403,7 @@ async def understand_image(
                         "gpt-5.4",
                         system_prompt=system_prompt,
                         previous_response_id=previous_response_id,
+                        reasoning_effort=reasoning_effort,
                     )
             else:
                 # Fallback: OpenAI default (backward compat)
@@ -413,6 +416,7 @@ async def understand_image(
                     "gpt-5.4",
                     system_prompt=system_prompt,
                     previous_response_id=previous_response_id,
+                    reasoning_effort=reasoning_effort,
                 )
 
             # Build result based on single vs multiple images

@@ -512,6 +512,9 @@ async def read_media(
                     "system_prompt": vision_system_prompt,
                     "previous_response_id": prev_response_id,
                     "conversation_messages": conv_messages,
+                    # Default to low reasoning to keep read_media latency bounded.
+                    # Config override: `multimodal_config.image.reasoning_effort`.
+                    "reasoning_effort": image_config.get("reasoning_effort", "low"),
                 }
                 if media_path:
                     image_kwargs["image_path"] = str(media_path)
@@ -661,6 +664,7 @@ async def read_media(
                             "backend_type": backend_type,
                             "model": image_config.get("model") or model or "gpt-5.4",
                             "system_prompt": vision_system_prompt,
+                            "reasoning_effort": image_config.get("reasoning_effort", "low"),
                         }
 
                         result = await asyncio.wait_for(understand_image(**image_kwargs), timeout=MEDIA_ANALYSIS_TIMEOUT)

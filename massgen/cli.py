@@ -3332,6 +3332,13 @@ def add_mode_flags_to_parser(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Enable parallel persona generation with specified diversity mode. " "'off' disables persona generation. Requires parallel coordination mode.",
     )
+    mode_group.add_argument(
+        "--fast",
+        action="store_true",
+        help="Fast mode: preset that tightens pre-round and post-candidate phases. "
+        "Enables fast_iteration_mode, caps verifications to 1 and fix loops to 0 per round, "
+        "and skips redundant scaffolding on restart. YAML values always win over this preset.",
+    )
 
 
 def validate_mode_flag_combinations(args: argparse.Namespace) -> list[str]:
@@ -3385,9 +3392,10 @@ def apply_mode_flags_to_config(
     quick = getattr(args, "quick", False)
     personas = getattr(args, "personas", None)
     single_agent = getattr(args, "single_agent", None)
+    fast = getattr(args, "fast", False)
 
     # Nothing to do if no mode flags set
-    if coordination_mode is None and not quick and personas is None:
+    if coordination_mode is None and not quick and personas is None and not fast:
         return
 
     if "orchestrator" not in config:
@@ -3424,6 +3432,22 @@ def apply_mode_flags_to_config(
                 "enabled": True,
                 "diversity_mode": personas,
             }
+
+    # Fast mode: preset of orthogonal speed knobs. YAML values always win,
+    # so only fill in keys that aren't already present.
+    if fast:
+        if "coordination" not in orch:
+            orch["coordination"] = {}
+        coord = orch["coordination"]
+        fast_defaults = {
+            "fast_iteration_mode": True,
+            "max_verifications_per_round": 1,
+            "max_internal_fix_loops": 0,
+            "skip_redundant_scaffolding": True,
+        }
+        for key, default in fast_defaults.items():
+            if key not in coord:
+                coord[key] = default
 
 
 def filter_agents_for_single_mode(
@@ -3645,6 +3669,9 @@ def _parse_coordination_config(coord_cfg: dict[str, Any]) -> "CoordinationConfig
         checkpoint_gated_patterns=coord_cfg.get("checkpoint_gated_patterns", []),
         web_review=coord_cfg.get("web_review", False),
         fast_iteration_mode=coord_cfg.get("fast_iteration_mode", False),
+        max_verifications_per_round=coord_cfg.get("max_verifications_per_round"),
+        max_internal_fix_loops=coord_cfg.get("max_internal_fix_loops"),
+        skip_redundant_scaffolding=coord_cfg.get("skip_redundant_scaffolding", False),
     )
 
 

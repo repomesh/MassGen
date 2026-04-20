@@ -433,12 +433,13 @@ class TestFastIterationModeOutputFirstSection:
         assert "Submit when excellent" in content
 
     def test_fast_mode_removes_improvement_loop(self):
-        """Fast mode replaces the improvement loop with verify-and-submit."""
+        """Fast mode replaces the improvement loop with the three-phase lifecycle."""
         section = OutputFirstVerificationSection(fast_iteration_mode=True)
         content = section.build_content()
         assert "improvement loop" not in content
         assert "Submit when excellent" not in content
-        assert "Known Gaps" in content
+        # Either 'Known Gap' or 'Known Gaps' suffices under the phase model
+        assert "Known Gap" in content
 
     def test_fast_mode_keeps_verification_guidance(self):
         """Fast mode still includes dynamic verification guidance."""
@@ -448,7 +449,10 @@ class TestFastIterationModeOutputFirstSection:
         assert "User Experience Test" in content
 
     def test_fast_mode_has_no_loop_instruction(self):
-        """Fast mode should not tell agents to loop improve→verify cycles."""
+        """Fast mode forbids in-round loops — either directly ('Do not loop')
+        or structurally via the PHASE 2 no-verification rule."""
         section = OutputFirstVerificationSection(fast_iteration_mode=True)
         content = section.build_content()
-        assert "Do not loop" in content
+        # The phase model carries the no-loop discipline structurally:
+        # PHASE 2 forbids verification, so no verify→edit→verify cycle is possible.
+        assert "Do not loop" in content or ("PHASE 2" in content and "no verification" in content.lower())

@@ -31,11 +31,19 @@ async def call_openai(
     model: str,
     system_prompt: str | None = None,
     previous_response_id: str | None = None,
+    reasoning_effort: str | None = "low",
 ) -> tuple[str, str | None]:
     """Call OpenAI Responses API for image understanding.
 
     Returns (response_text, response_id) tuple. The response_id can be passed
     back as previous_response_id for follow-up conversations.
+
+    Defaults to ``reasoning_effort="low"`` because read_media is a latency-
+    sensitive helper (the caller is often blocking coordination). GPT-5.x at
+    implicit default reasoning can take 2-5+ minutes per image which makes the
+    tool unusable in time-boxed runs. Pass ``reasoning_effort=None`` to let the
+    API pick its own default (legacy behavior), or ``"medium"``/``"high"`` for
+    tasks where latency matters less than depth.
     """
     from openai import AsyncOpenAI
 
@@ -54,7 +62,9 @@ async def call_openai(
             },
         )
 
-    logger.info(f"[image_backends] Using OpenAI {model} for {len(loaded_images)} image(s)")
+    logger.info(
+        f"[image_backends] Using OpenAI {model} for {len(loaded_images)} image(s) " f"(reasoning_effort={reasoning_effort!r})",
+    )
 
     create_kwargs: dict = {
         "model": model,
@@ -64,6 +74,10 @@ async def call_openai(
         create_kwargs["instructions"] = system_prompt
     if previous_response_id:
         create_kwargs["previous_response_id"] = previous_response_id
+    # Only GPT-5.x models support reasoning_effort on the Responses API.
+    # Older models (gpt-4o, gpt-4.1, etc.) will reject the param.
+    if reasoning_effort is not None and model.startswith("gpt-5"):
+        create_kwargs["reasoning"] = {"effort": reasoning_effort}
 
     response = await client.responses.create(**create_kwargs)
 
