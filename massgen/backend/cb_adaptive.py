@@ -105,9 +105,12 @@ class AdaptiveController:
     def record_outcome(self, is_failure: bool) -> None:
         """Update failure-rate EWMA with a single request outcome.
 
-        True = failure, False = success.
-        EWMA: new = (1 - alpha) * old + alpha * sample.
-        Result is clamped to [0.0, 1.0] to guard against floating-point drift.
+        Applies ``new = (1 - alpha) * old + alpha * sample`` where
+        sample is 1.0 for a failure and 0.0 for a success. The result
+        is clamped to [0.0, 1.0] to guard against floating-point drift.
+
+        Args:
+            is_failure: True if the request failed, False if it succeeded.
         """
         sample = 1.0 if bool(is_failure) else 0.0
         alpha = self._cfg.ewma_alpha
@@ -150,18 +153,20 @@ class AdaptiveController:
                 return
             self._recovery_latency_ewma = new_latency
 
-    def effective_max_failures(self) -> int:
-        """Return the effective failure threshold given current EWMA error rate.
+    def _compute_effective_max(self, rate: float) -> int:
+        """Map an error-rate sample to the effective failure threshold.
 
-        Logic:
-          - rate >= high_error_rate: base // 2, clamped to [min, max]
-          - rate <= low_error_rate:  base * 2, clamped to [min, max]
-          - otherwise:               base,     clamped to [min, max]
+        Pure function: does not read live state. Callers that need
+        point-in-time consistency with other fields (see ``snapshot``)
+        capture the rate under ``self._lock`` and pass it here.
 
-        Always returns an int >= 1.
+        Args:
+            rate: Error-rate EWMA value, expected in [0.0, 1.0].
+
+        Returns:
+            Clamped threshold int in
+            [min_effective_max_failures, max_effective_max_failures].
         """
-        with self._lock:
-            rate = self._error_rate_ewma
         base = self._base.max_failures
         if rate >= self._cfg.high_error_rate:
             candidate = max(1, base // 2)
@@ -174,18 +179,45 @@ class AdaptiveController:
             min(self._cfg.max_effective_max_failures, candidate),
         )
 
-    def effective_reset_time(self) -> float:
-        """Return the effective reset time based on recovery latency EWMA.
+    def _compute_effective_reset(self, latency: float) -> float:
+        """Clamp a latency sample to the configured reset-time bounds.
 
-        Clamps recovery_latency_ewma to
-        [min_effective_reset_seconds, max_effective_reset_seconds].
+        Pure function, same capture-and-pass contract as
+        ``_compute_effective_max``.
+
+        Args:
+            latency: Recovery-latency EWMA value in seconds.
+
+        Returns:
+            Clamped value in
+            [min_effective_reset_seconds, max_effective_reset_seconds].
         """
-        with self._lock:
-            latency = self._recovery_latency_ewma
         return max(
             self._cfg.min_effective_reset_seconds,
             min(self._cfg.max_effective_reset_seconds, latency),
         )
+
+    def effective_max_failures(self) -> int:
+        """Return the effective failure threshold given current EWMA error rate.
+
+        Returns:
+            Clamped threshold int. See ``_compute_effective_max`` for the
+            branch logic (high/low/middle zones).
+        """
+        with self._lock:
+            rate = self._error_rate_ewma
+        return self._compute_effective_max(rate)
+
+    def effective_reset_time(self) -> float:
+        """Return the effective reset time based on recovery latency EWMA.
+
+        Returns:
+            Clamped value in
+            [min_effective_reset_seconds, max_effective_reset_seconds].
+        """
+        with self._lock:
+            latency = self._recovery_latency_ewma
+        return self._compute_effective_reset(latency)
 
     def reset_open_timer(self) -> None:
         """Clear _open_at without recording a latency sample.
@@ -200,34 +232,25 @@ class AdaptiveController:
     def snapshot(self) -> dict[str, Any]:
         """Return an observable snapshot for metrics and logs.
 
-        Computed atomically under a single lock acquisition so returned
-        values are point-in-time consistent.
+        All live fields are captured under a single lock acquisition so
+        returned values are point-in-time consistent. Derived fields
+        (effective_max_failures, effective_reset_time) are computed from
+        the captured rate/latency via pure helpers, not re-read from the
+        live EWMA.
+
+        Returns:
+            Dict with keys: error_rate_ewma (float), recovery_latency_ewma
+            (float), effective_max_failures (int), effective_reset_time
+            (float), open_at (float | None).
         """
         with self._lock:
             rate = self._error_rate_ewma
             latency = self._recovery_latency_ewma
             open_at = self._open_at
-        # Compute effective values from the captured rate/latency snapshot
-        # (not from the live ewma fields) for point-in-time consistency.
-        base = self._base.max_failures
-        if rate >= self._cfg.high_error_rate:
-            candidate = max(1, base // 2)
-        elif rate <= self._cfg.low_error_rate:
-            candidate = base * 2
-        else:
-            candidate = base
-        effective_max = max(
-            self._cfg.min_effective_max_failures,
-            min(self._cfg.max_effective_max_failures, candidate),
-        )
-        effective_reset = max(
-            self._cfg.min_effective_reset_seconds,
-            min(self._cfg.max_effective_reset_seconds, latency),
-        )
         return {
             "error_rate_ewma": rate,
             "recovery_latency_ewma": latency,
-            "effective_max_failures": effective_max,
-            "effective_reset_time": effective_reset,
+            "effective_max_failures": self._compute_effective_max(rate),
+            "effective_reset_time": self._compute_effective_reset(latency),
             "open_at": open_at,
         }
