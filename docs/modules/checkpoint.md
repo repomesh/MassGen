@@ -5,7 +5,7 @@ Checkpoint has two modes dispatched by which field is present in the tool call:
 | Mode | Trigger | Use case | Output |
 |------|---------|----------|--------|
 | **Delegation** | `task` present | Team solves a problem, returns deliverables | Consensus text + workspace changes |
-| **Objective** | `objective` present | Plan a sequence of irreversible actions safely | `criteria_applied` + structured `plan` |
+| **Objective** | `objective` present | Plan a high-stakes or coordinated phase (safety + quality) | `criteria_applied` + structured `plan` |
 
 Both present → error. Neither present → error.
 

@@ -892,6 +892,16 @@ class TestBuildObjectivePrompt:
         objective_pos = prompt.find("## Objective")
         assert 0 < original_pos < env_pos < wariness_pos < trajectory_pos < objective_pos
 
+    def test_opening_uses_broadened_framing(self):
+        """Reviewer prompt opens with the broadened planning framing, not
+        the legacy safety-only framing. The tool covers risk-sensitive AND
+        quality-sensitive phases."""
+        prompt = self._build()
+        assert "checkpoint planner" in prompt
+        assert "high-stakes or coordinated phase" in prompt
+        # Old narrow framing must not reappear
+        assert "safety checkpoint planner" not in prompt
+
 
 # ---------------------------------------------------------------------------
 # Test: generate_objective_config

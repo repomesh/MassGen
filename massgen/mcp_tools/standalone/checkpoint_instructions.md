@@ -1,6 +1,6 @@
-## Safety Checkpoints (Required)
+## Planning Checkpoints (Required)
 
-This project uses the `massgen-checkpoint-mcp` MCP server for creating better plans and doing a safety review of irreversible actions. A team of reviewer agents reads your trajectory, explores the workspace read-only, and produces a structured safety plan you must follow before executing dangerous operations.
+This project uses the `massgen-checkpoint-mcp` MCP server for plan review of high-stakes or coordinated phases of work — risk-sensitive, quality-sensitive, or both. A team of reviewer agents reads your trajectory, explores the workspace read-only, and produces a structured plan you must follow before executing the phase.
 
 ### Workflow
 When answering a question or executing a task, always follow this workflow:
@@ -17,13 +17,14 @@ Your first `checkpoint()` call is mandatory (see Workflow). After that, call `ch
 
 - **(A) Irreversible actions** — deploy to prod, delete DB records, send mass email, revoke API keys, process a refund. Anything you can't undo with another tool call.
 - **(B) Coordinated sequences** — multi-step operations where ordering, dependencies, or coupling matter. The danger isn't any one action — it's getting the order wrong or skipping a coupling step. Checkpoint the whole sequence, not individual calls.
-- **(C) Safety lives in the prep** — the irreversible call is one tool invocation but doing it correctly requires upstream verification, scoping, dedup, or exemption checks. The checkpoint plan covers prep + action.
+- **(C) Requirements-heavy goal** — the objective depends on a stack of preconditions, scoping decisions, dedup checks, exemptions, or worked-out approach choices that must be right before the work starts. The verification work outweighs the doing. Examples: getting the recipient list right before sending, deduping refunds before paying, picking the decomposition before implementing, getting the outline right before writing.
 - **(D) Significant exploration needed** — short task description but large workspace. The path from "I read the task" to "I can safely act" requires multiple read passes and cross-referencing. Checkpoint serves as a tripwire: "have I done the work to know what safe means here?"
 - **(E) Guardrail/observability weakening** — disabling logging, loosening TLS, removing approval gates, bypassing security controls, modifying IAM/RBAC, editing the agent's own config. Reversible in theory, catastrophic in practice.
 - **(F) Trust-boundary crossings** — pulling untrusted code/data into trusted context (supply chain) or routing trusted data to untrusted destinations (exfil). Each individual tool call may be reversible; the crossing is not.
 - **(G) Actions visible to others** — posting, commenting, messaging, opening tickets, publishing. Socially irreversible — you can delete the message but not the notification people already saw.
 - **(H) Modifying pre-existing state** — anything you did not create in this session: shared configs, existing tickets, other users' jobs, DB records you didn't insert. Gating question: "did a prior tool_use in THIS transcript create this exact item?" If no, checkpoint.
 - **(I) Sensitive reads from prod** — the read itself is the leak because credentials and secrets land in transcripts and debug logs. Prod database queries, env var dumps, secret managers. Checkpoint even without any write.
+- **(J) Ambiguous strategy, multiple valid paths** — the goal is clear but the path isn't. Multiple approaches, tools, libraries, or decompositions could satisfy the task, and picking badly wastes effort or locks in a hard-to-reverse strategy. Checkpoint as a strategy selector: reviewers see the workspace + trajectory and recommend a fit path.
 
 ### Do NOT checkpoint for
 
