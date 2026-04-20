@@ -162,7 +162,6 @@ This project started with the "threads of thought" and "iterative refinement" id
 **What's New in v0.1.79:**
 - **⚡ Better Fast Mode Options** - New options to control coordination speed — fine-grained speed vs. quality tradeoff.
 - **🛡️ Broader Checkpoint Framing** - Checkpoint mode now covers both high-stakes actions AND coordinated phases, not just safety-only.
-- **🖼️ Multimodal Default Change** - Updated multimodal default behavior and fixed YAML config.
 - **📋 Checkpoint Instructions Clarity** - More clarity in trust settings for checkpoint agents.
 
 **Try v0.1.79 Features:**
@@ -1247,7 +1246,6 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 #### Fast Mode Speed Control & Broader Checkpoint Framing
 - **Better Fast Mode Options**: New options to control coordination speed — fine-grained speed vs. quality tradeoff
 - **Broader Checkpoint Framing**: Checkpoint mode framing broadened from safety-only to high-stakes and coordinated phases
-- **Multimodal Default Change**: Updated multimodal default behavior and fixed YAML config
 - **Checkpoint Instructions Clarity**: More clarity in trust settings for checkpoint agents
 
 ### Previous Achievements (v0.0.3 - v0.1.78)

@@ -6,8 +6,7 @@
 ### 🛡️ [Broader Checkpoint Framing](https://github.com/massgen/MassGen/blob/main/docs/modules/checkpoint.md)
 - **Beyond safety-only**: Checkpoint mode now covers both high-stakes actions AND coordinated phases — use for deploys, deletions, financial ops, AND for coordinated planning steps
 
-### 🖼️ Multimodal & Checkpoint Updates
-- **Multimodal default change**: Updated multimodal default behavior and fixed YAML config
+### 📋 Checkpoint Updates
 - **Checkpoint instructions clarity**: More clarity in trust settings for checkpoint agents
 
 ---

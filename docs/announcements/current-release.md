@@ -7,7 +7,7 @@ After posting, update the social links below.
 
 ## Release Summary
 
-We're excited to release MassGen v0.1.79 — Fast Mode Speed Control & Broader Checkpoint Framing! 🚀 New fast mode options give fine-grained control over speed vs. quality tradeoffs. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Multimodal default change and checkpoint instructions clarity improvements.
+We're excited to release MassGen v0.1.79 — Fast Mode Speed Control & Broader Checkpoint Framing! 🚀 New fast mode options give fine-grained control over speed vs. quality tradeoffs. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Checkpoint instructions clarity improvements.
 
 ## Install
 
@@ -42,7 +42,6 @@ We're excited to release MassGen v0.1.79 — Fast Mode Speed Control & Broader C
 - Use checkpoint for deploys, deletions, financial ops — AND for coordinated planning steps
 
 **Plus:**
-- 🖼️ **Multimodal default change** — Updated default behavior and YAML fix
 - 📋 **Checkpoint instructions clarity** — More clarity in trust settings for checkpoint agents
 
 **Getting Started:**

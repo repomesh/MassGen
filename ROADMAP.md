@@ -57,7 +57,6 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 ### Features
 - **Better Fast Mode Options**: New options to control coordination speed — fine-grained speed vs. quality tradeoff
 - **Broader Checkpoint Framing**: Checkpoint mode framing broadened from safety-only to high-stakes and coordinated phases
-- **Multimodal Default Change**: Updated multimodal default behavior
 - **Checkpoint Instructions Clarity**: More clarity in trust settings for checkpoint agents
 
 ### Notes

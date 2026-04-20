@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Recent Releases
 
 **v0.1.79 (April 20, 2026)** - Fast Mode Speed Control & Broader Checkpoint Framing
-New fast mode options for fine-grained speed vs. quality control. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Multimodal default change and checkpoint instructions clarity improvements.
+New fast mode options for fine-grained speed vs. quality control. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Checkpoint instructions clarity improvements.
 
 **v0.1.78 (April 17, 2026)** - Circuit Breaker Distributed Store (Phase 4)
 Pluggable distributed state store for the LLM circuit breaker — share state across workers/processes. Adds `InMemoryStore` (zero-deps) and optional `RedisStore`, with atomic `record_failure`/`record_success` operations for linearizability under concurrent access.
@@ -27,11 +27,7 @@ New "Answer Now" button lets agents submit answers more quickly, both within a r
 
 ### Changed
 - **Broader Checkpoint Framing**: Checkpoint mode framing broadened from safety-only to high-stakes and coordinated phases — use for deploys, deletions, financial ops, AND coordinated planning steps
-- **Multimodal Default**: Updated multimodal default behavior
 - **Checkpoint Instructions Clarity**: More clarity in trust settings for checkpoint agents
-
-### Fixed
-- **YAML Fix**: Fixed YAML configuration issue in multimodal defaults
 
 ### Documentation, Configurations and Resources
 - **Updated Checkpoint Module**: Updated `docs/modules/checkpoint.md` with broadened framing

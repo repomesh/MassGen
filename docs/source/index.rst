@@ -202,7 +202,7 @@ Recent Releases
 
 **v0.1.79 (April 20, 2026)** - Fast Mode Speed Control & Broader Checkpoint Framing
 
-New fast mode options for fine-grained speed vs. quality control. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Multimodal default change and checkpoint instructions clarity improvements.
+New fast mode options for fine-grained speed vs. quality control. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Checkpoint instructions clarity improvements.
 
 **v0.1.78 (April 17, 2026)** - Circuit Breaker Distributed Store (Phase 4)
 

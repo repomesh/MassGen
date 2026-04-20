@@ -233,7 +233,6 @@ Most configurations use environment variables for API keys:so
 **Key Features:**
 - **Better Fast Mode Options**: New options to control coordination speed — fine-grained speed vs. quality tradeoff
 - **Broader Checkpoint Framing**: Checkpoint mode framing broadened from safety-only to high-stakes and coordinated phases
-- **Multimodal Default Change**: Updated multimodal default behavior and fixed YAML config
 - **Checkpoint Instructions Clarity**: More clarity in trust settings for checkpoint agents
 
 **Try It:**
