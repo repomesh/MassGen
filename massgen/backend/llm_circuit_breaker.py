@@ -28,6 +28,8 @@ from .cb_store import DEFAULT_CIRCUIT_BREAKER_STATE
 if TYPE_CHECKING:
     from massgen.observability.prometheus import CircuitBreakerMetrics
 
+    from .cb_adaptive import AdaptiveController
+
 # ---------------------------------------------------------------------------
 # 429 classification
 # ---------------------------------------------------------------------------
@@ -194,11 +196,13 @@ class LLMCircuitBreaker:
         backend_name: str = "claude",
         metrics: CircuitBreakerMetrics | None = None,
         store: Any = None,
+        adaptive: AdaptiveController | None = None,
     ) -> None:
         self.config = config or LLMCircuitBreakerConfig()
         self.backend_name = backend_name
         self._metrics = metrics
         self._store: Any = store
+        self._adaptive: AdaptiveController | None = adaptive
         self._lock = threading.Lock()
 
         # State
@@ -331,11 +335,14 @@ class LLMCircuitBreaker:
         if not self.config.enabled:
             return
 
+        if self._adaptive is not None:
+            self._adaptive.record_outcome(True)
+
         if self._store is not None:
             new_state = self._store.atomic_record_failure(
                 self.backend_name,
-                self.config.max_failures,
-                float(self.config.reset_time_seconds),
+                self._effective_max_failures(),
+                self._effective_reset_time(),
             )
             failure_count = int(new_state["failure_count"])
             new_state_str = new_state["state"]
@@ -343,6 +350,8 @@ class LLMCircuitBreaker:
             if new_state_str == CircuitState.OPEN.value:
                 prev_was_half_open = bool(new_state.get("_prev_was_half_open", False))
                 prev_label = str(new_state.get("_prev_state", "closed"))
+                if self._adaptive is not None and prev_label != CircuitState.OPEN.value:
+                    self._adaptive.record_open()
                 if prev_was_half_open:
                     self._log(
                         "Probe failed, circuit breaker re-opened",
@@ -387,7 +396,9 @@ class LLMCircuitBreaker:
 
             if self._state == CircuitState.HALF_OPEN:
                 self._state = CircuitState.OPEN
-                self._open_until = now + self.config.reset_time_seconds
+                if self._adaptive is not None:
+                    self._adaptive.record_open()
+                self._open_until = now + self._effective_reset_time()
                 self._half_open_probe_active = False
                 self._log(
                     "Probe failed, circuit breaker re-opened",
@@ -397,9 +408,11 @@ class LLMCircuitBreaker:
                 if self._metrics is not None:
                     _transition_args = (self.backend_name, "half_open", "open")
 
-            elif self._failure_count >= self.config.max_failures:
+            elif self._failure_count >= self._effective_max_failures():
                 self._state = CircuitState.OPEN
-                self._open_until = now + self.config.reset_time_seconds
+                if self._adaptive is not None and prev_state != CircuitState.OPEN:
+                    self._adaptive.record_open()
+                self._open_until = now + self._effective_reset_time()
                 self._log(
                     "Circuit breaker opened",
                     failure_count=self._failure_count,
@@ -426,11 +439,16 @@ class LLMCircuitBreaker:
         if not self.config.enabled:
             return
 
+        if self._adaptive is not None:
+            self._adaptive.record_outcome(False)
+
         if self._store is not None:
             new_state = self._store.atomic_record_success(self.backend_name)
             prev_state_str = str(new_state.get("_prev_state", new_state["state"]))
 
             if prev_state_str != CircuitState.CLOSED.value and new_state["state"] == CircuitState.CLOSED.value:
+                if self._adaptive is not None:
+                    self._adaptive.record_close()
                 self._log(
                     "Circuit breaker closed after success",
                     previous_state=prev_state_str,
@@ -452,6 +470,8 @@ class LLMCircuitBreaker:
             self._half_open_probe_active = False
 
             if prev_state != CircuitState.CLOSED:
+                if self._adaptive is not None:
+                    self._adaptive.record_close()
                 self._log(
                     "Circuit breaker closed after success",
                     previous_state=prev_state.value,
@@ -478,7 +498,10 @@ class LLMCircuitBreaker:
 
         if self._store is not None:
             now = time.time()
-            duration = max(self.config.reset_time_seconds, open_for_seconds)
+            if open_for_seconds > 0:
+                duration = max(self.config.reset_time_seconds, open_for_seconds)
+            else:
+                duration = self._effective_reset_time()
             computed_open_until = now + duration
             prev_state_value = CircuitState.CLOSED.value
             _MAX_CAS_ATTEMPTS = 5
@@ -497,6 +520,8 @@ class LLMCircuitBreaker:
                 }
                 applied = self._store.cas_state(self.backend_name, prev_state_value, updates)
                 if applied:
+                    if self._adaptive is not None and prev_state_value != CircuitState.OPEN.value:
+                        self._adaptive.record_open()
                     break
                 # CAS conflict -- retry with refreshed state
             else:
@@ -526,9 +551,14 @@ class LLMCircuitBreaker:
             prev_state = self._state
             self._state = CircuitState.OPEN
             self._last_failure_time = now
-            duration = max(self.config.reset_time_seconds, open_for_seconds)
+            if open_for_seconds > 0:
+                duration = max(self.config.reset_time_seconds, open_for_seconds)
+            else:
+                duration = self._effective_reset_time()
             self._open_until = now + duration
             self._half_open_probe_active = False
+            if self._adaptive is not None and prev_state != CircuitState.OPEN:
+                self._adaptive.record_open()
             self._log(f"Circuit breaker force-opened: {reason}", open_for_seconds=duration)
             if self._metrics is not None:
                 _transition_args = (self.backend_name, prev_state.value, "open")
@@ -540,7 +570,16 @@ class LLMCircuitBreaker:
             )
 
     def reset(self) -> None:
-        """Reset circuit breaker to initial CLOSED state."""
+        """Reset circuit breaker to initial CLOSED state.
+
+        Adaptive open-timer cleanup is interleaved with the state clear so
+        a concurrent failure path cannot leave the adaptive controller
+        holding a stale _open_at that points at the administrative reset
+        moment. In the store backend, full multi-process serialization is
+        not provided; an operator reset racing with a natural OPEN
+        transition may observe an inconsistent adaptive snapshot, but the
+        circuit state itself remains authoritative via the atomic store.
+        """
         if self._store is not None:
             prev_state_value = self._store.get_state(self.backend_name).get(
                 "state",
@@ -550,6 +589,8 @@ class LLMCircuitBreaker:
                 self.backend_name,
                 dict(DEFAULT_CIRCUIT_BREAKER_STATE),
             )
+            if self._adaptive is not None:
+                self._adaptive.reset_open_timer()
             if self._metrics is not None and prev_state_value != CircuitState.CLOSED.value:
                 self._safe_emit(
                     self._metrics.record_state_transition,
@@ -567,6 +608,8 @@ class LLMCircuitBreaker:
             self._last_failure_time = 0.0
             self._open_until = 0.0
             self._half_open_probe_active = False
+            if self._adaptive is not None:
+                self._adaptive.reset_open_timer()
             if self._metrics is not None and prev_state != CircuitState.CLOSED:
                 _transition_args = (self.backend_name, prev_state.value, "closed")
 
@@ -766,7 +809,7 @@ class LLMCircuitBreaker:
                     # Use CAS to avoid overwriting a longer open_until written
                     # concurrently (e.g. force_open from another coroutine).
                     _probe_now = time.time()
-                    _probe_open_until = _probe_now + self.config.reset_time_seconds
+                    _probe_open_until = _probe_now + self._effective_reset_time()
                     _probe_applied = self._store.cas_state(
                         self.backend_name,
                         CircuitState.HALF_OPEN.value,
@@ -777,6 +820,8 @@ class LLMCircuitBreaker:
                         },
                     )
                     if _probe_applied:
+                        if self._adaptive is not None:
+                            self._adaptive.record_open()
                         self._log(
                             "Probe terminated abnormally, circuit breaker re-opened",
                         )
@@ -791,7 +836,9 @@ class LLMCircuitBreaker:
                     with self._lock:
                         if self._state == CircuitState.HALF_OPEN and self._half_open_probe_active:
                             self._state = CircuitState.OPEN
-                            self._open_until = time.monotonic() + self.config.reset_time_seconds
+                            if self._adaptive is not None:
+                                self._adaptive.record_open()
+                            self._open_until = time.monotonic() + self._effective_reset_time()
                             self._half_open_probe_active = False
                             self._log("Probe terminated abnormally, circuit breaker re-opened")
                             if self._metrics is not None:
@@ -825,6 +872,33 @@ class LLMCircuitBreaker:
             log_details if log_details else None,
             agent_id=details.get("agent_id"),
         )
+
+    # -- Adaptive helpers ---------------------------------------------------
+
+    def _effective_max_failures(self) -> int:
+        """Return the effective failure threshold.
+
+        With adaptive=None, returns config.max_failures unchanged
+        (back-compat). With an AdaptiveController, defers to
+        controller.effective_max_failures().
+        """
+        if self._adaptive is None:
+            return self.config.max_failures
+        return self._adaptive.effective_max_failures()
+
+    def _effective_reset_time(self) -> float:
+        """Return the effective reset time in seconds.
+
+        With adaptive=None, returns config.reset_time_seconds unchanged.
+        """
+        if self._adaptive is None:
+            return float(self.config.reset_time_seconds)
+        return self._adaptive.effective_reset_time()
+
+    @property
+    def adaptive(self) -> AdaptiveController | None:
+        """The AdaptiveController, if one was attached."""
+        return self._adaptive
 
     def __repr__(self) -> str:
         if self._store is not None:
