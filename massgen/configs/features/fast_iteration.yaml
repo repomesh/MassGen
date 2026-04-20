@@ -3,14 +3,20 @@
 agents:
 - id: agent_a
   backend:
-    type: codex
-    model: gpt-5.4
+    type: gemini
+    model: gemini-3-flash-preview
+    # type: codex
+    # model: gpt-5.4
+    # reasoning:
+    #   effort: high
+    #   summary: auto
     cwd: workspace
     enable_code_based_tools: true
     exclude_file_operation_mcps: true
     enable_mcp_command_line: true
     command_line_execution_mode: docker
     command_line_docker_image: ghcr.io/massgen/mcp-runtime-sudo:latest
+    # command_line_docker_image: massgen/mcp-runtime-sudo:latest
     command_line_docker_network_mode: bridge
     command_line_docker_enable_sudo: true
     command_line_docker_credentials:
@@ -23,9 +29,6 @@ agents:
     shared_tools_directory: shared_tools
     auto_discover_custom_tools: false
     enable_web_search: false
-    reasoning:
-      effort: high
-      summary: auto
 - id: agent_b
   backend:
     type: claude_code
@@ -36,6 +39,7 @@ agents:
     enable_mcp_command_line: true
     command_line_execution_mode: docker
     command_line_docker_image: ghcr.io/massgen/mcp-runtime-sudo:latest
+    # command_line_docker_image: massgen/mcp-runtime-sudo:latest
     command_line_docker_network_mode: bridge
     command_line_docker_enable_sudo: true
     command_line_docker_credentials:
@@ -65,6 +69,11 @@ orchestrator:
   audio_generation_backend: openai
   coordination:
     fast_iteration_mode: true
+    # Orthogonal speed knobs (prompt-only enforcement, shaped from turn 0).
+    # These are the same defaults applied by `uv run massgen --fast ...`.
+    max_verifications_per_round: 1  # One verify pass per round; gaps → Known Gaps in changedoc
+    max_internal_fix_loops: 0       # No build → verify → fix → re-verify loops within a round
+    skip_redundant_scaffolding: true  # On restart, continue from existing scaffolding files
     max_orchestration_restarts: 0
     learning_capture_mode: verification_and_final_only
     use_skills: true
@@ -73,8 +82,8 @@ orchestrator:
     task_planning_filesystem_mode: true
     enable_memory_filesystem_mode: true
     # for pre-collab eval criteria generation
-    evaluation_criteria_generator:
-       enabled: true
+    # evaluation_criteria_generator:
+    #    enabled: true
     write_mode: auto
   context_paths: []
 timeout_settings:

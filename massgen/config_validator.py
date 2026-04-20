@@ -1002,6 +1002,7 @@ class ConfigValidator:
                     "round_evaluator_refine",
                     "round_evaluator_skip_synthesis",
                     "fast_iteration_mode",
+                    "skip_redundant_scaffolding",
                 ]
                 for field_name in boolean_fields:
                     if field_name in coordination:
@@ -1011,6 +1012,21 @@ class ConfigValidator:
                                 f"'{field_name}' must be a boolean, got {type(value).__name__}",
                                 f"{location}.coordination.{field_name}",
                                 "Use 'true' or 'false'",
+                            )
+
+                # Validate non-negative int fields (None is allowed and means "unlimited")
+                nonneg_int_fields = [
+                    "max_verifications_per_round",
+                    "max_internal_fix_loops",
+                ]
+                for field_name in nonneg_int_fields:
+                    if field_name in coordination and coordination[field_name] is not None:
+                        value = coordination[field_name]
+                        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                            result.add_error(
+                                f"'{field_name}' must be a non-negative integer or null, got {value!r}",
+                                f"{location}.coordination.{field_name}",
+                                "Use a non-negative integer (e.g., 0, 1, 2) or omit the field for unlimited.",
                             )
 
                 # Deprecation warning for use_two_tier_workspace
