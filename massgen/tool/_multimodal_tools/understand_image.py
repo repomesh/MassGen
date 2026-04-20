@@ -225,7 +225,7 @@ async def understand_image(
     system_prompt: str | None = None,
     previous_response_id: str | None = None,
     conversation_messages: list[dict] | None = None,
-    reasoning_effort: str | None = "low",
+    reasoning_effort: str | None = None,
 ) -> ExecutionResult:
     """
     Understand and analyze one or more images using OpenAI's gpt-5.4 API.

@@ -31,19 +31,17 @@ async def call_openai(
     model: str,
     system_prompt: str | None = None,
     previous_response_id: str | None = None,
-    reasoning_effort: str | None = "low",
+    reasoning_effort: str | None = None,
 ) -> tuple[str, str | None]:
     """Call OpenAI Responses API for image understanding.
 
     Returns (response_text, response_id) tuple. The response_id can be passed
     back as previous_response_id for follow-up conversations.
 
-    Defaults to ``reasoning_effort="low"`` because read_media is a latency-
-    sensitive helper (the caller is often blocking coordination). GPT-5.x at
-    implicit default reasoning can take 2-5+ minutes per image which makes the
-    tool unusable in time-boxed runs. Pass ``reasoning_effort=None`` to let the
-    API pick its own default (legacy behavior), or ``"medium"``/``"high"`` for
-    tasks where latency matters less than depth.
+    ``reasoning_effort`` defaults to ``None`` (API default — legacy behavior).
+    Pass ``"low"`` for latency-bounded callers (the `--fast` preset wires this
+    in via ``multimodal_config.image.reasoning_effort``) or ``"medium"`` /
+    ``"high"`` when depth matters more than latency.
     """
     from openai import AsyncOpenAI
 

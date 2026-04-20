@@ -3337,7 +3337,8 @@ def add_mode_flags_to_parser(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Fast mode: preset that tightens pre-round and post-candidate phases. "
         "Enables fast_iteration_mode, caps verifications to 1 and fix loops to 0 per round, "
-        "and skips redundant scaffolding on restart. YAML values always win over this preset.",
+        "skips redundant scaffolding on restart, and lowers image-understanding reasoning_effort "
+        "to 'low' for latency-bounded read_media calls. YAML values always win over this preset.",
     )
 
 
@@ -3448,6 +3449,13 @@ def apply_mode_flags_to_config(
         for key, default in fast_defaults.items():
             if key not in coord:
                 coord[key] = default
+
+        # Also lower image-understanding reasoning effort (read_media /
+        # understand_image) so vision calls don't blow the latency budget.
+        # Lives under orchestrator.multimodal_config, not coordination.
+        mm_cfg = orch.setdefault("multimodal_config", {})
+        image_cfg = mm_cfg.setdefault("image", {})
+        image_cfg.setdefault("reasoning_effort", "low")
 
 
 def filter_agents_for_single_mode(
