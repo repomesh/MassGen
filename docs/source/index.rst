@@ -200,6 +200,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.79 (April 20, 2026)** - Fast Mode Speed Control & Broader Checkpoint Framing
+
+New fast mode options for fine-grained speed vs. quality control. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Multimodal default change and checkpoint instructions clarity improvements.
+
 **v0.1.78 (April 17, 2026)** - Circuit Breaker Distributed Store (Phase 4)
 
 Pluggable state store for the *LLM circuit breaker* — CB state (failure counts, open/half-open/closed, cooldown timers) can now be shared across workers and processes. Ships a zero-deps in-memory CB store and an optional Redis-backed CB store, with atomic failure/success transitions for linearizability when workers race on the same backend.
@@ -207,10 +211,6 @@ Pluggable state store for the *LLM circuit breaker* — CB state (failure counts
 **v0.1.77 (April 15, 2026)** - Answer Now Button
 
 New "Answer Now" button lets agents submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is sufficient.
-
-**v0.1.76 (April 13, 2026)** - Exa Search & Circuit Breaker Observability
-
-New Exa AI-powered search tool for MCP. Circuit breaker Phase 3 with observability — probe ownership, lock release, per-attempt latency tracking. Checkpoint agent instructions and Docker dependency fixes.
 
 :doc:`Full changelog → <changelog>`
 
