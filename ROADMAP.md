@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.76
+**Current Version:** v0.1.77
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** April 13, 2026
+**Last Updated:** April 15, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,11 +42,20 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.77** | 04/15/26 | Cloud Modal MVP | @ncrispino | Run MassGen as a cloud job on Modal ([#982](https://github.com/massgen/MassGen/issues/982)) |
-| **v0.1.78** | 04/17/26 | OpenAI Audio API | @ncrispino | Support OpenAI audio API for audio understanding ([#960](https://github.com/massgen/MassGen/issues/960)) |
-| **v0.1.79** | 04/20/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) |
+| **v0.1.78** | 04/17/26 | Cloud Modal MVP | @ncrispino | Run MassGen as a cloud job on Modal ([#982](https://github.com/massgen/MassGen/issues/982)) |
+| **v0.1.79** | 04/20/26 | OpenAI Audio API | @ncrispino | Support OpenAI audio API for audio understanding ([#960](https://github.com/massgen/MassGen/issues/960)) |
+| **v0.1.80** | 04/22/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.77 - Answer Now Button (Completed)
+
+**Released:** April 15, 2026 | PRs: [#1062](https://github.com/massgen/MassGen/pull/1062)
+
+### Features
+- **Answer Now Button**: Agents can submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is already sufficient
 
 ---
 
@@ -74,7 +83,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.77 - Cloud Modal MVP
+## 📋 v0.1.78 - Cloud Modal MVP
 
 ### Features
 
@@ -90,7 +99,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.78 - OpenAI Audio API
+## 📋 v0.1.79 - OpenAI Audio API
 
 ### Features
 
@@ -106,7 +115,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.79 - Image/Video Edit Capabilities
+## 📋 v0.1.80 - Image/Video Edit Capabilities
 
 ### Features
 

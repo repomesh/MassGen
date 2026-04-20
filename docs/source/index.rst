@@ -200,6 +200,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.77 (April 15, 2026)** - Answer Now Button
+
+New "Answer Now" button lets agents submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is sufficient.
+
 **v0.1.76 (April 13, 2026)** - Exa Search & Circuit Breaker Observability
 
 New Exa AI-powered search tool for MCP. Circuit breaker Phase 3 with observability — probe ownership, lock release, per-attempt latency tracking. Checkpoint agent instructions and Docker dependency fixes.
@@ -207,10 +211,6 @@ New Exa AI-powered search tool for MCP. Circuit breaker Phase 3 with observabili
 **v0.1.75 (April 10, 2026)** - Codex Hooks & Checkpoint WebUI
 
 Hybrid hook system for Codex backend combining native and MCP capabilities. Checkpoint workflows auto-launch the WebUI for visual monitoring. Standalone checkpoint MCP server documentation and safety policy integration.
-
-**v0.1.74 (April 8, 2026)** - Checkpoint Improvements & Tool Call Fixes
-
-Major improvements to standalone checkpoint MCP server. Fix for duplicate tool calls in ChatCompletions (including for MiniMax on OpenRouter) and Response API backends. Pre-collab evaluation criteria refinements.
 
 :doc:`Full changelog → <changelog>`
 

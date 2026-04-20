@@ -68,7 +68,7 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🆕 Latest Features</h3></summary>
 
-- [v0.1.76 Features](#-latest-features-v0176)
+- [v0.1.77 Features](#-latest-features-v0177)
 </details>
 
 <details open>
@@ -121,15 +121,15 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🗺️ Roadmap</h3></summary>
 
-- [Recent Achievements (v0.1.76)](#recent-achievements-v0176)
-- [Previous Achievements (v0.0.3 - v0.1.75)](#previous-achievements-v003---v0175)
+- [Recent Achievements (v0.1.77)](#recent-achievements-v0177)
+- [Previous Achievements (v0.0.3 - v0.1.76)](#previous-achievements-v003---v0176)
 - [Key Future Enhancements](#key-future-enhancements)
   - Bug Fixes & Backend Improvements
   - Advanced Agent Collaboration
   - Expanded Model, Tool & Agent Integrations
   - Improved Performance & Scalability
   - Enhanced Developer Experience
-- [v0.1.77 Roadmap](#v0177-roadmap)
+- [v0.1.78 Roadmap](#v0178-roadmap)
 </details>
 
 <details open>
@@ -154,19 +154,17 @@ This project started with the "threads of thought" and "iterative refinement" id
 
 ---
 
-## 🆕 Latest Features (v0.1.76)
+## 🆕 Latest Features (v0.1.77)
 
-**🎉 Released: April 13, 2026**
+**🎉 Released: April 15, 2026**
 
-**What's New in v0.1.76:**
-- **🔍 Exa AI Search Tool** - New Exa AI-powered search tool added to MCP server registry.
-- **📊 Circuit Breaker Observability (Phase 3)** - Probe ownership, lock release, per-attempt latency tracking across all backends.
-- **📋 Checkpoint Agent Instructions** - Copyable custom instructions for agent memory files with checkpoint MCP information.
+**What's New in v0.1.77:**
+- **⚡ Answer Now Button** - Agents can submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is sufficient.
 
-**Try v0.1.76 Features:**
+**Try v0.1.77 Features:**
 ```bash
-pip install massgen==0.1.76
-uv run massgen --config @examples/tools/web-search/exa_search_example "Research the latest breakthroughs in multi-agent AI systems"
+pip install massgen==0.1.77
+uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
 ```
 
 → [See full release history and examples](massgen/configs/README.md#release-history--examples)
@@ -1238,17 +1236,16 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 ⚠️ **Early Stage Notice:** As MassGen is in active development, please expect upcoming breaking architecture changes as we continue to refine and improve the system.
 
-### Recent Achievements (v0.1.76)
+### Recent Achievements (v0.1.77)
 
-**🎉 Released: April 13, 2026**
+**🎉 Released: April 15, 2026**
 
-#### Exa Search & Circuit Breaker Observability
-- **Exa AI Search Tool** ([#1057](https://github.com/massgen/MassGen/pull/1057)): New Exa AI-powered search tool added to MCP server registry
-- **Circuit Breaker Observability (Phase 3)** ([#1056](https://github.com/massgen/MassGen/pull/1056)): Probe ownership, lock release, per-attempt latency tracking across all backends
-- **Checkpoint Agent Instructions** ([#1058](https://github.com/massgen/MassGen/pull/1058)): Copyable custom instructions for agent memory files with checkpoint MCP information
-- **Docker Dependency Fixes** ([#1058](https://github.com/massgen/MassGen/pull/1058)): Fixed Dockerfile installs for reliable container builds
+#### Answer Now Button
+- **Answer Now Button** ([#1062](https://github.com/massgen/MassGen/pull/1062)): Agents can submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is sufficient
 
-### Previous Achievements (v0.0.3 - v0.1.75)
+### Previous Achievements (v0.0.3 - v0.1.76)
+
+✅ **Exa Search & Circuit Breaker Observability (v0.1.76)**: New Exa AI-powered search tool for MCP. Circuit breaker Phase 3 with observability. Checkpoint agent instructions and Docker dependency fixes.
 
 ✅ **Codex Hooks & Checkpoint WebUI (v0.1.75)**: Hybrid hook system for Codex backend. Checkpoint workflows auto-launch WebUI for visual monitoring. Standalone checkpoint MCP server docs with safety policy integration.
 
@@ -1545,9 +1542,9 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 We welcome community contributions to achieve these goals.
 
-### v0.1.77 Roadmap
+### v0.1.78 Roadmap
 
-Version 0.1.77 focuses on cloud execution:
+Version 0.1.78 focuses on cloud execution:
 
 #### Planned Features
 - **Cloud Modal MVP** ([#982](https://github.com/massgen/MassGen/issues/982)): Run MassGen as a cloud job on Modal — progress streams to terminal, results saved locally under `.massgen/cloud_jobs/`

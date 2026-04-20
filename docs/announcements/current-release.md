@@ -1,4 +1,4 @@
-# MassGen v0.1.76 Release Announcement
+# MassGen v0.1.77 Release Announcement
 
 <!--
 This is the current release announcement. Copy this + feature-highlights.md to LinkedIn/X.
@@ -7,17 +7,17 @@ After posting, update the social links below.
 
 ## Release Summary
 
-We're excited to release MassGen v0.1.76 — Exa Search & Circuit Breaker Observability! 🚀 New Exa AI-powered search tool for MCP. Circuit breaker Phase 3 adds observability with probe ownership, lock release, and per-attempt latency tracking. Copyable checkpoint agent instructions and Docker dependency fixes.
+We're excited to release MassGen v0.1.77 — Answer Now Button! 🚀 New "Answer Now" button lets agents submit answers more quickly, both within a round, and bypassing additional refinement rounds when the answer is already good enough.
 
 ## Install
 
 ```bash
-pip install massgen==0.1.76
+pip install massgen==0.1.77
 ```
 
 ## Links
 
-- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.76
+- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.77
 - **X post:** [TO BE ADDED AFTER POSTING]
 - **LinkedIn post:** [TO BE ADDED AFTER POSTING]
 
@@ -29,31 +29,26 @@ Copy everything below this line, then append content from `feature-highlights.md
 
 ---
 
-We're excited to release MassGen v0.1.76 — Exa Search & Circuit Breaker Observability! 🚀 New Exa AI-powered search tool for MCP. Circuit breaker Phase 3 adds observability with probe ownership, lock release, and per-attempt latency tracking. Copyable checkpoint agent instructions and Docker dependency fixes.
+We're excited to release MassGen v0.1.77 — Answer Now Button! 🚀 New "Answer Now" button lets agents submit answers more quickly, both within a round, and bypassing additional refinement rounds when the answer is already good enough.
 
 **Key Improvements:**
 
-🔍 **Exa AI Search Tool** — AI-powered search via MCP:
-- New Exa search tool added to MCP server registry
-- Example config: `exa_search_example.yaml`
-
-📊 **Circuit Breaker Observability (Phase 3)** — Full visibility into rate limit protection:
-- Probe ownership and lock release mechanisms
-- Per-attempt latency regression tracking
-- Strengthened observability across all backends
+⚡ **Answer Now Button** — Faster answers when quality is already sufficient:
+- Agents can submit answers immediately without waiting for additional refinement rounds
+- Reduces time-to-answer for tasks where early rounds already produce good results
 
 **Plus:**
-- 📋 **Checkpoint agent instructions** — Copyable custom instructions for agent memory files with checkpoint MCP information
-- 🐳 **Docker dependency fixes** — Fixed Dockerfile installs for reliable container builds
+- 📋 **Updated checkpoint instructions** — Refined agent memory instructions for checkpoint MCP
+- 📝 **Updated coordination workflow docs** — Clarified coordination workflow documentation
 
 **Getting Started:**
 
 ```bash
-pip install massgen==0.1.76
-uv run massgen --config @examples/tools/web-search/exa_search_example "Research the latest breakthroughs in multi-agent AI systems"
+pip install massgen==0.1.77
+uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
 ```
 
-Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.76
+Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.77
 
 Feature highlights:
 

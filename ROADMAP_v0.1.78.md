@@ -1,10 +1,10 @@
-# MassGen v0.1.77 Roadmap
+# MassGen v0.1.78 Roadmap
 
-**Target Release:** April 15, 2026
+**Target Release:** April 17, 2026
 
 ## Overview
 
-Version 0.1.77 focuses on running MassGen as a cloud job on Modal.
+Version 0.1.78 focuses on running MassGen as a cloud job on Modal.
 
 ---
 
@@ -27,5 +27,5 @@ Version 0.1.77 focuses on running MassGen as a cloud job on Modal.
 
 ## Related Tracks
 
-- **v0.1.76**: Exa Search & Circuit Breaker Observability — Phase 3 observability, Exa AI search, checkpoint instructions ([#1056](https://github.com/massgen/MassGen/pull/1056), [#1057](https://github.com/massgen/MassGen/pull/1057), [#1058](https://github.com/massgen/MassGen/pull/1058))
-- **v0.1.78**: OpenAI Audio API ([#960](https://github.com/massgen/MassGen/issues/960))
+- **v0.1.77**: Answer Now Button — faster answers when quality is sufficient ([#1062](https://github.com/massgen/MassGen/pull/1062))
+- **v0.1.79**: OpenAI Audio API ([#960](https://github.com/massgen/MassGen/issues/960))
