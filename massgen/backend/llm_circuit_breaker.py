@@ -386,7 +386,18 @@ class LLMCircuitBreaker:
             if new_state_str == CircuitState.OPEN.value:
                 prev_was_half_open = bool(new_state.get("_prev_was_half_open", False))
                 prev_label = str(new_state.get("_prev_state", "closed"))
-                if self._adaptive is not None and prev_label != CircuitState.OPEN.value:
+                if prev_label == CircuitState.OPEN.value:
+                    # Already OPEN -- atomic_record_failure extended open_until
+                    # via max(), but no state transition occurred. Do not log
+                    # "Circuit breaker opened" or emit an open -> open metric.
+                    self._log(
+                        "Failure recorded",
+                        failure_count=failure_count,
+                        max_failures=self._effective_max_failures(),
+                        error_type=error_type,
+                    )
+                    return
+                if self._adaptive is not None:
                     self._adaptive.record_open()
                 if prev_was_half_open:
                     self._log(
@@ -445,17 +456,28 @@ class LLMCircuitBreaker:
                     _transition_args = (self.backend_name, "half_open", "open")
 
             elif self._failure_count >= self._effective_max_failures():
-                self._state = CircuitState.OPEN
-                if self._adaptive is not None and prev_state != CircuitState.OPEN:
-                    self._adaptive.record_open()
-                self._open_until = now + self._effective_reset_time()
-                self._log(
-                    "Circuit breaker opened",
-                    failure_count=self._failure_count,
-                    error_type=error_type,
-                )
-                if self._metrics is not None:
-                    _transition_args = (self.backend_name, prev_state.value, "open")
+                if prev_state == CircuitState.OPEN:
+                    # Already OPEN -- do not refresh the deadline, re-log the
+                    # transition, or emit an open -> open metric. Repeated
+                    # failures under OPEN simply accumulate failure_count.
+                    self._log(
+                        "Failure recorded",
+                        failure_count=self._failure_count,
+                        max_failures=self._effective_max_failures(),
+                        error_type=error_type,
+                    )
+                else:
+                    self._state = CircuitState.OPEN
+                    if self._adaptive is not None:
+                        self._adaptive.record_open()
+                    self._open_until = now + self._effective_reset_time()
+                    self._log(
+                        "Circuit breaker opened",
+                        failure_count=self._failure_count,
+                        error_type=error_type,
+                    )
+                    if self._metrics is not None:
+                        _transition_args = (self.backend_name, prev_state.value, "open")
             else:
                 self._log(
                     "Failure recorded",

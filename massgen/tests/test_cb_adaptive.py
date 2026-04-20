@@ -271,7 +271,7 @@ class TestBackCompatAndIntegration:
         assert 0.0 < ewma <= 1.0
 
     def test_llm_cb_adaptive_triggers_open_at_adjusted_threshold(self, base_config):
-        """High EWMA must halve effective_max_failures, tightening the threshold."""
+        """CB must OPEN at the adaptive-adjusted threshold, not at base_config.max_failures."""
         cfg = AdaptiveConfig(
             enabled=True,
             low_error_rate=0.05,
@@ -280,13 +280,29 @@ class TestBackCompatAndIntegration:
             max_effective_max_failures=20,
         )
         ctrl = AdaptiveController(base_config, cfg)
-        # Force EWMA well above high_error_rate
+        # Force EWMA well above high_error_rate; record_outcome(True) on each
+        # subsequent record_failure keeps the EWMA pinned above 0.2.
         with ctrl._lock:
             ctrl._error_rate_ewma = 0.95
-        # base=10, high zone: candidate=max(1,10//2)=5, clamped to [2,20] = 5
-        assert ctrl.effective_max_failures() == 5
-        # Confirm it is strictly less than base
-        assert ctrl.effective_max_failures() < base_config.max_failures
+        # base=10, high zone: effective = max(1, 10 // 2) = 5, clamped to [2, 20].
+        adjusted = ctrl.effective_max_failures()
+        assert adjusted == 5
+        assert adjusted < base_config.max_failures
+
+        cb = LLMCircuitBreaker(config=base_config, backend_name="test", adaptive=ctrl, store=None)
+        # First (adjusted - 1) failures must not trip the breaker.
+        for i in range(adjusted - 1):
+            cb.record_failure()
+            assert cb.state == CircuitState.CLOSED, f"CB opened early at failure {i + 1}"
+        cb.record_failure()  # adjusted-th failure triggers CLOSED -> OPEN
+        assert cb.state == CircuitState.OPEN
+        assert cb.failure_count == adjusted
+
+        # A success after the breaker recovers clears the adaptive open timer
+        # and closes the circuit, confirming the wiring survives a full cycle.
+        cb.reset()
+        assert cb.state == CircuitState.CLOSED
+        assert ctrl.snapshot()["open_at"] is None
 
     def test_llm_cb_adaptive_reset_time_applied_in_force_open(self, base_config):
         """force_open must use effective_reset_time from AdaptiveController."""
@@ -795,37 +811,46 @@ class TestClockUnderLock:
     """Clock calls must happen under _lock so committed timestamps reflect acquisition time."""
 
     def test_record_open_timestamp_reflects_post_lock_time(self, base_config):
-        """record_open stores a timestamp from AFTER lock acquisition."""
+        """record_open stores a timestamp read inside the lock."""
         cfg = AdaptiveConfig(enabled=True)
         clock_state = {"value": 100.0}
+        ctrl_holder: dict[str, AdaptiveController] = {}
 
         def clock() -> float:
-            # Each call advances; if the call happens before lock the stored
-            # value would not equal the post-lock sample.
+            ctrl = ctrl_holder.get("ctrl")
+            # If the clock runs without the controller lock being held, the
+            # non-blocking acquire will succeed, which signals that the
+            # contract (clock called under _lock) is violated.
+            if ctrl is not None and ctrl._lock.acquire(blocking=False):
+                ctrl._lock.release()
+                raise AssertionError("clock ran without holding ctrl._lock")
             clock_state["value"] += 1.0
             return clock_state["value"]
 
         ctrl = AdaptiveController(base_config, cfg, clock=clock)
+        ctrl_holder["ctrl"] = ctrl
         ctrl.record_open()
-        # Only one clock() call should occur (inside the lock).
         assert ctrl.snapshot()["open_at"] == 101.0
-        # If clock had been called outside lock too, value would be 102 already.
         assert clock_state["value"] == 101.0
 
     def test_record_close_latency_uses_post_lock_clock(self, base_config):
-        """record_close reads the clock only once, under the lock."""
+        """record_close reads the clock inside the lock."""
         cfg = AdaptiveConfig(enabled=True, recovery_sample_weight=1.0)
         clock_state = {"value": 100.0}
+        ctrl_holder: dict[str, AdaptiveController] = {}
 
         def clock() -> float:
+            ctrl = ctrl_holder.get("ctrl")
+            if ctrl is not None and ctrl._lock.acquire(blocking=False):
+                ctrl._lock.release()
+                raise AssertionError("clock ran without holding ctrl._lock")
             clock_state["value"] += 1.0
             return clock_state["value"]
 
         ctrl = AdaptiveController(base_config, cfg, clock=clock)
-        # record_open: one clock tick to 101.
+        ctrl_holder["ctrl"] = ctrl
         ctrl.record_open()
         assert clock_state["value"] == 101.0
-        # record_close: one more tick to 102; latency=102-101=1.0.
         ctrl.record_close()
         assert clock_state["value"] == 102.0
         assert ctrl.snapshot()["recovery_latency_ewma"] == pytest.approx(1.0)
