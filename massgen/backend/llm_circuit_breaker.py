@@ -198,10 +198,46 @@ class LLMCircuitBreaker:
         store: Any = None,
         adaptive: AdaptiveController | None = None,
     ) -> None:
+        """Initialize the LLM circuit breaker.
+
+        Args:
+            config: Static circuit breaker configuration. When None, a
+                default ``LLMCircuitBreakerConfig()`` is created.
+            backend_name: Stable low-cardinality backend identifier used
+                for logs, metrics, and multi-backend stores.
+            metrics: Optional ``CircuitBreakerMetrics`` instance for
+                Prometheus observability. When None, metrics are not emitted.
+            store: Optional ``CircuitBreakerStore`` instance for cross-process
+                state sharing. When None, state is in-process only.
+            adaptive: Optional ``AdaptiveController`` for EWMA-based adaptive
+                thresholds. The controller's ``base_config`` must reference
+                the same ``max_failures`` and ``reset_time_seconds`` as
+                ``config`` so the adaptive math stays consistent with the
+                static fall-through behavior; a mismatch raises
+                ``ValueError``. When None, fixed thresholds are used.
+
+        Raises:
+            ValueError: If ``adaptive`` is provided and its base config's
+                ``max_failures`` or ``reset_time_seconds`` differs from
+                ``config``.
+        """
         self.config = config or LLMCircuitBreakerConfig()
         self.backend_name = backend_name
         self._metrics = metrics
         self._store: Any = store
+        if adaptive is not None:
+            adaptive_base = adaptive._base
+            if adaptive_base.max_failures != self.config.max_failures or adaptive_base.reset_time_seconds != self.config.reset_time_seconds:
+                raise ValueError(
+                    "AdaptiveController.base_config must match LLMCircuitBreaker.config "
+                    "on max_failures and reset_time_seconds. Pass the same "
+                    "LLMCircuitBreakerConfig instance to both constructors to avoid "
+                    "inconsistent adaptive thresholds. "
+                    f"Got adaptive base (max_failures={adaptive_base.max_failures}, "
+                    f"reset_time_seconds={adaptive_base.reset_time_seconds}) "
+                    f"vs cb config (max_failures={self.config.max_failures}, "
+                    f"reset_time_seconds={self.config.reset_time_seconds}).",
+                )
         self._adaptive: AdaptiveController | None = adaptive
         self._lock = threading.Lock()
 

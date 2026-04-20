@@ -321,7 +321,7 @@ class TestConcurrency:
             try:
                 for _ in range(1000):
                     controller.record_outcome(is_failure)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- capture thread exceptions for test assertion
                 errors.append(exc)
 
         threads = [threading.Thread(target=worker, args=(i % 2 == 0,)) for i in range(8)]
@@ -352,7 +352,7 @@ class TestConcurrency:
                 for _ in range(200):
                     snap = controller.snapshot()
                     snapshots.append(snap)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- capture thread exceptions for test assertion
                 errors.append(exc)
 
         writer_thread = threading.Thread(target=writer)
@@ -534,7 +534,7 @@ class TestGapCoverage:
                 barrier.wait()
                 for _ in range(200):
                     cb.record_failure(error_type="net")
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- capture thread exceptions for test assertion
                 errors.append(exc)
 
         with unittest.mock.patch.object(ctrl, "record_open", wraps=ctrl.record_open) as open_spy:
@@ -704,3 +704,128 @@ class TestRound1Regressions:
         # Snapshot fields match injected values
         assert snap["error_rate_ewma"] == pytest.approx(0.95)
         assert snap["recovery_latency_ewma"] == pytest.approx(200.0)
+
+
+# ---------------------------------------------------------------------------
+# Category K: CodeRabbit review (PR #1065) follow-ups
+# ---------------------------------------------------------------------------
+
+
+class TestEnabledFlagHonored:
+    """AdaptiveConfig.enabled=False must make the controller inert."""
+
+    def test_disabled_controller_no_ops_record_outcome(self, base_config):
+        cfg = AdaptiveConfig(enabled=False)
+        ctrl = AdaptiveController(base_config, cfg)
+        ctrl.record_outcome(True)
+        ctrl.record_outcome(True)
+        ctrl.record_outcome(True)
+        assert ctrl.snapshot()["error_rate_ewma"] == 0.0
+
+    def test_disabled_controller_no_ops_record_open_and_close(self, base_config):
+        cfg = AdaptiveConfig(enabled=False)
+        ctrl = AdaptiveController(base_config, cfg)
+        ctrl.record_open()
+        assert ctrl.snapshot()["open_at"] is None
+        ctrl.record_close()  # also a no-op; must not raise even with _open_at=None
+        assert ctrl.snapshot()["open_at"] is None
+
+    def test_disabled_controller_effective_returns_static(self, base_config):
+        cfg = AdaptiveConfig(enabled=False)
+        ctrl = AdaptiveController(base_config, cfg)
+        # Inject state that would shift the effective thresholds if enabled.
+        with ctrl._lock:
+            ctrl._error_rate_ewma = 0.99
+            ctrl._recovery_latency_ewma = 9999.0
+        assert ctrl.effective_max_failures() == base_config.max_failures
+        assert ctrl.effective_reset_time() == float(base_config.reset_time_seconds)
+
+    def test_llm_cb_with_disabled_adaptive_equivalent_to_none(self, base_config):
+        """LLMCircuitBreaker + disabled AdaptiveController behaves like adaptive=None."""
+        cfg = AdaptiveConfig(enabled=False)
+        ctrl = AdaptiveController(base_config, cfg)
+        cb = LLMCircuitBreaker(config=base_config, backend_name="test", adaptive=ctrl, store=None)
+        for _ in range(base_config.max_failures):
+            cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+        # With disabled adaptive, recovery EWMA should stay at the seed (reset_time_seconds);
+        # open_at must remain None because record_open is a no-op.
+        assert ctrl.snapshot()["open_at"] is None
+
+
+class TestConfigMismatchRejected:
+    """LLMCircuitBreaker must reject an AdaptiveController whose base_config disagrees."""
+
+    def test_different_max_failures_raises(self, base_config):
+        # base_config.max_failures == 10; controller is built with a different value.
+        alt_base = LLMCircuitBreakerConfig(enabled=True, max_failures=99, reset_time_seconds=60)
+        cfg = AdaptiveConfig(enabled=True)
+        ctrl = AdaptiveController(alt_base, cfg)
+        with pytest.raises(ValueError, match="max_failures"):
+            LLMCircuitBreaker(config=base_config, backend_name="test", adaptive=ctrl, store=None)
+
+    def test_different_reset_time_raises(self, base_config):
+        alt_base = LLMCircuitBreakerConfig(enabled=True, max_failures=10, reset_time_seconds=999)
+        cfg = AdaptiveConfig(enabled=True)
+        ctrl = AdaptiveController(alt_base, cfg)
+        with pytest.raises(ValueError, match="reset_time_seconds"):
+            LLMCircuitBreaker(config=base_config, backend_name="test", adaptive=ctrl, store=None)
+
+    def test_matching_base_config_accepted(self, base_config):
+        cfg = AdaptiveConfig(enabled=True)
+        ctrl = AdaptiveController(base_config, cfg)
+        # Same instance -- no raise.
+        cb = LLMCircuitBreaker(config=base_config, backend_name="test", adaptive=ctrl, store=None)
+        assert cb.adaptive is ctrl
+
+    def test_equivalent_separate_config_accepted(self, base_config):
+        """Two distinct config instances with identical fields are accepted."""
+        equivalent = LLMCircuitBreakerConfig(
+            enabled=base_config.enabled,
+            max_failures=base_config.max_failures,
+            reset_time_seconds=base_config.reset_time_seconds,
+        )
+        cfg = AdaptiveConfig(enabled=True)
+        ctrl = AdaptiveController(equivalent, cfg)
+        cb = LLMCircuitBreaker(config=base_config, backend_name="test", adaptive=ctrl, store=None)
+        assert cb.adaptive is ctrl
+
+
+class TestClockUnderLock:
+    """Clock calls must happen under _lock so committed timestamps reflect acquisition time."""
+
+    def test_record_open_timestamp_reflects_post_lock_time(self, base_config):
+        """record_open stores a timestamp from AFTER lock acquisition."""
+        cfg = AdaptiveConfig(enabled=True)
+        clock_state = {"value": 100.0}
+
+        def clock() -> float:
+            # Each call advances; if the call happens before lock the stored
+            # value would not equal the post-lock sample.
+            clock_state["value"] += 1.0
+            return clock_state["value"]
+
+        ctrl = AdaptiveController(base_config, cfg, clock=clock)
+        ctrl.record_open()
+        # Only one clock() call should occur (inside the lock).
+        assert ctrl.snapshot()["open_at"] == 101.0
+        # If clock had been called outside lock too, value would be 102 already.
+        assert clock_state["value"] == 101.0
+
+    def test_record_close_latency_uses_post_lock_clock(self, base_config):
+        """record_close reads the clock only once, under the lock."""
+        cfg = AdaptiveConfig(enabled=True, recovery_sample_weight=1.0)
+        clock_state = {"value": 100.0}
+
+        def clock() -> float:
+            clock_state["value"] += 1.0
+            return clock_state["value"]
+
+        ctrl = AdaptiveController(base_config, cfg, clock=clock)
+        # record_open: one clock tick to 101.
+        ctrl.record_open()
+        assert clock_state["value"] == 101.0
+        # record_close: one more tick to 102; latency=102-101=1.0.
+        ctrl.record_close()
+        assert clock_state["value"] == 102.0
+        assert ctrl.snapshot()["recovery_latency_ewma"] == pytest.approx(1.0)

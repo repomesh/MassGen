@@ -94,6 +94,20 @@ class AdaptiveController:
         *,
         clock: Callable[[], float] | None = None,
     ) -> None:
+        """Initialize the adaptive controller.
+
+        Args:
+            base_config: Static circuit-breaker configuration used as the
+                baseline for the adaptive thresholds.
+            adaptive_config: Adaptive tuning and clamp bounds. When
+                ``adaptive_config.enabled`` is False the controller becomes
+                inert: ``record_outcome``, ``record_open``, and
+                ``record_close`` are no-ops and the effective-* methods
+                return the corresponding static values from ``base_config``.
+            clock: Optional monotonic clock used to timestamp open/close
+                events. Defaults to ``time.monotonic``. Injectable for
+                tests.
+        """
         self._base = base_config
         self._cfg = adaptive_config
         self._error_rate_ewma: float = 0.0
@@ -105,6 +119,8 @@ class AdaptiveController:
     def record_outcome(self, is_failure: bool) -> None:
         """Update failure-rate EWMA with a single request outcome.
 
+        No-op when ``adaptive_config.enabled`` is False.
+
         Applies ``new = (1 - alpha) * old + alpha * sample`` where
         sample is 1.0 for a failure and 0.0 for a success. The result
         is clamped to [0.0, 1.0] to guard against floating-point drift.
@@ -112,6 +128,8 @@ class AdaptiveController:
         Args:
             is_failure: True if the request failed, False if it succeeded.
         """
+        if not self._cfg.enabled:
+            return
         sample = 1.0 if bool(is_failure) else 0.0
         alpha = self._cfg.ewma_alpha
         with self._lock:
@@ -123,27 +141,37 @@ class AdaptiveController:
     def record_open(self) -> None:
         """Mark that the CB transitioned to OPEN -- starts recovery timer.
 
-        Idempotent: if _open_at is already set, overwrite (latest OPEN wins).
-        Clock is captured before acquiring the lock to minimize lock hold time.
+        No-op when ``adaptive_config.enabled`` is False.
+
+        Idempotent: if ``_open_at`` is already set, overwrite (latest
+        OPEN wins). Clock is read under ``_lock`` so the stored
+        timestamp reflects the moment the caller commits the update,
+        not the moment it entered the method.
         """
-        now = self._clock()
+        if not self._cfg.enabled:
+            return
         with self._lock:
-            self._open_at = now
+            self._open_at = self._clock()
 
     def record_close(self) -> None:
         """Mark that the CB transitioned back to CLOSED after recovery.
 
-        If _open_at was set, clears _open_at unconditionally and updates
-        recovery_latency_ewma only when the computed sample is finite.
-        If _open_at was None, no-op.
+        No-op when ``adaptive_config.enabled`` is False.
+
+        If ``_open_at`` was set, clears ``_open_at`` unconditionally and
+        updates ``recovery_latency_ewma`` only when the computed sample
+        is finite. If ``_open_at`` was None, no-op.
 
         Defensive: negative latency due to clock skew is clamped to 0.
-        Clock is captured before acquiring the lock to minimize lock hold time.
+        Clock is read under ``_lock`` so the latency reflects the actual
+        committed close time, not the pre-lock entry time.
         """
-        now = self._clock()
+        if not self._cfg.enabled:
+            return
         with self._lock:
             if self._open_at is None:
                 return
+            now = self._clock()
             raw_latency = now - self._open_at
             latency = max(0.0, raw_latency)
             self._open_at = None
@@ -200,10 +228,15 @@ class AdaptiveController:
     def effective_max_failures(self) -> int:
         """Return the effective failure threshold given current EWMA error rate.
 
+        When ``adaptive_config.enabled`` is False, returns
+        ``base_config.max_failures`` unchanged.
+
         Returns:
             Clamped threshold int. See ``_compute_effective_max`` for the
             branch logic (high/low/middle zones).
         """
+        if not self._cfg.enabled:
+            return self._base.max_failures
         with self._lock:
             rate = self._error_rate_ewma
         return self._compute_effective_max(rate)
@@ -211,10 +244,15 @@ class AdaptiveController:
     def effective_reset_time(self) -> float:
         """Return the effective reset time based on recovery latency EWMA.
 
+        When ``adaptive_config.enabled`` is False, returns
+        ``float(base_config.reset_time_seconds)`` unchanged.
+
         Returns:
             Clamped value in
             [min_effective_reset_seconds, max_effective_reset_seconds].
         """
+        if not self._cfg.enabled:
+            return float(self._base.reset_time_seconds)
         with self._lock:
             latency = self._recovery_latency_ewma
         return self._compute_effective_reset(latency)
@@ -225,6 +263,7 @@ class AdaptiveController:
         Used when the circuit breaker is administratively reset
         (not a natural recovery) to avoid poisoning the recovery EWMA
         with an arbitrary stale-timer delta on the next close.
+        Safe to call regardless of ``adaptive_config.enabled``.
         """
         with self._lock:
             self._open_at = None
