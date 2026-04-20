@@ -69,7 +69,7 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🆕 Latest Features</h3></summary>
 
-- [v0.1.77 Features](#-latest-features-v0177)
+- [v0.1.78 Features](#-latest-features-v0178)
 </details>
 
 <details open>
@@ -122,15 +122,15 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🗺️ Roadmap</h3></summary>
 
-- [Recent Achievements (v0.1.77)](#recent-achievements-v0177)
-- [Previous Achievements (v0.0.3 - v0.1.76)](#previous-achievements-v003---v0176)
+- [Recent Achievements (v0.1.78)](#recent-achievements-v0178)
+- [Previous Achievements (v0.0.3 - v0.1.77)](#previous-achievements-v003---v0177)
 - [Key Future Enhancements](#key-future-enhancements)
   - Bug Fixes & Backend Improvements
   - Advanced Agent Collaboration
   - Expanded Model, Tool & Agent Integrations
   - Improved Performance & Scalability
   - Enhanced Developer Experience
-- [v0.1.78 Roadmap](#v0178-roadmap)
+- [v0.1.79 Roadmap](#v0179-roadmap)
 </details>
 
 <details open>
@@ -155,17 +155,26 @@ This project started with the "threads of thought" and "iterative refinement" id
 
 ---
 
-## 🆕 Latest Features (v0.1.77)
+## 🆕 Latest Features (v0.1.78)
 
-**🎉 Released: April 15, 2026**
+**🎉 Released: April 17, 2026**
 
-**What's New in v0.1.77:**
-- **⚡ Answer Now Button** - Agents can submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is sufficient.
+**What's New in v0.1.78 — Circuit Breaker Distributed Store (Phase 4):**
 
-**Try v0.1.77 Features:**
+Previously, MassGen's LLM circuit breaker kept its state (failure counts, open/half-open/closed, cooldown timers) *per-process*, so one worker tripping OPEN did not stop siblings from hammering a rate-limited upstream. v0.1.78 makes that state pluggable and shareable across workers.
+
+- **🔌 Pluggable CB state store** ([#1061](https://github.com/massgen/MassGen/pull/1061)) — LLM circuit breaker state is now held behind a `CircuitBreakerStore` Protocol. Default (`store=None`) keeps the existing single-process behavior unchanged.
+- **🧠 In-memory CB store** — Thread-safe, zero-dependency implementation for single-process deployments and tests.
+- **🗃️ Redis-backed CB store** — Distributed implementation (optional `redis>=4.0`) so all processes share CB state.
+- **⚛️ Atomic CB transitions** — `atomic_record_failure` / `atomic_record_success` on the Protocol make state transitions linearizable when workers race on the same backend.
+
+**Try v0.1.78 Features:**
 ```bash
-pip install massgen==0.1.77
-uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
+# Base install (unchanged default behavior)
+pip install massgen==0.1.78
+
+# With distributed (Redis-backed) circuit breaker store
+pip install "massgen[redis-store]==0.1.78"
 ```
 
 → [See full release history and examples](massgen/configs/README.md#release-history--examples)
@@ -1237,14 +1246,19 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 ⚠️ **Early Stage Notice:** As MassGen is in active development, please expect upcoming breaking architecture changes as we continue to refine and improve the system.
 
-### Recent Achievements (v0.1.77)
+### Recent Achievements (v0.1.78)
 
-**🎉 Released: April 15, 2026**
+**🎉 Released: April 17, 2026**
 
-#### Answer Now Button
-- **Answer Now Button** ([#1062](https://github.com/massgen/MassGen/pull/1062)): Agents can submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is sufficient
+#### Circuit Breaker Distributed Store (Phase 4)
+- **Pluggable CB state store** ([#1061](https://github.com/massgen/MassGen/pull/1061)): The LLM circuit breaker's state (failure counts, open/half-open/closed, cooldown timers) is now held behind a `CircuitBreakerStore` Protocol, so it can be shared across workers and processes. Default (`store=None`) keeps the existing single-process behavior.
+- **In-memory CB store**: Thread-safe, zero-dependency implementation for single-process deployments and tests.
+- **Redis-backed CB store**: Distributed implementation via optional `redis>=4.0`; install with `pip install massgen[redis-store]`.
+- **Atomic CB transitions**: `atomic_record_failure` / `atomic_record_success` on the Protocol make CB state transitions linearizable when workers race on the same upstream backend.
 
-### Previous Achievements (v0.0.3 - v0.1.76)
+### Previous Achievements (v0.0.3 - v0.1.77)
+
+✅ **Answer Now Button (v0.1.77)**: New "Answer Now" button lets agents submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is sufficient.
 
 ✅ **Exa Search & Circuit Breaker Observability (v0.1.76)**: New Exa AI-powered search tool for MCP. Circuit breaker Phase 3 with observability. Checkpoint agent instructions and Docker dependency fixes.
 
@@ -1543,9 +1557,9 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 We welcome community contributions to achieve these goals.
 
-### v0.1.78 Roadmap
+### v0.1.79 Roadmap
 
-Version 0.1.78 focuses on cloud execution:
+Version 0.1.79 focuses on cloud execution (deferred from v0.1.78):
 
 #### Planned Features
 - **Cloud Modal MVP** ([#982](https://github.com/massgen/MassGen/issues/982)): Run MassGen as a cloud job on Modal — progress streams to terminal, results saved locally under `.massgen/cloud_jobs/`

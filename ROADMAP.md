@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.77
+**Current Version:** v0.1.78
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** April 15, 2026
+**Last Updated:** April 17, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,11 +42,26 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.78** | 04/17/26 | Cloud Modal MVP | @ncrispino | Run MassGen as a cloud job on Modal ([#982](https://github.com/massgen/MassGen/issues/982)) |
-| **v0.1.79** | 04/20/26 | OpenAI Audio API | @ncrispino | Support OpenAI audio API for audio understanding ([#960](https://github.com/massgen/MassGen/issues/960)) |
-| **v0.1.80** | 04/22/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) |
+| **v0.1.79** | 04/20/26 | Cloud Modal MVP | @ncrispino | Run MassGen as a cloud job on Modal — deferred from v0.1.78 ([#982](https://github.com/massgen/MassGen/issues/982)) |
+| **v0.1.80** | 04/22/26 | OpenAI Audio API | @ncrispino | Support OpenAI audio API for audio understanding ([#960](https://github.com/massgen/MassGen/issues/960)) |
+| **v0.1.81** | 04/24/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.78 - Circuit Breaker Distributed Store (Phase 4) (Completed)
+
+**Released:** April 17, 2026 | PRs: [#1061](https://github.com/massgen/MassGen/pull/1061)
+
+### Features
+- **Pluggable CB state store**: The LLM circuit breaker's state is now held behind a `CircuitBreakerStore` Protocol and can be shared across workers and processes. Default (`store=None`) preserves single-process behavior.
+- **In-memory CB state store**: Thread-safe, zero-dependency implementation for single-process deployments and tests.
+- **Redis-backed CB state store**: Distributed implementation via optional `redis>=4.0`; install with `pip install massgen[redis-store]`.
+- **Atomic CB transitions**: `atomic_record_failure` / `atomic_record_success` make CB state transitions linearizable when workers race on the same upstream backend.
+
+### Notes
+- Cloud Modal MVP originally planned for v0.1.78 — deferred to v0.1.79.
 
 ---
 
@@ -83,7 +98,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.78 - Cloud Modal MVP
+## 📋 v0.1.79 - Cloud Modal MVP (Deferred from v0.1.78)
 
 ### Features
 
@@ -99,7 +114,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.79 - OpenAI Audio API
+## 📋 v0.1.80 - OpenAI Audio API
 
 ### Features
 
@@ -115,7 +130,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.80 - Image/Video Edit Capabilities
+## 📋 v0.1.81 - Image/Video Edit Capabilities
 
 ### Features
 
@@ -922,5 +937,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code standards, te
 
 *This roadmap is community-driven. Releases ship on **Mondays, Wednesdays, Fridays @ 9am PT**. Timelines may shift based on priorities and feedback. Open an issue to suggest changes!*
 
-**Last Updated:** March 11, 2026
+**Last Updated:** April 17, 2026
 **Maintained By:** MassGen Team

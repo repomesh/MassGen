@@ -200,6 +200,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.78 (April 17, 2026)** - Circuit Breaker Distributed Store (Phase 4)
+
+Pluggable state store for the *LLM circuit breaker* — CB state (failure counts, open/half-open/closed, cooldown timers) can now be shared across workers and processes. Ships a zero-deps in-memory CB store and an optional Redis-backed CB store, with atomic failure/success transitions for linearizability when workers race on the same backend.
+
 **v0.1.77 (April 15, 2026)** - Answer Now Button
 
 New "Answer Now" button lets agents submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is sufficient.
@@ -207,10 +211,6 @@ New "Answer Now" button lets agents submit answers more quickly, both within a r
 **v0.1.76 (April 13, 2026)** - Exa Search & Circuit Breaker Observability
 
 New Exa AI-powered search tool for MCP. Circuit breaker Phase 3 with observability — probe ownership, lock release, per-attempt latency tracking. Checkpoint agent instructions and Docker dependency fixes.
-
-**v0.1.75 (April 10, 2026)** - Codex Hooks & Checkpoint WebUI
-
-Hybrid hook system for Codex backend combining native and MCP capabilities. Checkpoint workflows auto-launch the WebUI for visual monitoring. Standalone checkpoint MCP server documentation and safety policy integration.
 
 :doc:`Full changelog → <changelog>`
 

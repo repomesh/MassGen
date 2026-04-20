@@ -84,6 +84,9 @@ observability = [
     "logfire>=3.0.0",
     "prometheus-client>=0.20",
 ]
+redis-store = [
+    "redis>=4.0",
+]
 
 dev = [
     "pytest>=7.0.0",
@@ -128,6 +131,7 @@ all = [
     "litellm>=1.0.0,<=1.82.6",
     "logfire>=3.0.0",
     "prometheus-client>=0.20",
+    "redis>=4.0",
 ]
 
 [project.scripts]

@@ -227,17 +227,29 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.77 - Latest
+### v0.1.78 - Latest
+**New Features:** Circuit Breaker Distributed Store (Phase 4)
+
+**Key Features:**
+- **Pluggable Circuit Breaker State Store**: The LLM circuit breaker's state (failure counts, open/half-open/closed, cooldown timers) can now be shared across workers and processes via the `CircuitBreakerStore` Protocol. Default (`store=None`) keeps the existing single-process behavior unchanged.
+- **In-Memory CB Store**: Thread-safe, zero-dependency implementation — useful for single-process deployments and tests
+- **Redis-Backed CB Store**: Distributes CB state across processes via Redis; install with `pip install massgen[redis-store]`
+- **Atomic CB Transitions**: `atomic_record_failure` / `atomic_record_success` make CB state transitions linearizable when multiple workers race on the same backend
+
+**Install:**
+```bash
+# Base install (unchanged default behavior)
+pip install massgen==0.1.78
+
+# With distributed (Redis-backed) circuit breaker store
+pip install "massgen[redis-store]==0.1.78"
+```
+
+### v0.1.77
 **New Features:** Answer Now Button
 
 **Key Features:**
 - **Answer Now Button**: Agents can submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is sufficient
-
-**Try It:**
-```bash
-pip install massgen==0.1.77
-uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
-```
 
 ### v0.1.76
 **New Features:** Exa Search & Circuit Breaker Observability

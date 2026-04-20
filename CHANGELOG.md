@@ -9,14 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.78 (April 17, 2026)** - Circuit Breaker Distributed Store (Phase 4)
+Pluggable distributed state store for the LLM circuit breaker — share state across workers/processes. Adds `InMemoryStore` (zero-deps) and optional `RedisStore`, with atomic `record_failure`/`record_success` operations for linearizability under concurrent access.
+
 **v0.1.77 (April 15, 2026)** - Answer Now Button
 New "Answer Now" button lets agents submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is already sufficient.
 
 **v0.1.76 (April 13, 2026)** - Exa Search & Circuit Breaker Observability
 New Exa AI-powered search tool for MCP. Circuit breaker Phase 3 with observability — probe ownership, lock release, per-attempt latency tracking. Copyable checkpoint agent instructions and Docker dependency fixes.
 
-**v0.1.75 (April 10, 2026)** - Codex Hooks & Checkpoint WebUI
-Hybrid hook system for Codex backend combining native and MCP capabilities. Checkpoint workflows now auto-launch the WebUI for visual monitoring. Standalone checkpoint MCP server documentation and safety policy integration.
+---
+
+## [0.1.78] - 2026-04-17
+
+### Added
+- **Circuit Breaker Distributed Store (Phase 4)** ([#1061](https://github.com/massgen/MassGen/pull/1061)): Pluggable *state store* for the LLM circuit breaker. Previously each process kept its own CB state, so one worker tripping OPEN did not stop siblings from hammering a rate-limited upstream. CB state (failure counts, open/half-open/closed, cooldown timers) can now be shared across workers and processes. Default (`store=None`) keeps the existing single-process path unchanged.
+  - `CircuitBreakerStore` Protocol: the interface the CB uses to persist state
+  - `InMemoryStore` (CB state store): thread-safe, zero-deps — useful for single-process and tests
+  - `RedisStore` (distributed CB state store): shares CB state across processes via Redis (`redis>=4.0`, lazy-imported); available through the optional `redis-store` extra
+  - Atomic `atomic_record_failure` / `atomic_record_success` so CB state transitions are linearizable when workers race on the same backend
+- **Optional Redis Dependency Group**: New `redis-store` extra for the Redis-backed CB store — install with `pip install massgen[redis-store]`
+
+### Tests
+- **CB Store Unit Tests** ([#1061](https://github.com/massgen/MassGen/pull/1061)): New `massgen/tests/test_cb_store.py` covering `InMemoryStore` and `RedisStore` behavior, Protocol contract, and metrics integration
+- **CB Store Adversarial Tests** ([#1061](https://github.com/massgen/MassGen/pull/1061)): New `massgen/tests/test_cb_store_adversarial.py` covering TOCTOU races, Redis eviction, corrupted state handling, CAS semantics, probe-claiming, and TTL edge cases
+
+### Documentation, Configurations and Resources
+- **New Roadmap**: New `ROADMAP_v0.1.79.md` for the next release
+- **Updated `pyproject.toml`**: Added `redis-store` optional dependency group
+
+### Technical Details
+- **Major Focus**: Distributed circuit breaker state — completes the CB observability stack started in v0.1.72 / v0.1.76
+- **PRs Merged**: [#1061](https://github.com/massgen/MassGen/pull/1061)
+- **Contributors**: @amabito, @ncrispino, @HenryQi and the MassGen team
 
 ---
 
