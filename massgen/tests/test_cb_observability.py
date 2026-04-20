@@ -321,6 +321,25 @@ class TestCircuitBreakerIntegration:
         transitions = calls["transitions"]
         assert not any(t["from_state"] == "open" and t["to_state"] == "open" for t in transitions), f"Unexpected open->open transition emitted: {transitions}"
 
+    def test_force_open_from_open_preserves_open_until(self) -> None:
+        """A subsequent shorter force_open while already OPEN must not shrink _open_until.
+
+        Mirrors the store-path CAS merge: a large deadline (e.g. from a 429 STOP
+        with a large Retry-After) wins over a later shorter request. In-memory
+        path uses max(new, existing) for the same invariant.
+        """
+        cb, _calls = self._make_cb()
+
+        # First force_open with a large explicit duration.
+        cb.force_open(reason="quota exhausted", open_for_seconds=300)
+        assert cb.state == CircuitState.OPEN
+        deadline_after_first = cb._open_until
+
+        # Second force_open with a much smaller explicit duration must not
+        # shorten the existing deadline.
+        cb.force_open(reason="retry signal", open_for_seconds=5)
+        assert cb._open_until >= deadline_after_first, f"force_open shortened deadline: {deadline_after_first} -> {cb._open_until}"
+
     def test_cb_reset_emits_transition_metric(self) -> None:
         """reset() from OPEN emits open->closed state transition metric."""
         cb, calls = self._make_cb(max_failures=1)

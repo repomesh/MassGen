@@ -372,6 +372,11 @@ class LLMCircuitBreaker:
             return
 
         if self._adaptive is not None:
+            # Ordering matters: record_outcome(True) runs BEFORE the
+            # effective-threshold reads below so the current failure's
+            # contribution to the error-rate EWMA already influences the
+            # threshold used to evaluate this same failure (higher rate
+            # -> tighter threshold -> faster OPEN). Do not reorder.
             self._adaptive.record_outcome(True)
 
         # Capture effective thresholds once so every branch (log fields,
@@ -394,8 +399,10 @@ class LLMCircuitBreaker:
                 prev_label = str(new_state.get("_prev_state", "closed"))
                 if prev_label == CircuitState.OPEN.value:
                     # Already OPEN -- atomic_record_failure extended open_until
-                    # via max(), but no state transition occurred. Do not log
-                    # "Circuit breaker opened" or emit an open -> open metric.
+                    # via max(), but no state transition occurred. Skipping
+                    # the transition metric here is intentional and mirrors
+                    # the in-memory threshold branch + force_open OPEN->OPEN
+                    # guard; see tests in test_cb_observability.py.
                     self._log(
                         "Failure recorded",
                         failure_count=failure_count,
@@ -623,7 +630,11 @@ class LLMCircuitBreaker:
                 duration = max(self.config.reset_time_seconds, open_for_seconds)
             else:
                 duration = self._effective_reset_time()
-            self._open_until = now + duration
+            # Mirror the store-path CAS merge: preserve a longer deadline
+            # written by a prior call (e.g. a 429 STOP with a large
+            # Retry-After) so a subsequent shorter force_open while already
+            # OPEN cannot shrink the window.
+            self._open_until = max(now + duration, self._open_until)
             self._half_open_probe_active = False
             if self._adaptive is not None and prev_state != CircuitState.OPEN:
                 self._adaptive.record_open()
