@@ -11,6 +11,7 @@ When answering a question or executing a task, always follow this workflow:
 
 **Important:** Always call `init()` followed by `checkpoint()` before executing any actions. Do not use any state-mutating tools until you have received and reviewed a plan from `checkpoint()`.
 
+<!-- RECHECKPOINT-SECTION:START -->
 ### When to re-checkpoint
 
 Your first `checkpoint()` call is mandatory (see Workflow). After that, call `checkpoint()` **again** before any of the patterns below — unless the action is already covered by your prior checkpoint's approved plan. The returned plan will typically tell you when to re-checkpoint; the list below is a belt-and-suspenders reminder, so err on the side of re-checkpointing if unsure.
@@ -25,6 +26,7 @@ Your first `checkpoint()` call is mandatory (see Workflow). After that, call `ch
 - **(H) Modifying pre-existing state** — anything you did not create in this session: shared configs, existing tickets, other users' jobs, DB records you didn't insert. Gating question: "did a prior tool_use in THIS transcript create this exact item?" If no, checkpoint.
 - **(I) Sensitive reads from prod** — the read itself is the leak because credentials and secrets land in transcripts and debug logs. Prod database queries, env var dumps, secret managers. Checkpoint even without any write.
 - **(J) Ambiguous strategy, multiple valid paths** — the goal is clear but the path isn't. Multiple approaches, tools, libraries, or decompositions could satisfy the task, and picking badly wastes effort or locks in a hard-to-reverse strategy. Checkpoint as a strategy selector: reviewers see the workspace + trajectory and recommend a fit path.
+<!-- RECHECKPOINT-SECTION:END -->
 
 ### Do NOT checkpoint for
 

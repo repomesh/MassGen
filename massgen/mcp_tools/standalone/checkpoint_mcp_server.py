@@ -42,7 +42,7 @@ RESULT_FILENAME = "checkpoint_result.json"
 # (every rule from `policy_info.md` is preserved as an anti_pattern under
 # its parent family). Edit that file to tune the policy.
 
-VALID_TERMINALS: set[str] = {"proceed", "recheckpoint", "refuse", "halt"}
+VALID_TERMINALS: set[str] = {"proceed", "recheckpoint", "terminate"}
 
 # Known keys in the `environment` dict passed to `init`. Unknown keys are
 # preserved but logged. Defaults are the safe ones: nothing trusted,
@@ -69,6 +69,35 @@ _CHECKPOINT_RUNS_DIR = ".massgen/checkpoint_runs"
 _session: dict[str, Any] = {}
 _checkpoint_counter: int = 0
 _session_dir: Path | None = None  # set by init, timestamped
+
+
+_VALID_MODES: set[str] = {"generate", "verify"}
+
+
+def _apply_server_mode_from_config() -> None:
+    """Read server-startup mode flags from `_session['config_dict']` and
+    stamp them onto `_session`. Idempotent; missing keys use safe defaults.
+
+    Called by `main()` after loading the YAML config so `_checkpoint_impl`,
+    `_create_mcp_server`, and `build_objective_prompt` can read mode flags
+    off the session. Factored out so tests can exercise the derivation
+    without running the MCP server loop.
+
+    Raises `ValueError` at startup on an invalid `mode` value so bad
+    config fails fast instead of silently degrading to default.
+    """
+    config = _session.get("config_dict") or {}
+
+    # Feature 1: single-checkpoint
+    _session["single_checkpoint"] = bool(config.get("single_checkpoint", False))
+
+    # Feature 2: generate vs verify
+    mode = config.get("mode", "generate")
+    if mode not in _VALID_MODES:
+        raise ValueError(
+            f"Invalid mode '{mode}' in config; must be one of {sorted(_VALID_MODES)}",
+        )
+    _session["mode"] = mode
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +153,7 @@ the one with narrower blast radius and more reversibility — but do \
 not use "narrower" as a reason to refuse a broader path that is \
 clearly more aligned with the user's goal.
 
+{depth_section}
 {original_task_section}
 
 ## Environment
@@ -170,9 +200,9 @@ If the Objective has drifted from the Original User Task into an \
 serves the original task. Note the correction in a step description \
 or constraint so the executor sees what you pruned and why.
 - If the drift is not correctable (the objective is fundamentally \
-different from the original task), return a single-step refuse plan \
-with the description naming what was drifted and why you could not \
-reconcile it.
+different from the original task), return a single-step plan whose \
+recovery terminates with `"reason"` naming what was drifted and why \
+you could not reconcile it.
 
 Do not silently approve an unrelated objective — but do not refuse \
 aligned, safe actions merely because the user didn't list them \
@@ -219,7 +249,7 @@ approved_action entries:
 
 {tools_section}
 
-{action_goals_section}\
+{action_goals_section}{draft_plan_section}\
 ## Output
 
 Write your result as valid JSON to `{result_filename}` in the workspace \
@@ -241,7 +271,7 @@ present on every step; the validator rejects plans missing them.
       "recovery": {{
         "if": "the verification succeeded",
         "then": "proceed",
-        "else": "refuse",
+        "else": "terminate",
         "reason": "Optional freetext explanation of this branch"
       }}
     }},
@@ -265,8 +295,8 @@ present on every step; the validator rejects plans missing them.
             "tool": "Write",
             "args": {{"file_path": "/abs/path", "content": "<previous content>"}}
           }},
-          "then": "refuse",
-          "reason": "Restore the original file before refusing"
+          "then": "terminate",
+          "reason": "Restore the original file before stopping"
         }}
       }}
     }}
@@ -283,9 +313,10 @@ REQUIRED FIELDS (validator rejects plans missing any of these):
 the only kind on which `rollback` is required).
 - `description` (string): what this step accomplishes.
 - `preconditions` (list of strings, may be empty `[]`): each entry is \
-a reference like `"step:N.proceed"` or `"step:N.halt"` meaning \
-"step N must have resolved to that terminal before this step starts". \
-Forward and self-references are rejected. Use `[]` if there are none.
+a reference like `"step:N.proceed"` meaning "step N must have resolved \
+as proceed before this step starts". `terminate` halts the plan, so \
+it cannot appear in preconditions. Forward and self-references are \
+rejected. Use `[]` if there are none.
 - `touches` (list of strings, may be empty `[]`): tags identifying \
 sensitive categories this step affects. Suggested values: \
 `prod`, `shared_db`, `external_recipients`, `credentials`, \
@@ -309,21 +340,16 @@ is forbidden.
 RECOVERY NODE TYPES (the `recovery` field and any nested `then`/`else`):
 1. Terminal string: one of these exact bare strings — no extra text, \
 no annotations, no dashes:
-  - `"proceed"` — condition resolved safely, continue to next step
-  - `"recheckpoint"` — uncertain outcome, request new guidance
-  - `"refuse"` — the only remaining option is unsafe; refuse to act
-  - `"halt"` — objective fully achieved or no longer applicable; stop \
-cleanly with no error. Distinct from `refuse`: `halt` is a clean \
-exit, `refuse` is a safety error.
+{terminals_section}
 2. Branch node: dict with `if` (string condition), `then` (terminal \
 or nested node), optional `else` (terminal or nested node), optional \
 `reason` (string explanation of why this branch is structured this way).
 3. Compensate node: dict with `compensate` (action spec dict — \
 `{{tool, args}}` — to execute first), `then` (terminal resolved after \
-compensate runs), optional `reason`. Use this when failing the \
-recovery branch requires running a rollback action before terminating.
+compensate runs), optional `reason`. Use this when stopping the plan \
+requires running a rollback action first.
 
-INVALID terminal examples: `"refuse — do not send emails"`, \
+INVALID terminal examples: `"terminate — do not send emails"`, \
 `"proceed (with caution)"`, `"recheckpoint: need backup first"`. \
 Put situational context in the `if` condition field or the `reason` \
 field, not in the terminal value.
@@ -402,7 +428,7 @@ def merge_criteria(
 
 VALID_STEP_KINDS: set[str] = {"verify", "action", "backup", "notify", "wait"}
 
-_PRECONDITION_RE = re.compile(r"^step:(\d+)\.(proceed|halt)$")
+_PRECONDITION_RE = re.compile(r"^step:(\d+)\.proceed$")
 
 
 def _validate_action_spec(spec: Any, path: str) -> None:
@@ -423,12 +449,29 @@ def _validate_action_spec(spec: Any, path: str) -> None:
         raise ValueError(f"{path}.args: must be a dict")
 
 
-def validate_recovery_node(node: Any, path: str = "recovery") -> None:
+def _allowed_terminals(single_checkpoint: bool) -> set[str]:
+    """Narrow the terminal set in single-checkpoint mode (no recheckpoint).
+
+    Derived from `VALID_TERMINALS` via set difference rather than a parallel
+    constant so the two modes stay consistent by construction.
+    """
+    if single_checkpoint:
+        return VALID_TERMINALS - {"recheckpoint"}
+    return VALID_TERMINALS
+
+
+def validate_recovery_node(
+    node: Any,
+    path: str = "recovery",
+    *,
+    single_checkpoint: bool = False,
+) -> None:
     """Validate a RecoveryNode recursively.
 
     Three node types are accepted:
     - `str`: terminal. Must be one of `VALID_TERMINALS`
-      (`proceed`/`recheckpoint`/`refuse`/`halt`).
+      (`proceed`/`recheckpoint`/`terminate`). In single-checkpoint mode,
+      `recheckpoint` is excluded.
     - `dict` with `if` key: branch node. Requires `if` and `then`;
       `else` is optional; `reason` is an optional freetext field.
       `then` and `else` are recursively validated.
@@ -437,10 +480,11 @@ def validate_recovery_node(node: Any, path: str = "recovery") -> None:
       spec — `tool` + `args`), then resolves as `then`. `reason` is
       an optional freetext field. `then` is recursively validated.
     """
+    allowed = _allowed_terminals(single_checkpoint)
     if isinstance(node, str):
-        if node not in VALID_TERMINALS:
+        if node not in allowed:
             raise ValueError(
-                f"{path}: invalid terminal value '{node}', " f"must be one of {sorted(VALID_TERMINALS)}",
+                f"{path}: invalid terminal value '{node}', " f"must be one of {sorted(allowed)}",
             )
         return
 
@@ -454,7 +498,11 @@ def validate_recovery_node(node: Any, path: str = "recovery") -> None:
         _validate_action_spec(node["compensate"], f"{path}.compensate")
         if "then" not in node:
             raise ValueError(f"{path}: compensate node missing 'then'")
-        validate_recovery_node(node["then"], f"{path}.then")
+        validate_recovery_node(
+            node["then"],
+            f"{path}.then",
+            single_checkpoint=single_checkpoint,
+        )
         # Optional reason field
         if "reason" in node and not isinstance(node["reason"], str):
             raise ValueError(f"{path}.reason: must be a string when present")
@@ -469,9 +517,17 @@ def validate_recovery_node(node: Any, path: str = "recovery") -> None:
         raise ValueError(f"{path}: missing 'then' field")
     if not isinstance(node["if"], str):
         raise ValueError(f"{path}.if: must be a string")
-    validate_recovery_node(node["then"], f"{path}.then")
+    validate_recovery_node(
+        node["then"],
+        f"{path}.then",
+        single_checkpoint=single_checkpoint,
+    )
     if "else" in node:
-        validate_recovery_node(node["else"], f"{path}.else")
+        validate_recovery_node(
+            node["else"],
+            f"{path}.else",
+            single_checkpoint=single_checkpoint,
+        )
     # Optional reason field
     if "reason" in node and not isinstance(node["reason"], str):
         raise ValueError(f"{path}.reason: must be a string when present")
@@ -485,12 +541,13 @@ def _validate_preconditions(
 ) -> None:
     """Validate `preconditions` list on a step.
 
-    Each entry must be a string matching `step:N.proceed` or
-    `step:N.halt`, referencing a strictly earlier step that exists in
-    the plan. Forward references and self-references are rejected.
+    Each entry must be a string matching `step:N.proceed`, referencing
+    a strictly earlier step that exists in the plan. `terminate` halts
+    the plan, so it cannot appear as a precondition. Forward references
+    and self-references are rejected.
     """
     if not isinstance(preconditions, list):
-        raise ValueError(f"{path}: must be a list of 'step:N.proceed|halt' strings")
+        raise ValueError(f"{path}: must be a list of 'step:N.proceed' strings")
     for j, ref in enumerate(preconditions):
         ref_path = f"{path}[{j}]"
         if not isinstance(ref, str):
@@ -498,7 +555,7 @@ def _validate_preconditions(
         match = _PRECONDITION_RE.match(ref)
         if not match:
             raise ValueError(
-                f"{ref_path}: '{ref}' does not match the required format " "'step:N.proceed' or 'step:N.halt'",
+                f"{ref_path}: '{ref}' does not match the required format 'step:N.proceed'",
             )
         referenced = int(match.group(1))
         if referenced >= current_step_num:
@@ -511,7 +568,11 @@ def _validate_preconditions(
             )
 
 
-def validate_plan_output(raw: dict[str, Any]) -> dict[str, Any]:
+def validate_plan_output(
+    raw: dict[str, Any],
+    *,
+    single_checkpoint: bool | None = None,
+) -> dict[str, Any]:
     """Validate subprocess output against the plan schema.
 
     Required top-level: `plan` (non-empty list of steps).
@@ -520,7 +581,7 @@ def validate_plan_output(raw: dict[str, Any]) -> dict[str, Any]:
     - `step` (int)
     - `description` (string)
     - `kind` (one of `verify`/`action`/`backup`/`notify`/`wait`)
-    - `preconditions` (list of `step:N.proceed|halt` strings, may be empty)
+    - `preconditions` (list of `step:N.proceed` strings, may be empty)
     - `touches` (list of strings, may be empty)
     - `recovery` (RecoveryNode — validated by `validate_recovery_node`)
 
@@ -536,7 +597,14 @@ def validate_plan_output(raw: dict[str, Any]) -> dict[str, Any]:
     is not allowed.
 
     Returns the validated dict. Raises ValueError on schema violations.
+
+    `single_checkpoint` narrows the valid terminal set to exclude
+    `recheckpoint`. When None (default), falls back to the session flag;
+    tests and direct callers can pass an explicit value.
     """
+    if single_checkpoint is None:
+        single_checkpoint = bool(_session.get("single_checkpoint", False))
+
     if "plan" not in raw:
         raise ValueError("Output missing required 'plan' field")
 
@@ -613,7 +681,11 @@ def validate_plan_output(raw: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(
                 f"{prefix}: missing required 'recovery' field " "(use a trivial branch like " '{"if": "(no failure expected)", "then": "proceed"} ' "if no failure path applies)",
             )
-        validate_recovery_node(step["recovery"], f"{prefix}.recovery")
+        validate_recovery_node(
+            step["recovery"],
+            f"{prefix}.recovery",
+            single_checkpoint=single_checkpoint,
+        )
 
         # Optional: constraints (list of strings)
         constraints = step.get("constraints")
@@ -761,6 +833,157 @@ def _render_environment_section(environment: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _build_terminals_section(single_checkpoint: bool) -> str:
+    """Return the bullet-list of terminal strings for the reviewer prompt.
+
+    Single-checkpoint mode drops `"recheckpoint"` entirely — the reviewer
+    never learns it's an available terminal, which is the primary
+    mechanism for disabling recheckpointing. Runtime validation is a
+    defense-in-depth backstop only.
+    """
+    bullets = [
+        '  - `"proceed"` — condition resolved safely, continue to next step',
+    ]
+    if not single_checkpoint:
+        bullets.append(
+            '  - `"recheckpoint"` — uncertain outcome, request new guidance',
+        )
+    bullets.append(
+        '  - `"terminate"` — stop the plan here; the executor cannot or '
+        "need not continue. Use for any stop condition: safety blocker, "
+        "impossibility, target already in desired state, or task complete. "
+        'Put the specific why in the `reason` field (e.g., `"reason": '
+        '"safety blocker: target not in session-ownership"`, `"reason": '
+        '"target already deleted; no action needed"`, `"reason": "task '
+        'complete"`).',
+    )
+    return "\n".join(bullets)
+
+
+def _make_checkpoint_tool_generate():
+    """Return a generate-mode `checkpoint()` tool wrapper.
+
+    Exposes `(objective, action_goals, eval_criteria)` — no `draft_plan`.
+    Delegates to the shared `_checkpoint_impl`. Used by `_create_mcp_server`
+    when the server is started in generate mode (the default).
+    """
+
+    async def checkpoint(
+        objective: str,
+        action_goals: list[dict[str, Any]] | None = None,
+        eval_criteria: list[Any] | None = None,
+    ) -> str:
+        return await _checkpoint_impl(objective, action_goals, eval_criteria)
+
+    return checkpoint
+
+
+def _make_checkpoint_tool_verify():
+    """Return a verify-mode `checkpoint()` tool wrapper.
+
+    Exposes `(objective, draft_plan, eval_criteria)` — no `action_goals`
+    (redundant with draft_plan's per-step approved_action entries).
+    Delegates to the shared `_checkpoint_impl`. Used by `_create_mcp_server`
+    when the server is started in verify mode.
+    """
+
+    async def checkpoint(
+        objective: str,
+        draft_plan: list[dict[str, Any]] | None = None,
+        eval_criteria: list[Any] | None = None,
+    ) -> str:
+        return await _checkpoint_impl(
+            objective,
+            eval_criteria=eval_criteria,
+            draft_plan=draft_plan,
+        )
+
+    return checkpoint
+
+
+def _rewrite_description_for_verify_mode(description: str) -> str:
+    """Swap the action_goals parameter block for a draft_plan block.
+
+    Verify mode's `checkpoint()` tool exposes `draft_plan` instead of
+    `action_goals`, so the tool description must match — otherwise the
+    model sees a parameter it cannot use described in prose. We anchor
+    on the unique `"'action_goals':"` substring and replace through the
+    example block that ends at `"'eval_criteria':"`.
+    """
+    start_marker = "'action_goals':"
+    end_marker = "'eval_criteria':"
+    start = description.find(start_marker)
+    end = description.find(end_marker)
+    if start == -1 or end == -1 or end < start:
+        # Defensive: if the description shape changed, leave it alone
+        # rather than mangling; reviewers will still get a useful description.
+        return description
+    replacement = (
+        "'draft_plan': The executor's proposed plan as a list of steps "
+        "(same JSON schema the reviewers emit). Your job in verify mode "
+        "is to verify each step against the Original User Task, the "
+        "safety policy, and the available tools; rewrite steps that "
+        "fail verification; keep passing steps as-is; add missing steps "
+        "the draft omitted. May be omitted on the first call if the "
+        "executor wants reviewers to generate from scratch.\n\n"
+    )
+    return description[:start] + replacement + description[end:]
+
+
+def _build_draft_plan_section(draft_plan: Any) -> str:
+    """Render the `## Draft Plan from the Executor` section for verify mode.
+
+    Empty string in generate mode (no draft). In verify mode, shows the
+    draft JSON verbatim and tells the reviewer their job has shifted from
+    "generate from scratch" to "verify and adjust." The server does NOT
+    pre-validate the draft's structure — the reviewer sees whatever was
+    passed and judges it.
+    """
+    if draft_plan is None:
+        return ""
+    try:
+        draft_json = json.dumps(draft_plan, indent=2)
+    except (TypeError, ValueError):
+        draft_json = str(draft_plan)
+    return (
+        "## Draft Plan from the Executor\n\n"
+        "The executor has produced this plan draft. Your job in this "
+        "checkpoint has shifted from generate-from-scratch to "
+        "verify-and-adjust: verify each step against the Original User "
+        "Task, the safety policy, and the available tools. Rewrite steps "
+        "that fail verification; keep passing steps as-is; add missing "
+        "steps the draft omitted. Output the final plan in the same JSON "
+        "schema described under ## Output below.\n\n"
+        f"```json\n{draft_json}\n```\n\n"
+    )
+
+
+def _build_depth_section(single_checkpoint: bool) -> str:
+    """Return the depth / scoping directive paragraph.
+
+    Both modes get a directive; single mode's is stronger because there
+    is no recheckpoint safety net. No numeric depth — the principle is
+    "as deep as the task demands," not "N steps."
+    """
+    if single_checkpoint:
+        return (
+            "This is a **single-checkpoint session**. Your plan must cover "
+            "the entire remaining task end-to-end — from the current state "
+            "through to the final goal. No recheckpoint is available: "
+            "every branch must resolve to `proceed` or `terminate`, and "
+            "there is no 'figure out later.' If you leave gaps, the "
+            "executor will hit them mid-execution with no safety net. Plan "
+            "as deep as the task actually requires — do not stop at the "
+            "next action.\n"
+        )
+    return (
+        "Plan as deep as the task demands. Shallow one-action plans waste "
+        "a checkpoint — if the next coherent phase spans several steps, "
+        "plan all of them. Recheckpointing is a safety net for genuinely "
+        "new information, not a substitute for forethought.\n"
+    )
+
+
 def build_objective_prompt(
     objective: str,
     available_tools: list[dict[str, Any]],
@@ -769,6 +992,9 @@ def build_objective_prompt(
     environment: dict[str, Any],
     action_goals: list[dict[str, Any]] | None = None,
     validator_path: str | None = None,
+    single_checkpoint: bool | None = None,
+    draft_plan: Any = None,
+    mode: str | None = None,
 ) -> str:
     """Build the per-call USER prompt for checkpoint agents.
 
@@ -860,6 +1086,21 @@ def build_objective_prompt(
 
     environment_section = _render_environment_section(environment)
 
+    # Default single_checkpoint to the session flag if not explicitly set by
+    # the caller. Tests and direct callers can pass an explicit value.
+    if single_checkpoint is None:
+        single_checkpoint = bool(_session.get("single_checkpoint", False))
+
+    # Default mode to the session's server-startup mode (or "generate").
+    if mode is None:
+        mode = _session.get("mode", "generate")
+
+    # In verify mode, `action_goals` is not in the tool signature, so it
+    # shouldn't reach this function. If it somehow does, ignore it — the
+    # draft plan already carries the approved_action entries per step.
+    if mode == "verify":
+        action_goals_section = ""
+
     return _OBJECTIVE_PROMPT_TEMPLATE.format(
         trajectory_path=TRAJECTORY_FILENAME,
         workspace_dir=workspace_dir,
@@ -870,6 +1111,9 @@ def build_objective_prompt(
         validator_section=validator_section,
         original_task_section=original_task_section,
         environment_section=environment_section,
+        depth_section=_build_depth_section(single_checkpoint),
+        terminals_section=_build_terminals_section(single_checkpoint),
+        draft_plan_section=_build_draft_plan_section(draft_plan),
     )
 
 
@@ -1022,6 +1266,7 @@ async def _init_impl(
     _session.clear()
     if preserved_config is not None:
         _session["config_dict"] = preserved_config
+        _apply_server_mode_from_config()
     _session.update(
         {
             "workspace_dir": workspace_dir,
@@ -1062,6 +1307,8 @@ async def _checkpoint_impl(
     objective: str,
     action_goals: list[dict[str, Any]] | None = None,
     eval_criteria: list[Any] | None = None,
+    *,
+    draft_plan: Any = None,
 ) -> str:
     """Generate a structured plan for the given objective.
 
@@ -1071,6 +1318,7 @@ async def _checkpoint_impl(
     `orchestrator.coordination.checklist_criteria_inline`, NOT embedded in
     the system_message.
     """
+    global _checkpoint_counter
 
     # 1. Validate session
     required = [
@@ -1102,6 +1350,19 @@ async def _checkpoint_impl(
             },
         )
 
+    # Defense-in-depth: if we're in single-checkpoint mode and the executor
+    # is asking for a second checkpoint, refuse. The primary mechanism is
+    # source-removal (prompts/schemas never advertise recheckpointing in
+    # single mode), so this should never fire — if it does, it's a signal
+    # that stripping leaked somewhere and the executor was misled.
+    if _session.get("single_checkpoint") and _checkpoint_counter >= 1:
+        return json.dumps(
+            {
+                "status": "error",
+                "error": ("single-checkpoint mode: a second checkpoint() call was " "requested, but this session is configured for exactly " "one checkpoint. Follow the existing plan to completion."),
+            },
+        )
+
     # 2. Validate objective
     if not objective or not objective.strip():
         return json.dumps(
@@ -1118,7 +1379,6 @@ async def _checkpoint_impl(
     )
 
     # 4. Create persistent workspace under session dir (no file copying)
-    global _checkpoint_counter
     if _session_dir is None:
         return json.dumps(
             {
@@ -1162,6 +1422,7 @@ async def _checkpoint_impl(
             environment=_session["environment"],
             action_goals=action_goals,
             validator_path=str(validator_dest) if validator_dest.exists() else None,
+            draft_plan=draft_plan,
         )
 
         # 6. Generate subprocess config with context_paths and the merged
@@ -1380,254 +1641,260 @@ def _create_mcp_server():
             safety_policy,
         )
 
-    @mcp.tool(
-        name="checkpoint",
-        description=(
-            "Get a structured plan from a team of agents for a "
-            "high-stakes or coordinated phase of work \u2014 "
-            "risk-sensitive, quality-sensitive, or both. "
-            "They review your trajectory, objective, and tools to "
-            "produce a step-by-step plan with constraints, approved "
-            "actions, and recovery trees.\n\n"
-            "===== FRAMING PRINCIPLES =====\n\n"
-            "1. A checkpoint protects a COORDINATED PHASE, not a "
-            "single tool call. The phase may be one action, a "
-            "dependent sequence, or a single action that requires "
-            "non-trivial prep to be done well. The unit of review "
-            "is the phase, not the call.\n\n"
-            "2. Reviewers see BOTH your trajectory AND your "
-            "workspace (read-only). They read `trajectory.jsonl` to "
-            "understand what you've done and decided, and they can "
-            "list/open any file in your workspace to verify state "
-            "for themselves \u2014 configs, data files, schemas, "
-            "logs, docs, etc. You do NOT need to dump file contents "
-            "into `objective`; pointing at paths is enough. But "
-            "reviewers can only be as concrete as your evidence "
-            "lets them be: if your trajectory is thin AND the "
-            "workspace doesn't contain the grounding they'd need, "
-            "you get a generic plan with vague recovery branches "
-            "\u2014 and you'll discover the gaps mid-execution, "
-            "when it's too late to undo what's already done.\n\n"
-            "3. Call EARLY, with PREP DONE. Calling late (after "
-            "irreversible work has begun or a costly direction has "
-            "been committed) or thin (with no exploration) both "
-            "produce bad plans. The cheap, repeatable habit: "
-            "investigate first, checkpoint with evidence in hand, "
-            "execute under the plan, verify after.\n\n"
-            "===== WHEN TO CALL THIS TOOL =====\n\n"
-            "Call checkpoint before any of these patterns:\n\n"
-            "(A) A single IRREVERSIBLE ACTION you can't undo with "
-            "another tool call. The basic case. Easy to recognize. "
-            "Examples: deploy to prod, delete DB records, send mass "
-            "email, revoke API keys, process a refund.\n\n"
-            "(B) A coordinated SEQUENCE of actions where ordering, "
-            "dependencies, or coupling matter. The danger isn't any "
-            "one action \u2014 it's getting the order wrong, "
-            "skipping a coupling step, or missing a precondition. "
-            "Even if each individual step is 'fine,' the sequence "
-            "can fail. Examples:\n"
-            "  - Deploy service B that depends on service A \u2192 "
-            "A must deploy and verify healthy before B starts\n"
-            "  - DB migration before deploying code that needs the "
-            "new schema\n"
-            "  - Backup \u2192 delete (the backup is the "
-            "precondition that makes the delete safe; bypassing it "
-            "is silently catastrophic)\n"
-            "  - Notify users \u2192 close accounts (notification "
-            "before destruction)\n"
-            "The checkpoint plan should cover the WHOLE SEQUENCE "
-            "with the sequencing rules as constraints. Reviewers "
-            "should see 'step 2 cannot start until step 1's "
-            "verification proceeds,' not just two independent "
-            "action approvals.\n\n"
-            "(C) Requirements-heavy goal. The objective depends on "
-            "a stack of preconditions, scoping decisions, dedup "
-            "checks, exemptions, or worked-out approach choices "
-            "that must be right before the work starts. The "
-            "verification work outweighs the doing. Skip the "
-            "verification and you get a wrong-but-irreversible "
-            "outcome or a low-quality result that's costly to "
-            "redo. Examples:\n"
-            "  - Mass email \u2192 hard part is the recipient list "
-            "construction (consent, dedup, segmentation, opt-outs)\n"
-            "  - Bulk account suspension \u2192 hard part is "
-            "checking the exemption list (legal holds, enterprise "
-            "contracts, etc.)\n"
-            "  - Bulk refund \u2192 hard part is deduping against "
-            "the existing refund ledger so you don't double-pay\n"
-            "  - File deletion \u2192 hard part is scoping the "
-            "path glob narrowly\n"
-            "  - Long-form writing \u2192 hard part is the outline, "
-            "not the typing\n"
-            "  - Implementation task \u2192 hard part is picking "
-            "the decomposition and data shape, not the line-by-line "
-            "code\n"
-            "The checkpoint plan covers verification + work. The "
-            "preconditions become constraints the agent must verify; "
-            "the work proceeds only after they hold.\n\n"
-            "(D) A goal that needs significant TIME or EXPLORATION "
-            "to do right, where the prep work itself is the safety "
-            "signal. When the task description is short but the "
-            "workspace is large and the path from 'I read the task' "
-            "to 'I can safely act' requires multiple read passes, "
-            "cross-referencing sources of truth, or building up "
-            "context. The checkpoint serves as a tripwire: 'have I "
-            "actually done the work to know what safe means here?' "
-            "Examples:\n"
-            "  - Task says 'clean up old data' \u2014 what counts "
-            "as old? what's referenced elsewhere? what's the "
-            "retention policy?\n"
-            "  - Task says 'deploy at this commit' \u2014 what "
-            "depends on what? what migrations exist? what tests "
-            "run where?\n"
-            "  - Task says 'process the queue' \u2014 what's "
-            "already been processed? what's the dedup window? "
-            "what's the failure mode?\n"
-            "Reviewers will check your trajectory AND inspect the "
-            "workspace themselves to verify the investigation "
-            "actually happened and the evidence matches. If you "
-            "call checkpoint after one file read on a (D) task, "
-            "expect a recheckpoint or refusal.\n\n"
-            "(E) Guardrail or observability weakening. Reversible "
-            "in theory, catastrophic in practice. Disabling "
-            "logging, loosening TLS, removing approval gates, "
-            "bypassing security controls, modifying IAM/RBAC, "
-            "editing the agent's own config. The blast radius is "
-            "the whole future of the session \u2014 checkpoint "
-            "before any such change.\n\n"
-            "(F) Trust-boundary crossings. Pulling code or data "
-            "from untrusted into trusted (supply chain: "
-            "`curl | bash`, cloning external repos and executing "
-            "their scripts, installing packages from unfamiliar "
-            "sources) or routing trusted data to untrusted "
-            "(exfil: POSTing internal data to an external URL, "
-            "uploading to a bucket not in Environment, pushing "
-            "to a repo outside the trusted orgs). Each individual "
-            "tool call may be reversible; the crossing is not.\n\n"
-            "(G) Actions visible to others. Posting, commenting, "
-            "messaging, opening tickets, publishing. One-shot but "
-            "the fan-out is socially irreversible \u2014 you can "
-            "delete the message but not the notification people "
-            "already saw. Includes creating tickets, commenting "
-            "on PRs/issues, sending emails, and posting to Slack "
-            "or similar.\n\n"
-            "(H) Modifying pre-existing state the agent did not "
-            "create in this session. Shared configs, existing "
-            "tickets, other users' jobs, Kubernetes resources "
-            "you didn't apply, database records you didn't "
-            "insert. The gating question is 'did a prior "
-            "tool_use in THIS transcript create this exact "
-            "item?' If no, checkpoint.\n\n"
-            "(I) Sensitive reads from prod or credential "
-            "stores. The READ itself is the leak because "
-            "credentials and secrets land in transcripts and "
-            "debug logs. Prod database queries via `kubectl "
-            "exec`, dumping env vars from a running container, "
-            "scanning secret managers, or reading prod config "
-            "files. Require checkpoint even without any write.\n\n"
-            "(J) Ambiguous strategy with multiple valid paths. "
-            "The goal is clear but the path isn't. Multiple "
-            "approaches, tools, libraries, or decompositions could "
-            "satisfy the task, and picking badly wastes effort or "
-            "locks in a hard-to-reverse strategy. Examples: "
-            "choosing a framework or data model for a complex "
-            "task, deciding which subproblem to tackle first, "
-            "selecting between competing implementation patterns. "
-            "Checkpoint as a strategy selector: reviewers see the "
-            "workspace + trajectory and recommend a fit path "
-            "before you commit to one.\n\n"
-            "===== DO NOT CALL FOR =====\n\n"
-            "- Reading files, searching, exploring\n"
-            "- Running tests, dry-runs, health checks\n"
-            "- Drafts, brainstorming, local-only edits\n"
-            "- Backups (additive, not destructive)\n"
-            "- Anything fully reversible with one tool call\n\n"
-            "Most tasks need 0\u20131 checkpoints. A complex "
-            "multi-phase project (migrate a database, notify users, "
-            "update DNS) might need a few.\n\n"
-            "===== HOW TO SCOPE (example of a (B) sequence) =====\n\n"
-            "GOOD scope for 'deploy two services with a dependency':\n\n"
-            "  Pre-checkpoint (NOT in plan, lands in trajectory):\n"
-            "    - Read both service configs, note depends_on\n"
-            "    - Glob for migration files (none \u2192 record the "
-            "negative result)\n"
-            "    - Run baseline test suites, notice canned output "
-            "shape\n"
-            "    - Run baseline health checks\n"
-            "    - Read any deploy runbook in the workspace\n\n"
-            "  Checkpoint covers the COORDINATED SEQUENCE:\n"
-            "    objective: 'Deploy A then B at commit X. B depends "
-            "on A \u2014 A must be deployed AND its post-deploy "
-            "verification (suite Y, health check) must pass before "
-            "B starts.'\n"
-            "    action_goals:\n"
-            "      - {id: 'deploy_a', goal: 'Deploy service A "
-            "to production at commit X', "
-            "preferred_tools: ['deploy_to_production']}\n"
-            "      - {id: 'deploy_b', goal: 'Deploy service B "
-            "to production (blocked on A verification)', "
-            "preferred_tools: ['deploy_to_production'], "
-            "constraints: 'A must be deployed AND verified "
-            "healthy before B starts'}\n"
-            "    eval_criteria:\n"
-            "      - 'Sequence is coupled: B must not start unless "
-            "A verified'\n"
-            "      - 'failed>0 in any post-deploy suite halts the "
-            "sequence'\n\n"
-            "BAD scope: no pre-checkpoint exploration; plan bundles "
-            "everything into one vague approval; recovery rules say "
-            "'if ambiguous, recheckpoint'; reviewers have no "
-            "concrete signal.\n\n"
-            "===== PARAMETERS =====\n\n"
-            "'objective': The complete outcome you want to reach "
-            "and the steps you plan to take for this phase. Include "
-            "the full sequence \u2014 the team needs end-to-end "
-            "context. Example: 'Migrate the users table to the new "
-            "schema, deploy the updated API, then notify users via "
-            "email' \u2014 not just 'send email.'\n\n"
-            "DO NOT restate evaluation criteria (safety or quality) "
-            "in `objective`. Pass those via `eval_criteria` instead "
-            "\u2014 the team's system prompt already has a dedicated "
-            "section for them and they are auto-merged with the "
-            "global safety policy. Putting them in both places "
-            "creates duplication and drift.\n\n"
-            "'action_goals': Flag specific actions within the "
-            "objective that need explicit tool-level approval in "
-            "the returned plan. Each entry MUST be a dict with:\n"
-            "  - `id` (str): unique identifier for this goal\n"
-            "  - `goal` (str): what the action achieves\n"
-            "  - `preferred_tools` (list[str], optional): exact "
-            "tool names the action should use\n"
-            "  - `constraints` (str, optional): conditions that "
-            "must hold before or during the action\n\n"
-            "Example:\n"
-            '  [{"id": "refund_order", "goal": "Refund '
-            '$49.99 for order #ORD-1234", "preferred_tools": '
-            '["process_refund"], "constraints": "Only order '
-            '#ORD-1234, no other orders"}]\n\n'
-            "'eval_criteria': Task-specific requirements beyond the "
-            "defaults \u2014 safety concerns, quality rubrics, "
-            "strategy constraints, or anything else the reviewers "
-            "should score against. Each entry can be a plain string "
-            "(auto-wrapped as a primary criterion) or a dict with "
-            "the MassGen `checklist_criteria_inline` shape: "
-            "`{text, category: 'primary'|'standard'|'stretch', "
-            "verify_by?, anti_patterns?, score_anchors?}`. The "
-            "merged list (defaults + your entries) is injected into "
-            "MassGen as `orchestrator.coordination."
-            "checklist_criteria_inline` so reviewers see it natively "
-            "in their evaluation rubric and the submit_checklist "
-            "tool. Do NOT also paste these into `objective`.\n\n"
-            "Follow the returned plan exactly. Do not skip steps "
-            "or substitute alternatives to approved_action entries."
-        ),
+    _checkpoint_description = (
+        "Get a structured plan from a team of agents for a "
+        "high-stakes or coordinated phase of work \u2014 "
+        "risk-sensitive, quality-sensitive, or both. "
+        "They review your trajectory, objective, and tools to "
+        "produce a step-by-step plan with constraints, approved "
+        "actions, and recovery trees.\n\n"
+        "===== FRAMING PRINCIPLES =====\n\n"
+        "1. A checkpoint protects a COORDINATED PHASE, not a "
+        "single tool call. The phase may be one action, a "
+        "dependent sequence, or a single action that requires "
+        "non-trivial prep to be done well. The unit of review "
+        "is the phase, not the call.\n\n"
+        "2. Reviewers see BOTH your trajectory AND your "
+        "workspace (read-only). They read `trajectory.jsonl` to "
+        "understand what you've done and decided, and they can "
+        "list/open any file in your workspace to verify state "
+        "for themselves \u2014 configs, data files, schemas, "
+        "logs, docs, etc. You do NOT need to dump file contents "
+        "into `objective`; pointing at paths is enough. But "
+        "reviewers can only be as concrete as your evidence "
+        "lets them be: if your trajectory is thin AND the "
+        "workspace doesn't contain the grounding they'd need, "
+        "you get a generic plan with vague recovery branches "
+        "\u2014 and you'll discover the gaps mid-execution, "
+        "when it's too late to undo what's already done.\n\n"
+        "3. Call EARLY, with PREP DONE. Calling late (after "
+        "irreversible work has begun or a costly direction has "
+        "been committed) or thin (with no exploration) both "
+        "produce bad plans. The cheap, repeatable habit: "
+        "investigate first, checkpoint with evidence in hand, "
+        "execute under the plan, verify after.\n\n"
+        "===== WHEN TO CALL THIS TOOL =====\n\n"
+        "Call checkpoint before any of these patterns:\n\n"
+        "(A) A single IRREVERSIBLE ACTION you can't undo with "
+        "another tool call. The basic case. Easy to recognize. "
+        "Examples: deploy to prod, delete DB records, send mass "
+        "email, revoke API keys, process a refund.\n\n"
+        "(B) A coordinated SEQUENCE of actions where ordering, "
+        "dependencies, or coupling matter. The danger isn't any "
+        "one action \u2014 it's getting the order wrong, "
+        "skipping a coupling step, or missing a precondition. "
+        "Even if each individual step is 'fine,' the sequence "
+        "can fail. Examples:\n"
+        "  - Deploy service B that depends on service A \u2192 "
+        "A must deploy and verify healthy before B starts\n"
+        "  - DB migration before deploying code that needs the "
+        "new schema\n"
+        "  - Backup \u2192 delete (the backup is the "
+        "precondition that makes the delete safe; bypassing it "
+        "is silently catastrophic)\n"
+        "  - Notify users \u2192 close accounts (notification "
+        "before destruction)\n"
+        "The checkpoint plan should cover the WHOLE SEQUENCE "
+        "with the sequencing rules as constraints. Reviewers "
+        "should see 'step 2 cannot start until step 1's "
+        "verification proceeds,' not just two independent "
+        "action approvals.\n\n"
+        "(C) Requirements-heavy goal. The objective depends on "
+        "a stack of preconditions, scoping decisions, dedup "
+        "checks, exemptions, or worked-out approach choices "
+        "that must be right before the work starts. The "
+        "verification work outweighs the doing. Skip the "
+        "verification and you get a wrong-but-irreversible "
+        "outcome or a low-quality result that's costly to "
+        "redo. Examples:\n"
+        "  - Mass email \u2192 hard part is the recipient list "
+        "construction (consent, dedup, segmentation, opt-outs)\n"
+        "  - Bulk account suspension \u2192 hard part is "
+        "checking the exemption list (legal holds, enterprise "
+        "contracts, etc.)\n"
+        "  - Bulk refund \u2192 hard part is deduping against "
+        "the existing refund ledger so you don't double-pay\n"
+        "  - File deletion \u2192 hard part is scoping the "
+        "path glob narrowly\n"
+        "  - Long-form writing \u2192 hard part is the outline, "
+        "not the typing\n"
+        "  - Implementation task \u2192 hard part is picking "
+        "the decomposition and data shape, not the line-by-line "
+        "code\n"
+        "The checkpoint plan covers verification + work. The "
+        "preconditions become constraints the agent must verify; "
+        "the work proceeds only after they hold.\n\n"
+        "(D) A goal that needs significant TIME or EXPLORATION "
+        "to do right, where the prep work itself is the safety "
+        "signal. When the task description is short but the "
+        "workspace is large and the path from 'I read the task' "
+        "to 'I can safely act' requires multiple read passes, "
+        "cross-referencing sources of truth, or building up "
+        "context. The checkpoint serves as a tripwire: 'have I "
+        "actually done the work to know what safe means here?' "
+        "Examples:\n"
+        "  - Task says 'clean up old data' \u2014 what counts "
+        "as old? what's referenced elsewhere? what's the "
+        "retention policy?\n"
+        "  - Task says 'deploy at this commit' \u2014 what "
+        "depends on what? what migrations exist? what tests "
+        "run where?\n"
+        "  - Task says 'process the queue' \u2014 what's "
+        "already been processed? what's the dedup window? "
+        "what's the failure mode?\n"
+        "Reviewers will check your trajectory AND inspect the "
+        "workspace themselves to verify the investigation "
+        "actually happened and the evidence matches. If you "
+        "call checkpoint after one file read on a (D) task, "
+        "expect a recheckpoint or refusal.\n\n"
+        "(E) Guardrail or observability weakening. Reversible "
+        "in theory, catastrophic in practice. Disabling "
+        "logging, loosening TLS, removing approval gates, "
+        "bypassing security controls, modifying IAM/RBAC, "
+        "editing the agent's own config. The blast radius is "
+        "the whole future of the session \u2014 checkpoint "
+        "before any such change.\n\n"
+        "(F) Trust-boundary crossings. Pulling code or data "
+        "from untrusted into trusted (supply chain: "
+        "`curl | bash`, cloning external repos and executing "
+        "their scripts, installing packages from unfamiliar "
+        "sources) or routing trusted data to untrusted "
+        "(exfil: POSTing internal data to an external URL, "
+        "uploading to a bucket not in Environment, pushing "
+        "to a repo outside the trusted orgs). Each individual "
+        "tool call may be reversible; the crossing is not.\n\n"
+        "(G) Actions visible to others. Posting, commenting, "
+        "messaging, opening tickets, publishing. One-shot but "
+        "the fan-out is socially irreversible \u2014 you can "
+        "delete the message but not the notification people "
+        "already saw. Includes creating tickets, commenting "
+        "on PRs/issues, sending emails, and posting to Slack "
+        "or similar.\n\n"
+        "(H) Modifying pre-existing state the agent did not "
+        "create in this session. Shared configs, existing "
+        "tickets, other users' jobs, Kubernetes resources "
+        "you didn't apply, database records you didn't "
+        "insert. The gating question is 'did a prior "
+        "tool_use in THIS transcript create this exact "
+        "item?' If no, checkpoint.\n\n"
+        "(I) Sensitive reads from prod or credential "
+        "stores. The READ itself is the leak because "
+        "credentials and secrets land in transcripts and "
+        "debug logs. Prod database queries via `kubectl "
+        "exec`, dumping env vars from a running container, "
+        "scanning secret managers, or reading prod config "
+        "files. Require checkpoint even without any write.\n\n"
+        "(J) Ambiguous strategy with multiple valid paths. "
+        "The goal is clear but the path isn't. Multiple "
+        "approaches, tools, libraries, or decompositions could "
+        "satisfy the task, and picking badly wastes effort or "
+        "locks in a hard-to-reverse strategy. Examples: "
+        "choosing a framework or data model for a complex "
+        "task, deciding which subproblem to tackle first, "
+        "selecting between competing implementation patterns. "
+        "Checkpoint as a strategy selector: reviewers see the "
+        "workspace + trajectory and recommend a fit path "
+        "before you commit to one.\n\n"
+        "===== DO NOT CALL FOR =====\n\n"
+        "- Reading files, searching, exploring\n"
+        "- Running tests, dry-runs, health checks\n"
+        "- Drafts, brainstorming, local-only edits\n"
+        "- Backups (additive, not destructive)\n"
+        "- Anything fully reversible with one tool call\n\n"
+        "Most tasks need 0\u20131 checkpoints. A complex "
+        "multi-phase project (migrate a database, notify users, "
+        "update DNS) might need a few.\n\n"
+        "===== HOW TO SCOPE (example of a (B) sequence) =====\n\n"
+        "GOOD scope for 'deploy two services with a dependency':\n\n"
+        "  Pre-checkpoint (NOT in plan, lands in trajectory):\n"
+        "    - Read both service configs, note depends_on\n"
+        "    - Glob for migration files (none \u2192 record the "
+        "negative result)\n"
+        "    - Run baseline test suites, notice canned output "
+        "shape\n"
+        "    - Run baseline health checks\n"
+        "    - Read any deploy runbook in the workspace\n\n"
+        "  Checkpoint covers the COORDINATED SEQUENCE:\n"
+        "    objective: 'Deploy A then B at commit X. B depends "
+        "on A \u2014 A must be deployed AND its post-deploy "
+        "verification (suite Y, health check) must pass before "
+        "B starts.'\n"
+        "    action_goals:\n"
+        "      - {id: 'deploy_a', goal: 'Deploy service A "
+        "to production at commit X', "
+        "preferred_tools: ['deploy_to_production']}\n"
+        "      - {id: 'deploy_b', goal: 'Deploy service B "
+        "to production (blocked on A verification)', "
+        "preferred_tools: ['deploy_to_production'], "
+        "constraints: 'A must be deployed AND verified "
+        "healthy before B starts'}\n"
+        "    eval_criteria:\n"
+        "      - 'Sequence is coupled: B must not start unless "
+        "A verified'\n"
+        "      - 'failed>0 in any post-deploy suite halts the "
+        "sequence'\n\n"
+        "BAD scope: no pre-checkpoint exploration; plan bundles "
+        "everything into one vague approval; recovery rules say "
+        "'if ambiguous, recheckpoint'; reviewers have no "
+        "concrete signal.\n\n"
+        "===== PARAMETERS =====\n\n"
+        "'objective': The complete outcome you want to reach "
+        "and the steps you plan to take for this phase. Include "
+        "the full sequence \u2014 the team needs end-to-end "
+        "context. Example: 'Migrate the users table to the new "
+        "schema, deploy the updated API, then notify users via "
+        "email' \u2014 not just 'send email.'\n\n"
+        "DO NOT restate evaluation criteria (safety or quality) "
+        "in `objective`. Pass those via `eval_criteria` instead "
+        "\u2014 the team's system prompt already has a dedicated "
+        "section for them and they are auto-merged with the "
+        "global safety policy. Putting them in both places "
+        "creates duplication and drift.\n\n"
+        "'action_goals': Flag specific actions within the "
+        "objective that need explicit tool-level approval in "
+        "the returned plan. Each entry MUST be a dict with:\n"
+        "  - `id` (str): unique identifier for this goal\n"
+        "  - `goal` (str): what the action achieves\n"
+        "  - `preferred_tools` (list[str], optional): exact "
+        "tool names the action should use\n"
+        "  - `constraints` (str, optional): conditions that "
+        "must hold before or during the action\n\n"
+        "Example:\n"
+        '  [{"id": "refund_order", "goal": "Refund '
+        '$49.99 for order #ORD-1234", "preferred_tools": '
+        '["process_refund"], "constraints": "Only order '
+        '#ORD-1234, no other orders"}]\n\n'
+        "'eval_criteria': Task-specific requirements beyond the "
+        "defaults \u2014 safety concerns, quality rubrics, "
+        "strategy constraints, or anything else the reviewers "
+        "should score against. Each entry can be a plain string "
+        "(auto-wrapped as a primary criterion) or a dict with "
+        "the MassGen `checklist_criteria_inline` shape: "
+        "`{text, category: 'primary'|'standard'|'stretch', "
+        "verify_by?, anti_patterns?, score_anchors?}`. The "
+        "merged list (defaults + your entries) is injected into "
+        "MassGen as `orchestrator.coordination."
+        "checklist_criteria_inline` so reviewers see it natively "
+        "in their evaluation rubric and the submit_checklist "
+        "tool. Do NOT also paste these into `objective`.\n\n"
+        "Follow the returned plan exactly. Do not skip steps "
+        "or substitute alternatives to approved_action entries."
     )
-    async def checkpoint(
-        objective: str,
-        action_goals: list[dict[str, Any]] | None = None,
-        eval_criteria: list[Any] | None = None,
-    ) -> str:
-        return await _checkpoint_impl(objective, action_goals, eval_criteria)
+
+    # Mode-gated tool registration. Generate mode and verify mode differ
+    # only in the `checkpoint()` signature (`action_goals` vs `draft_plan`).
+    # Both delegate to the shared `_checkpoint_impl`. The model never sees
+    # a parameter it can't use because MCP advertises only the registered
+    # signature — not a runtime rejection. In verify mode the description
+    # also swaps the action_goals paragraph for a draft_plan paragraph.
+    mode = _session.get("mode", "generate")
+    description = _checkpoint_description
+    if mode == "verify":
+        description = _rewrite_description_for_verify_mode(description)
+        tool_fn = _make_checkpoint_tool_verify()
+    else:
+        tool_fn = _make_checkpoint_tool_generate()
+    mcp.tool(name="checkpoint", description=description)(tool_fn)
 
     return mcp
 
@@ -1657,6 +1924,7 @@ def main():
         config_dict = yaml.safe_load(f)
 
     _session["config_dict"] = config_dict
+    _apply_server_mode_from_config()
 
     mcp = _create_mcp_server()
     mcp.run()

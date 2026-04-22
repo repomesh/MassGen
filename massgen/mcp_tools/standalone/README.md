@@ -19,7 +19,7 @@ capabilities to the main agent.
 
 Sits between a main agent (the "executor") and its high-stakes tool calls. When the executor is about to enter a coordinated or consequential phase — deploy to production, delete records, send a mass email, issue a refund, or pick the strategy/decomposition for a complex task — it calls `checkpoint()` with an objective. The checkpoint server spawns a MassGen sub-run: a small team of reviewer agents (configurable, typically 3) reads the executor's trajectory, explores the workspace read-only, and collectively produces a structured plan the executor must follow.
 
-The returned plan is a list of steps with: `description`, optional `constraints`, optional `approved_action` (tool name + exact args), and an optional `recovery` tree (`if`/`then`/`else` with bare terminals: `proceed` / `recheckpoint` / `refuse`). The executor is expected to follow the plan step-by-step.
+The returned plan is a list of steps with: `description`, optional `constraints`, optional `approved_action` (tool name + exact args), and an optional `recovery` tree (`if`/`then`/`else` with bare terminals: `proceed` / `recheckpoint` / `terminate`). The executor is expected to follow the plan step-by-step. `terminate` stops the plan; the `reason` field on the recovery node carries the specific why (safety blocker, impossibility, target already in the desired state, or task complete).
 
 ## Flow
 

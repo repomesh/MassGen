@@ -17,6 +17,14 @@ from pathlib import Path
 MARKER_START = "<!-- MASSGEN-CHECKPOINT:START -->"
 MARKER_END = "<!-- MASSGEN-CHECKPOINT:END -->"
 
+# Inline markers delimiting the recheckpoint-triggers section in the
+# canonical instructions file. `load_template(single_checkpoint=True)`
+# drops everything between (and including) these markers so the executor
+# never sees the recheckpoint affordance in single-shot mode. Keeping it
+# as one source file avoids drift between a single/multi pair.
+RECHECKPOINT_MARKER_START = "<!-- RECHECKPOINT-SECTION:START -->"
+RECHECKPOINT_MARKER_END = "<!-- RECHECKPOINT-SECTION:END -->"
+
 _TEMPLATE_PATH = Path(__file__).parent / "checkpoint_instructions.md"
 
 # Regex that matches the full managed block (markers + content between them).
@@ -26,10 +34,27 @@ _BLOCK_RE = re.compile(
     re.DOTALL,
 )
 
+# Regex matching the recheckpoint section between its markers. Uses
+# DOTALL plus trailing-whitespace eating so a stripped section doesn't
+# leave a double-blank-line gap behind.
+_RECHECKPOINT_SECTION_RE = re.compile(
+    re.escape(RECHECKPOINT_MARKER_START) + r".*?" + re.escape(RECHECKPOINT_MARKER_END) + r"\n*",
+    re.DOTALL,
+)
 
-def load_template() -> str:
-    """Return the checkpoint instructions template content."""
-    return _TEMPLATE_PATH.read_text(encoding="utf-8")
+
+def load_template(single_checkpoint: bool = False) -> str:
+    """Return the checkpoint instructions template content.
+
+    When `single_checkpoint=True`, strip the recheckpoint-triggers section
+    (delimited by `<!-- RECHECKPOINT-SECTION:START/END -->`) so the
+    executor's instructions never mention recheckpointing. The canonical
+    file still contains the section; only the rendered output differs.
+    """
+    content = _TEMPLATE_PATH.read_text(encoding="utf-8")
+    if single_checkpoint:
+        content = _RECHECKPOINT_SECTION_RE.sub("", content)
+    return content
 
 
 def _build_block(template: str) -> str:
