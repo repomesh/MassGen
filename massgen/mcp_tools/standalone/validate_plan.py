@@ -26,10 +26,12 @@ import re
 import sys
 from typing import Any
 
-VALID_TERMINALS: set[str] = {"proceed", "recheckpoint", "refuse", "halt"}
+VALID_TERMINALS: set[str] = {"proceed", "recheckpoint", "terminate"}
 VALID_STEP_KINDS: set[str] = {"verify", "action", "backup", "notify", "wait"}
 
-_PRECONDITION_RE = re.compile(r"^step:(\d+)\.(proceed|halt)$")
+# Preconditions reference a prior step's `proceed` terminal; `terminate`
+# halts the plan so cannot be a precondition for anything downstream.
+_PRECONDITION_RE = re.compile(r"^step:(\d+)\.proceed$")
 
 
 def _validate_action_spec(spec: Any, path: str) -> list[str]:
@@ -53,7 +55,7 @@ def validate_recovery_node(node: Any, path: str = "recovery") -> list[str]:
     """Validate a recovery node recursively. Returns list of errors.
 
     Three node types:
-    - `str`: terminal. One of `proceed`/`recheckpoint`/`refuse`/`halt`.
+    - `str`: terminal. One of `proceed`/`recheckpoint`/`terminate`.
     - `dict` with `if`: branch node with `if`/`then`/optional `else`/optional `reason`.
     - `dict` with `compensate`: compensate node with action spec + `then`/optional `reason`.
     """
@@ -111,7 +113,7 @@ def _validate_preconditions(
     """Validate `preconditions` list on a step."""
     errors: list[str] = []
     if not isinstance(preconditions, list):
-        errors.append(f"{path}: must be a list of 'step:N.proceed|halt' strings")
+        errors.append(f"{path}: must be a list of 'step:N.proceed' strings")
         return errors
     for j, ref in enumerate(preconditions):
         ref_path = f"{path}[{j}]"
@@ -121,7 +123,7 @@ def _validate_preconditions(
         match = _PRECONDITION_RE.match(ref)
         if not match:
             errors.append(
-                f"{ref_path}: '{ref}' does not match the required format " "'step:N.proceed' or 'step:N.halt'",
+                f"{ref_path}: '{ref}' does not match the required format 'step:N.proceed'",
             )
             continue
         referenced = int(match.group(1))
