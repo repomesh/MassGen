@@ -9,14 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.80 (April 22, 2026)** - Adaptive Circuit Breaker & Checkpoint Modes
+Circuit breaker Phase 5 adds adaptive thresholds that tune to each backend's behavior. New standalone checkpoint modes: single checkpoint (no recheckpointing) and draft plan verify mode.
+
 **v0.1.79 (April 20, 2026)** - Fast Mode Speed Control & Broader Checkpoint Framing
 New fast mode options for fine-grained speed vs. quality control. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Checkpoint instructions clarity improvements.
 
 **v0.1.78 (April 17, 2026)** - Circuit Breaker Distributed Store (Phase 4)
 Pluggable distributed state store for the LLM circuit breaker — share state across workers/processes. Adds `InMemoryStore` (zero-deps) and optional `RedisStore`, with atomic `record_failure`/`record_success` operations for linearizability under concurrent access.
 
-**v0.1.77 (April 15, 2026)** - Answer Now Button
-New "Answer Now" button lets agents submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is already sufficient.
+---
+
+## [0.1.80] - 2026-04-22
+
+### Added
+- **Circuit Breaker Adaptive Thresholds (Phase 5)** ([#1065](https://github.com/massgen/MassGen/pull/1065)): Self-tuning thresholds that respond to each backend's actual failure patterns
+- **Single Checkpoint Mode** ([#1070](https://github.com/massgen/MassGen/pull/1070)): New standalone checkpoint mode — no recheckpointing within a single operation
+- **Draft Plan Verify Mode** ([#1070](https://github.com/massgen/MassGen/pull/1070)): New standalone checkpoint mode — verify a draft plan before executing
+
+### Changed
+- **Effective Threshold Helpers**: Extracted helper functions for cleaner threshold computation
+- **Benign Case Clarity** ([#1070](https://github.com/massgen/MassGen/pull/1070)): Clearer benign-case handling in checkpoint flow
+
+### Fixed
+- **Force-Open Metrics** ([#1065](https://github.com/massgen/MassGen/pull/1065)): Gated `force_open` metrics and log on actual state transition
+- **Preserve `_open_until`** ([#1065](https://github.com/massgen/MassGen/pull/1065)): Preserved `_open_until` on `force_open` with intent comments for clearer semantics
+
+### Documentation, Configurations and Resources
+- **Updated Standalone MCP README**: Updated `massgen/mcp_tools/standalone/README.md` with new checkpoint modes
+- **Updated Checkpoint Instructions**: Updated `massgen/mcp_tools/standalone/checkpoint_instructions.md`
+
+### Technical Details
+- **Major Focus**: Adaptive circuit breaker thresholds and new standalone checkpoint modes
+- **PRs Merged**: [#1065](https://github.com/massgen/MassGen/pull/1065), [#1070](https://github.com/massgen/MassGen/pull/1070)
+- **Contributors**: @amabito, @ncrispino, @HenryQi and the MassGen team
 
 ---
 

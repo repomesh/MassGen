@@ -69,7 +69,7 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🆕 Latest Features</h3></summary>
 
-- [v0.1.79 Features](#-latest-features-v0179)
+- [v0.1.80 Features](#-latest-features-v0180)
 </details>
 
 <details open>
@@ -122,15 +122,15 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🗺️ Roadmap</h3></summary>
 
-- [Recent Achievements (v0.1.79)](#recent-achievements-v0179)
-- [Previous Achievements (v0.0.3 - v0.1.78)](#previous-achievements-v003---v0178)
+- [Recent Achievements (v0.1.80)](#recent-achievements-v0180)
+- [Previous Achievements (v0.0.3 - v0.1.79)](#previous-achievements-v003---v0179)
 - [Key Future Enhancements](#key-future-enhancements)
   - Bug Fixes & Backend Improvements
   - Advanced Agent Collaboration
   - Expanded Model, Tool & Agent Integrations
   - Improved Performance & Scalability
   - Enhanced Developer Experience
-- [v0.1.80 Roadmap](#v0180-roadmap)
+- [v0.1.81 Roadmap](#v0181-roadmap)
 </details>
 
 <details open>
@@ -155,19 +155,21 @@ This project started with the "threads of thought" and "iterative refinement" id
 
 ---
 
-## 🆕 Latest Features (v0.1.79)
+## 🆕 Latest Features (v0.1.80)
 
-**🎉 Released: April 20, 2026**
+**🎉 Released: April 22, 2026**
 
-**What's New in v0.1.79:**
-- **⚡ Better Fast Mode Options** - New options to control coordination speed — fine-grained speed vs. quality tradeoff.
-- **🛡️ Broader Checkpoint Framing** - Checkpoint mode now covers both high-stakes actions AND coordinated phases, not just safety-only.
-- **📋 Checkpoint Instructions Clarity** - More clarity in trust settings for checkpoint agents.
+**What's New in v0.1.80:**
+- **🎯 Circuit Breaker Adaptive Thresholds (Phase 5)** - Self-tuning thresholds that respond to each backend's actual failure patterns.
+- **🛡️ Single Checkpoint Mode** - New standalone checkpoint mode — no recheckpointing within a single operation.
+- **📋 Draft Plan Verify Mode** - New standalone checkpoint mode — verify a draft plan before executing.
 
-**Try v0.1.79 Features:**
+**Try v0.1.80 Features:**
 ```bash
-pip install massgen==0.1.79
-uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
+pip install massgen==0.1.80
+# Try checkpoint MCP in Claude Code
+claude mcp add massgen-checkpoint-mcp -- \
+  uvx --from massgen massgen-checkpoint-mcp --config path/to/config.yaml
 ```
 
 → [See full release history and examples](massgen/configs/README.md#release-history--examples)
@@ -1239,16 +1241,18 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 ⚠️ **Early Stage Notice:** As MassGen is in active development, please expect upcoming breaking architecture changes as we continue to refine and improve the system.
 
-### Recent Achievements (v0.1.79)
+### Recent Achievements (v0.1.80)
 
-**🎉 Released: April 20, 2026**
+**🎉 Released: April 22, 2026**
 
-#### Fast Mode Speed Control & Broader Checkpoint Framing
-- **Better Fast Mode Options**: New options to control coordination speed — fine-grained speed vs. quality tradeoff
-- **Broader Checkpoint Framing**: Checkpoint mode framing broadened from safety-only to high-stakes and coordinated phases
-- **Checkpoint Instructions Clarity**: More clarity in trust settings for checkpoint agents
+#### Adaptive Circuit Breaker & Checkpoint Modes
+- **Circuit Breaker Adaptive Thresholds (Phase 5)** ([#1065](https://github.com/massgen/MassGen/pull/1065)): Self-tuning thresholds that respond to each backend's actual failure patterns
+- **Single Checkpoint Mode** ([#1070](https://github.com/massgen/MassGen/pull/1070)): No recheckpointing within a single operation
+- **Draft Plan Verify Mode** ([#1070](https://github.com/massgen/MassGen/pull/1070)): Verify a draft plan before executing
 
-### Previous Achievements (v0.0.3 - v0.1.78)
+### Previous Achievements (v0.0.3 - v0.1.79)
+
+✅ **Fast Mode Speed Control & Broader Checkpoint Framing (v0.1.79)**: New fast mode options for fine-grained speed vs. quality control. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases.
 
 ✅ **Circuit Breaker Distributed Store (v0.1.78)**: Pluggable distributed state store for the LLM circuit breaker — share state across workers/processes. In-memory (zero-deps) and Redis-backed implementations with atomic state transitions.
 
@@ -1551,9 +1555,9 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 We welcome community contributions to achieve these goals.
 
-### v0.1.80 Roadmap
+### v0.1.81 Roadmap
 
-Version 0.1.80 focuses on cloud execution (deferred again from v0.1.79):
+Version 0.1.81 focuses on cloud execution (deferred again from v0.1.80):
 
 #### Planned Features
 - **Cloud Modal MVP** ([#982](https://github.com/massgen/MassGen/issues/982)): Run MassGen as a cloud job on Modal — progress streams to terminal, results saved locally under `.massgen/cloud_jobs/`

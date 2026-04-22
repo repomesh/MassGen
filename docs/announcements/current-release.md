@@ -1,4 +1,4 @@
-# MassGen v0.1.79 Release Announcement
+# MassGen v0.1.80 Release Announcement
 
 <!--
 This is the current release announcement. Copy this + feature-highlights.md to LinkedIn/X.
@@ -7,17 +7,17 @@ After posting, update the social links below.
 
 ## Release Summary
 
-We're excited to release MassGen v0.1.79 — Fast Mode Speed Control & Broader Checkpoint Framing! 🚀 New fast mode options give fine-grained control over speed vs. quality tradeoffs. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Checkpoint instructions clarity improvements.
+We're excited to release MassGen v0.1.80 — Adaptive Circuit Breaker & Checkpoint Modes! 🚀 Circuit breaker Phase 5 adds adaptive thresholds that tune themselves to each backend's behavior. New standalone checkpoint modes: single checkpoint (no recheckpointing) and draft plan verify mode.
 
 ## Install
 
 ```bash
-pip install massgen==0.1.79
+pip install massgen==0.1.80
 ```
 
 ## Links
 
-- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.79
+- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.80
 - **X post:** [TO BE ADDED AFTER POSTING]
 - **LinkedIn post:** [TO BE ADDED AFTER POSTING]
 
@@ -29,29 +29,30 @@ Copy everything below this line, then append content from `feature-highlights.md
 
 ---
 
-We're excited to release MassGen v0.1.79 — Fast Mode Speed Control & Broader Checkpoint Framing! 🚀 New fast mode options give fine-grained control over speed vs. quality tradeoffs. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases.
+We're excited to release MassGen v0.1.80 — Adaptive Circuit Breaker & Checkpoint Modes! 🚀 Circuit breaker Phase 5 adds adaptive thresholds that tune themselves to each backend's behavior. New standalone checkpoint modes for tighter safety loops.
 
 **Key Improvements:**
 
-⚡ **Better Fast Mode Options** — Fine-grained speed control:
-- New options to control how fast the coordination runs
-- Dial in the right speed vs. quality tradeoff for your use case
+🎯 **Circuit Breaker Adaptive Thresholds (Phase 5)** — Self-tuning rate-limit protection:
+- Adaptive thresholds respond to each backend's actual failure patterns
+- Effective threshold computation helpers for cleaner logic
+- `force_open` metrics gated on actual state transitions
+- Preserves `_open_until` with intent comments for clearer semantics
 
-🛡️ **Broader Checkpoint Framing** — Beyond safety-only:
-- Checkpoint mode now covers both high-stakes actions AND coordinated phases
-- Use checkpoint for deploys, deletions, financial ops — AND for coordinated planning steps
-
-**Plus:**
-- 📋 **Checkpoint instructions clarity** — More clarity in trust settings for checkpoint agents
+🛡️ **New Standalone Checkpoint Modes** — Tighter safety loops:
+- **Single checkpoint mode** — No recheckpointing within a single operation
+- **Draft plan verify mode** — Verify a draft plan before executing
 
 **Getting Started:**
 
 ```bash
-pip install massgen==0.1.79
-uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
+pip install massgen==0.1.80
+# Try checkpoint MCP in Claude Code
+claude mcp add massgen-checkpoint-mcp -- \
+  uvx --from massgen massgen-checkpoint-mcp --config path/to/config.yaml
 ```
 
-Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.79
+Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.80
 
 Feature highlights:
 
