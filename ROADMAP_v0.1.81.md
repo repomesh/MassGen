@@ -1,10 +1,10 @@
-# MassGen v0.1.80 Roadmap
+# MassGen v0.1.81 Roadmap
 
-**Target Release:** April 22, 2026
+**Target Release:** April 24, 2026
 
 ## Overview
 
-Version 0.1.80 picks up the Cloud Modal MVP originally planned for v0.1.79 (deferred again because v0.1.79 shipped Fast Mode Speed Control & Broader Checkpoint Framing instead).
+Version 0.1.81 picks up the Cloud Modal MVP originally planned for v0.1.80 (deferred again because v0.1.80 shipped Adaptive Circuit Breaker & Checkpoint Modes instead).
 
 ---
 
@@ -27,10 +27,10 @@ Version 0.1.80 picks up the Cloud Modal MVP originally planned for v0.1.79 (defe
 
 ## Related Tracks
 
-- **v0.1.79**: Fast Mode Speed Control & Broader Checkpoint Framing — new speed options, broader checkpoint framing, multimodal default
-- **v0.1.81**: OpenAI Audio API ([#960](https://github.com/massgen/MassGen/issues/960))
+- **v0.1.80**: Adaptive Circuit Breaker & Checkpoint Modes — Phase 5 adaptive thresholds, single checkpoint mode, draft plan verify mode ([#1065](https://github.com/massgen/MassGen/pull/1065), [#1070](https://github.com/massgen/MassGen/pull/1070))
+- **v0.1.82**: OpenAI Audio API ([#960](https://github.com/massgen/MassGen/issues/960))
 
 ## What's Next
 
-- **v0.1.81**: OpenAI Audio API — integrate OpenAI audio API with existing `read_media` tool for audio understanding
-- **v0.1.82**: Image/Video Edit Capabilities — investigate and support image/video editing across providers
+- **v0.1.82**: OpenAI Audio API — integrate OpenAI audio API with existing `read_media` tool for audio understanding
+- **v0.1.83**: Image/Video Edit Capabilities — investigate and support image/video editing across providers
