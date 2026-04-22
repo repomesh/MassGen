@@ -227,19 +227,28 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.79 - Latest
+### v0.1.80 - Latest
+**New Features:** Adaptive Circuit Breaker & Checkpoint Modes
+
+**Key Features:**
+- **Circuit Breaker Adaptive Thresholds (Phase 5)**: Self-tuning thresholds that respond to each backend's actual failure patterns
+- **Single Checkpoint Mode**: New standalone checkpoint mode — no recheckpointing within a single operation
+- **Draft Plan Verify Mode**: New standalone checkpoint mode — verify a draft plan before executing
+
+**Try It:**
+```bash
+pip install massgen==0.1.80
+# Try checkpoint MCP in Claude Code
+claude mcp add massgen-checkpoint-mcp -- \
+  uvx --from massgen massgen-checkpoint-mcp --config path/to/config.yaml
+```
+
+### v0.1.79
 **New Features:** Fast Mode Speed Control & Broader Checkpoint Framing
 
 **Key Features:**
 - **Better Fast Mode Options**: New options to control coordination speed — fine-grained speed vs. quality tradeoff
 - **Broader Checkpoint Framing**: Checkpoint mode framing broadened from safety-only to high-stakes and coordinated phases
-- **Checkpoint Instructions Clarity**: More clarity in trust settings for checkpoint agents
-
-**Try It:**
-```bash
-pip install massgen==0.1.79
-uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
-```
 
 ### v0.1.78
 **New Features:** Circuit Breaker Distributed Store (Phase 4)
