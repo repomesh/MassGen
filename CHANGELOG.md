@@ -9,14 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.79 (April 20, 2026)** - Fast Mode Speed Control & Broader Checkpoint Framing
+New fast mode options for fine-grained speed vs. quality control. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Checkpoint instructions clarity improvements.
+
 **v0.1.78 (April 17, 2026)** - Circuit Breaker Distributed Store (Phase 4)
 Pluggable distributed state store for the LLM circuit breaker — share state across workers/processes. Adds `InMemoryStore` (zero-deps) and optional `RedisStore`, with atomic `record_failure`/`record_success` operations for linearizability under concurrent access.
 
 **v0.1.77 (April 15, 2026)** - Answer Now Button
 New "Answer Now" button lets agents submit answers more quickly, both within a round, and bypassing additional refinement rounds when quality is already sufficient.
 
-**v0.1.76 (April 13, 2026)** - Exa Search & Circuit Breaker Observability
-New Exa AI-powered search tool for MCP. Circuit breaker Phase 3 with observability — probe ownership, lock release, per-attempt latency tracking. Copyable checkpoint agent instructions and Docker dependency fixes.
+---
+
+## [0.1.79] - 2026-04-20
+
+### Added
+- **Better Fast Mode Options**: New options to control coordination speed — fine-grained speed vs. quality tradeoff
+
+### Changed
+- **Broader Checkpoint Framing**: Checkpoint mode framing broadened from safety-only to high-stakes and coordinated phases — use for deploys, deletions, financial ops, AND coordinated planning steps
+- **Checkpoint Instructions Clarity**: More clarity in trust settings for checkpoint agents
+
+### Documentation, Configurations and Resources
+- **Updated Checkpoint Module**: Updated `docs/modules/checkpoint.md` with broadened framing
+- **Updated Fast Iteration Config**: Updated `massgen/configs/features/fast_iteration.yaml` with new speed options
+- **Updated Standalone MCP README**: Updated `massgen/mcp_tools/standalone/README.md`
+- **Updated Checkpoint Instructions**: Updated `massgen/mcp_tools/standalone/checkpoint_instructions.md` with trust setting clarity
+
+### Technical Details
+- **Major Focus**: Fast mode speed control and broader checkpoint framing
+- **Contributors**: @ncrispino, @HenryQi and the MassGen team
 
 ---
 
