@@ -435,8 +435,7 @@ class LLMCircuitBreaker:
                             "half_open",
                             "open",
                         )
-                    if self._failover is not None:
-                        self._failover.on_cb_state_change(self.backend_name, "half_open", "open")
+                    self._notify_failover("half_open", "open")
                 else:
                     self._log(
                         "Circuit breaker opened",
@@ -450,8 +449,7 @@ class LLMCircuitBreaker:
                             prev_label,  # now from _prev_state, never stale
                             "open",
                         )
-                    if self._failover is not None:
-                        self._failover.on_cb_state_change(self.backend_name, prev_label, "open")
+                    self._notify_failover(prev_label, "open")
             else:
                 self._log(
                     "Failure recorded",
@@ -516,8 +514,8 @@ class LLMCircuitBreaker:
                 self._metrics.record_state_transition,
                 *_transition_args,
             )
-        if _transition_args is not None and self._failover is not None:
-            self._failover.on_cb_state_change(self.backend_name, _transition_args[1], "open")
+        if _transition_args is not None:
+            self._notify_failover(_transition_args[1], "open")
 
     def record_success(self) -> None:
         """Record a successful API call. Resets failure counter and closes circuit."""
@@ -545,8 +543,7 @@ class LLMCircuitBreaker:
                         prev_state_str,
                         "closed",
                     )
-                if self._failover is not None:
-                    self._failover.on_cb_state_change(self.backend_name, prev_state_str, "closed")
+                self._notify_failover(prev_state_str, "closed")
             return
 
         _transition_args: tuple[str, str, str] | None = None
@@ -570,8 +567,8 @@ class LLMCircuitBreaker:
                 self._metrics.record_state_transition,
                 *_transition_args,
             )
-        if _transition_args is not None and self._failover is not None:
-            self._failover.on_cb_state_change(self.backend_name, _transition_args[1], "closed")
+        if _transition_args is not None:
+            self._notify_failover(_transition_args[1], "closed")
 
     def force_open(self, reason: str = "", open_for_seconds: float = 0) -> None:
         """Force the circuit to OPEN state (e.g. on 429 STOP).
@@ -635,8 +632,8 @@ class LLMCircuitBreaker:
                     prev_state_value,
                     "open",
                 )
-            if self._failover is not None and prev_state_value != CircuitState.OPEN.value:
-                self._failover.on_cb_state_change(self.backend_name, prev_state_value, "open")
+            if prev_state_value != CircuitState.OPEN.value:
+                self._notify_failover(prev_state_value, "open")
             return
 
         _transition_args: tuple[str, str, str] | None = None
@@ -666,8 +663,8 @@ class LLMCircuitBreaker:
                 self._metrics.record_state_transition,
                 *_transition_args,
             )
-        if _transition_args is not None and self._failover is not None:
-            self._failover.on_cb_state_change(self.backend_name, _transition_args[1], "open")
+        if _transition_args is not None:
+            self._notify_failover(_transition_args[1], "open")
 
     def reset(self) -> None:
         """Reset circuit breaker to initial CLOSED state.
@@ -698,8 +695,8 @@ class LLMCircuitBreaker:
                     prev_state_value,
                     "closed",
                 )
-            if self._failover is not None and prev_state_value != CircuitState.CLOSED.value:
-                self._failover.on_cb_state_change(self.backend_name, prev_state_value, "closed")
+            if prev_state_value != CircuitState.CLOSED.value:
+                self._notify_failover(prev_state_value, "closed")
             return
 
         _transition_args: tuple[str, str, str] | None = None
@@ -720,8 +717,8 @@ class LLMCircuitBreaker:
                 self._metrics.record_state_transition,
                 *_transition_args,
             )
-        if _transition_args is not None and self._failover is not None:
-            self._failover.on_cb_state_change(self.backend_name, _transition_args[1], "closed")
+        if _transition_args is not None:
+            self._notify_failover(_transition_args[1], "closed")
 
     # -- 429-aware retry wrapper --------------------------------------------
 
@@ -936,22 +933,7 @@ class LLMCircuitBreaker:
                                 "half_open",
                                 "open",
                             )
-                        if self._failover is not None:
-                            try:
-                                self._failover.on_cb_state_change(
-                                    self.backend_name,
-                                    "half_open",
-                                    "open",
-                                )
-                            except BaseException as exc:
-                                logger.warning(
-                                    "Failover notification failed in BaseException handler " "(store path)",
-                                    extra={
-                                        "error_type": type(exc).__name__,
-                                        "error_message": str(exc),
-                                    },
-                                    exc_info=True,
-                                )
+                        self._notify_failover("half_open", "open")
                 else:
                     with self._lock:
                         if self._state == CircuitState.HALF_OPEN and self._half_open_probe_active:
@@ -967,22 +949,8 @@ class LLMCircuitBreaker:
                             self._metrics.record_state_transition,
                             *_transition_args,
                         )
-                    if _transition_args is not None and self._failover is not None:
-                        try:
-                            self._failover.on_cb_state_change(
-                                self.backend_name,
-                                _transition_args[1],
-                                "open",
-                            )
-                        except BaseException as exc:
-                            logger.warning(
-                                "Failover notification failed in BaseException handler " "(in-memory path)",
-                                extra={
-                                    "error_type": type(exc).__name__,
-                                    "error_message": str(exc),
-                                },
-                                exc_info=True,
-                            )
+                    if _transition_args is not None:
+                        self._notify_failover(_transition_args[1], "open")
             raise
 
     # -- Internal helpers ---------------------------------------------------
@@ -997,6 +965,34 @@ class LLMCircuitBreaker:
             method(*args)
         except Exception:  # noqa: BLE001
             pass
+
+    def _notify_failover(self, prev_state: str, new_state: str) -> None:
+        """Notify the attached failover router of a CB state transition.
+
+        Catches Exception and asyncio.CancelledError (a BaseException since
+        Python 3.8) so an observer bug or in-flight cancellation cannot break
+        CB state mutation. KeyboardInterrupt and SystemExit are re-raised so
+        user/process control signals are never silently swallowed. No-op when
+        no router is attached.
+        """
+        if self._failover is None:
+            return
+        try:
+            self._failover.on_cb_state_change(self.backend_name, prev_state, new_state)
+        except (KeyboardInterrupt, SystemExit):
+            # Never swallow user/process control signals.
+            raise
+        except BaseException as exc:  # noqa: BLE001 -- never let observer break CB
+            logger.warning(
+                "Failover notification failed",
+                extra={
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                    "prev_state": prev_state,
+                    "new_state": new_state,
+                },
+                exc_info=True,
+            )
 
     def _log(self, message: str, **details: Any) -> None:
         """Log via structured backend activity logger."""

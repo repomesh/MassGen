@@ -92,7 +92,6 @@ class FailoverRouter:
     def __init__(
         self,
         config: FailoverConfig,
-        cb_registry: dict[str, Any] | None = None,
         *,
         clock: Callable[[], float] | None = None,
         health_probe: Callable[[str], bool] | None = None,
@@ -101,19 +100,17 @@ class FailoverRouter:
 
         Args:
             config: Failover configuration including enabled flag and region map.
-            cb_registry: Optional mapping of backend names to LLMCircuitBreaker
-                instances, used only for snapshot() enrichment. Does not affect
-                routing decisions.
             clock: Monotonic clock for measuring failover duration. Defaults to
                 time.monotonic. Injectable for tests.
             health_probe: Callable that accepts a region string and returns True
                 if the region is healthy. Defaults to a function that always
                 returns True (assume healthy). Injectable for tests to simulate
                 failures. Any exception raised by the probe is caught and treated
-                as a probe failure -- no failover is committed.
+                as a probe failure -- no failover is committed. Each probe call
+                runs under a `health_check_timeout_seconds` deadline; on timeout
+                the probe is treated as a failure and the next region is tried.
         """
         self._config = config
-        self._cb_registry = cb_registry
         self._clock: Callable[[], float] = clock or time.monotonic
         self._health_probe: Callable[[str], bool] = health_probe or (lambda _region: True)
         self._lock = threading.Lock()
@@ -228,38 +225,79 @@ class FailoverRouter:
         first thread to set the flag wins the probe; all subsequent callers
         see either the pending flag or the committed failover and return early.
         """
-        with self._lock:
-            already_failed_over = self._failover_at.get(backend) is not None
-            pending = self._failover_pending.get(backend, False)
-            if already_failed_over or pending:
-                # Idempotent: already on secondary, or another thread is probing.
-                return
-            if len(region_list) < 2:
-                # No secondary configured for this backend.
-                logger.warning(
-                    "Failover triggered for %r but no secondary region configured " "(regions list has only one entry).",
-                    backend,
-                )
-                return
-            # Claim the probe slot before releasing the lock.
-            self._failover_pending[backend] = True
-            self._closed_during_probe.pop(backend, None)
-
-        # Probe runs outside the lock so it cannot block concurrent reads.
+        # The whole probe (lock-claim + probe loop + commit) runs under one
+        # try/finally so a BaseException (KeyboardInterrupt, SystemExit,
+        # asyncio.CancelledError) arriving anywhere during probe slot claim
+        # cannot leave _failover_pending stuck True. The pending_claimed
+        # flag is set BEFORE _failover_pending so the finally cleanup is
+        # always reachable when the actual flag is set.
+        pending_claimed = False
         primary = region_list[0]
         committed = False
+        timeout = self._config.health_check_timeout_seconds
         try:
+            with self._lock:
+                already_failed_over = self._failover_at.get(backend) is not None
+                pending = self._failover_pending.get(backend, False)
+                if already_failed_over or pending:
+                    # Idempotent: already on secondary, or another thread is probing.
+                    return
+                if len(region_list) < 2:
+                    # No secondary configured for this backend.
+                    logger.warning(
+                        "Failover triggered for %r but no secondary region configured (regions list has only one entry).",
+                        backend,
+                    )
+                    return
+                # Set the cleanup-reachability marker before mutating the
+                # actual pending flag. If BaseException fires between these
+                # two assignments, the finally still runs (pending_claimed
+                # is True) and clears the (False) pending flag harmlessly.
+                pending_claimed = True
+                self._failover_pending[backend] = True
+                self._closed_during_probe.pop(backend, None)
+
             for candidate in region_list[1:]:
                 probe_result = False
-                try:
-                    probe_result = bool(self._health_probe(candidate))
-                except Exception:  # noqa: BLE001 -- probe failures must never propagate
+                # Enforce health_check_timeout_seconds via a daemon thread +
+                # join(timeout). A hanging probe must not block the calling
+                # thread (and through it the LLMCircuitBreaker) indefinitely;
+                # without this, _failover_pending would also stick True and
+                # silently disable all subsequent OPEN events.
+                #
+                # Python cannot cancel a running thread, so a hanging probe
+                # leaks until process exit. The thread is daemon so it does
+                # not delay shutdown. Probe authors should use timeouts in
+                # their HTTP clients to avoid the leak in practice.
+                probe_outcome: list[bool | BaseException] = [False]
+
+                def _probe_runner(region: str = candidate, sink: list[bool | BaseException] = probe_outcome) -> None:
+                    try:
+                        sink[0] = bool(self._health_probe(region))
+                    except BaseException as exc:  # noqa: BLE001 -- never let probe break router
+                        sink[0] = exc
+
+                probe_thread = threading.Thread(target=_probe_runner, name=f"failover-probe-{candidate}", daemon=True)
+                probe_thread.start()
+                probe_thread.join(timeout=timeout)
+                if probe_thread.is_alive():
                     logger.warning(
-                        "Health probe for %r raised an exception; skipping region %r.",
+                        "Health probe for %r region %r timed out after %.1fs; treating as failure (thread abandoned).",
                         backend,
+                        candidate,
+                        timeout,
+                    )
+                    probe_result = False
+                elif isinstance(probe_outcome[0], BaseException):
+                    logger.warning(
+                        "Health probe for %r raised %s; skipping region %r.",
+                        backend,
+                        type(probe_outcome[0]).__name__,
                         candidate,
                     )
                     continue
+                else:
+                    probe_result = bool(probe_outcome[0])
                 if probe_result:
                     with self._lock:
                         if not self._failover_pending.get(backend, False):
@@ -305,12 +343,13 @@ class FailoverRouter:
                     primary,
                 )
         finally:
-            # Only clear pending if the commit block did not already clear it.
-            # On a committed probe, pending+latch were cleared atomically with
-            # the commit (see line ~285). Clearing again here would race with
-            # a subsequent probe that has already claimed _failover_pending,
-            # silently dropping its commit when the new probe checks the flag.
-            if not committed:
+            # Clean up only when:
+            # - we actually claimed the probe slot (pending_claimed=True), AND
+            # - the probe did not commit (commit clears pending atomically).
+            # This prevents (a) wiping a subsequent concurrent probe's claim
+            # after a successful commit, and (b) leaving _failover_pending stuck
+            # True if a BaseException fires between slot claim and probe start.
+            if pending_claimed and not committed:
                 with self._lock:
                     self._failover_pending[backend] = False
                     self._closed_during_probe.pop(backend, None)
@@ -420,11 +459,11 @@ class FailoverRouter:
         """
         if backend not in self._config.regions:
             return
-        region_list = self._config.regions.get(backend)
+        # Guard above + FailoverConfig validation guarantee a non-empty list.
+        region_list = self._config.regions[backend]
         with self._lock:
             self._active_region.pop(backend, None)
             self._failover_at[backend] = None
             self._failover_pending[backend] = False
             self._closed_during_probe.pop(backend, None)
-        if region_list:
-            logger.info("Administrative reset for %r: restored primary %r.", backend, region_list[0])
+        logger.info("Administrative reset for %r: restored primary %r.", backend, region_list[0])

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 import unittest.mock
 
 import pytest
@@ -22,6 +23,7 @@ from massgen.backend.llm_circuit_breaker import (
 
 @pytest.fixture
 def simple_config() -> FailoverConfig:
+    """Two-region failover config with 30s min duration."""
     return FailoverConfig(
         enabled=True,
         regions={"gpt-5.4": ["us-east", "eu-west"]},
@@ -31,11 +33,13 @@ def simple_config() -> FailoverConfig:
 
 @pytest.fixture
 def router(simple_config: FailoverConfig) -> FailoverRouter:
+    """Default-probe router built from simple_config."""
     return FailoverRouter(simple_config)
 
 
 @pytest.fixture
 def cb_config() -> LLMCircuitBreakerConfig:
+    """Enabled CB config with 3 failures threshold."""
     return LLMCircuitBreakerConfig(enabled=True, max_failures=3, reset_time_seconds=60)
 
 
@@ -45,6 +49,8 @@ def cb_config() -> LLMCircuitBreakerConfig:
 
 
 class TestFailoverConfigValidation:
+    """FailoverConfig field validation."""
+
     def test_defaults_valid(self) -> None:
         """Default constructor must succeed -- enabled=False, empty regions."""
         cfg = FailoverConfig()
@@ -101,11 +107,13 @@ class TestFailoverConfigValidation:
 
 
 # ---------------------------------------------------------------------------
-# Category B: Failover trigger (6 tests)
+# Category B: Failover trigger (7 tests)
 # ---------------------------------------------------------------------------
 
 
 class TestFailoverTrigger:
+    """on_cb_state_change("open") behavior with various probe outcomes."""
+
     def test_open_with_healthy_probe_commits_failover(self, simple_config: FailoverConfig) -> None:
         """on_cb_state_change("open") with probe returning True must failover."""
         router = FailoverRouter(simple_config, health_probe=lambda _r: True)
@@ -128,6 +136,37 @@ class TestFailoverTrigger:
         router = FailoverRouter(simple_config, health_probe=raising_probe)
         router.on_cb_state_change("gpt-5.4", "closed", "open")
         assert not router.is_failed_over("gpt-5.4")
+
+    def test_hanging_probe_times_out_per_health_check_timeout_seconds(self) -> None:
+        """A probe that hangs longer than health_check_timeout_seconds must be cancelled.
+
+        Without timeout enforcement, a hanging probe blocks the calling thread
+        and leaves _failover_pending stuck True, silently disabling all
+        subsequent OPEN events for that backend.
+        """
+        cfg = FailoverConfig(
+            enabled=True,
+            regions={"gpt-5.4": ["us-east", "eu-west", "ap-southeast"]},
+            health_check_timeout_seconds=0.05,
+            min_failover_duration_seconds=30.0,
+        )
+
+        def hanging_probe(_region: str) -> bool:
+            # Block far longer than the configured timeout.
+            time.sleep(5.0)
+            return True
+
+        router = FailoverRouter(cfg, health_probe=hanging_probe)
+
+        start = time.monotonic()
+        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        elapsed = time.monotonic() - start
+
+        # Two secondaries x 0.05s timeout => bounded above by ~0.5s with thread overhead.
+        assert elapsed < 1.0, f"on_cb_state_change should complete near timeout, took {elapsed:.2f}s"
+        assert not router.is_failed_over("gpt-5.4")
+        # The pending flag must be cleared so a subsequent OPEN can retry.
+        assert router._failover_pending.get("gpt-5.4", False) is False
 
     def test_get_active_region_returns_secondary_after_failover(self, simple_config: FailoverConfig) -> None:
         """get_active_region must return the secondary region after failover."""
@@ -156,6 +195,8 @@ class TestFailoverTrigger:
 
 
 class TestRecovery:
+    """on_cb_state_change("closed") + lazy recovery via observation methods."""
+
     def test_closed_after_min_duration_restores_primary(self, simple_config: FailoverConfig) -> None:
         """on_cb_state_change("closed") after min_failover_duration elapsed must restore primary."""
         now = [0.0]
@@ -211,7 +252,17 @@ class TestRecovery:
         real_lock = threading.Lock()
 
         class PostCommitHookLock:
+            """Lock proxy that injects a CLOSED notification after each commit-block lock release.
+
+            NOTE: this test deliberately reaches into private attrs
+            (_failover_at, _failover_pending) and replaces _lock to simulate a
+            CLOSED notification arriving in the post-commit/pre-finally window.
+            If FailoverRouter switches to RLock or renames these private
+            attributes, this test must be updated.
+            """
+
             def __enter__(self) -> None:
+                """Acquire the inner real lock."""
                 real_lock.acquire()
 
             def __exit__(
@@ -220,6 +271,7 @@ class TestRecovery:
                 exc_value: object,
                 traceback: object,
             ) -> bool:
+                """Release the lock, then optionally fire a one-shot CLOSED notification."""
                 real_lock.release()
                 # After the atomic commit fix, pending is cleared at the same
                 # lock acquisition that writes _failover_at, so the "in window"
@@ -399,6 +451,8 @@ class TestRecovery:
 
 
 class TestMultiBackendIsolation:
+    """Per-backend state must not leak across backends."""
+
     def test_failover_for_one_backend_does_not_affect_another(self) -> None:
         """Failover for backend A must not change the active region of backend B."""
         cfg = FailoverConfig(
@@ -438,6 +492,8 @@ class TestMultiBackendIsolation:
 
 
 class TestLLMCBIntegration:
+    """Wiring between LLMCircuitBreaker state transitions and FailoverRouter notifications."""
+
     def test_llm_cb_failover_none_is_back_compat(self, cb_config: LLMCircuitBreakerConfig) -> None:
         """LLMCircuitBreaker(failover=None) must behave identically to pre-Phase 6."""
         cb = LLMCircuitBreaker(cb_config, failover=None)
@@ -513,6 +569,8 @@ class TestLLMCBIntegration:
 
 
 class TestConcurrency:
+    """Multi-thread safety of FailoverRouter operations."""
+
     def test_concurrent_open_events_commit_exactly_one_failover(
         self,
         simple_config: FailoverConfig,
@@ -648,6 +706,8 @@ class TestConcurrency:
 
 
 class TestAdversarial:
+    """Edge cases and attacker-mindset scenarios."""
+
     def test_on_cb_state_change_unknown_old_state_does_not_crash(
         self,
         simple_config: FailoverConfig,
@@ -749,11 +809,13 @@ class TestAdversarial:
 
 
 # ---------------------------------------------------------------------------
-# Category H: Phase 6 integration (1 test)
+# Category H: Phase 6 integration (4 tests)
 # ---------------------------------------------------------------------------
 
 
 class TestPhase6Integration:
+    """Phase 6 BaseException handler integration with LLMCircuitBreaker."""
+
     @pytest.mark.asyncio
     async def test_base_exception_probe_reopen_notifies_failover(
         self,
@@ -781,3 +843,44 @@ class TestPhase6Integration:
             "half_open",
             "open",
         )
+
+    def test_notify_failover_propagates_keyboard_interrupt(
+        self,
+        cb_config: LLMCircuitBreakerConfig,
+    ) -> None:
+        """A router raising KeyboardInterrupt must propagate; CB must not silently swallow it."""
+        failover = unittest.mock.Mock()
+        failover.on_cb_state_change.side_effect = KeyboardInterrupt()
+        cb = LLMCircuitBreaker(cb_config, backend_name="gpt-5.4", failover=failover)
+
+        with pytest.raises(KeyboardInterrupt):
+            for _ in range(cb_config.max_failures):
+                cb.record_failure()
+
+    def test_notify_failover_propagates_system_exit(
+        self,
+        cb_config: LLMCircuitBreakerConfig,
+    ) -> None:
+        """A router raising SystemExit must propagate; CB must not silently swallow it."""
+        failover = unittest.mock.Mock()
+        failover.on_cb_state_change.side_effect = SystemExit(1)
+        cb = LLMCircuitBreaker(cb_config, backend_name="gpt-5.4", failover=failover)
+
+        with pytest.raises(SystemExit):
+            for _ in range(cb_config.max_failures):
+                cb.record_failure()
+
+    def test_notify_failover_swallows_generic_exception(
+        self,
+        cb_config: LLMCircuitBreakerConfig,
+    ) -> None:
+        """A router raising RuntimeError must be swallowed; CB state mutation completes."""
+        failover = unittest.mock.Mock()
+        failover.on_cb_state_change.side_effect = RuntimeError("router bug")
+        cb = LLMCircuitBreaker(cb_config, backend_name="gpt-5.4", failover=failover)
+
+        # Drive to OPEN. record_failure must not raise even though router raises.
+        for _ in range(cb_config.max_failures):
+            cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+        assert failover.on_cb_state_change.called
