@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from massgen.observability.prometheus import CircuitBreakerMetrics
 
     from .cb_adaptive import AdaptiveController
+    from .cb_failover import FailoverRouter
 
 # ---------------------------------------------------------------------------
 # 429 classification
@@ -197,6 +198,7 @@ class LLMCircuitBreaker:
         metrics: CircuitBreakerMetrics | None = None,
         store: Any = None,
         adaptive: AdaptiveController | None = None,
+        failover: FailoverRouter | None = None,
     ) -> None:
         """Initialize the LLM circuit breaker.
 
@@ -239,6 +241,7 @@ class LLMCircuitBreaker:
                     f"reset_time_seconds={self.config.reset_time_seconds}).",
                 )
         self._adaptive: AdaptiveController | None = adaptive
+        self._failover: FailoverRouter | None = failover
         self._lock = threading.Lock()
 
         # State
@@ -425,6 +428,8 @@ class LLMCircuitBreaker:
                             "half_open",
                             "open",
                         )
+                    if self._failover is not None:
+                        self._failover.on_cb_state_change(self.backend_name, "half_open", "open")
                 else:
                     self._log(
                         "Circuit breaker opened",
@@ -438,6 +443,8 @@ class LLMCircuitBreaker:
                             prev_label,  # now from _prev_state, never stale
                             "open",
                         )
+                    if self._failover is not None:
+                        self._failover.on_cb_state_change(self.backend_name, prev_label, "open")
             else:
                 self._log(
                     "Failure recorded",
@@ -465,8 +472,7 @@ class LLMCircuitBreaker:
                     failure_count=self._failure_count,
                     error_type=error_type,
                 )
-                if self._metrics is not None:
-                    _transition_args = (self.backend_name, "half_open", "open")
+                _transition_args = (self.backend_name, "half_open", "open")
 
             elif self._failure_count >= effective_max:
                 if prev_state == CircuitState.OPEN:
@@ -489,8 +495,7 @@ class LLMCircuitBreaker:
                         failure_count=self._failure_count,
                         error_type=error_type,
                     )
-                    if self._metrics is not None:
-                        _transition_args = (self.backend_name, prev_state.value, "open")
+                    _transition_args = (self.backend_name, prev_state.value, "open")
             else:
                 self._log(
                     "Failure recorded",
@@ -504,6 +509,8 @@ class LLMCircuitBreaker:
                 self._metrics.record_state_transition,
                 *_transition_args,
             )
+        if _transition_args is not None and self._failover is not None:
+            self._failover.on_cb_state_change(self.backend_name, _transition_args[1], "open")
 
     def record_success(self) -> None:
         """Record a successful API call. Resets failure counter and closes circuit."""
@@ -531,6 +538,8 @@ class LLMCircuitBreaker:
                         prev_state_str,
                         "closed",
                     )
+                if self._failover is not None:
+                    self._failover.on_cb_state_change(self.backend_name, prev_state_str, "closed")
             return
 
         _transition_args: tuple[str, str, str] | None = None
@@ -547,14 +556,15 @@ class LLMCircuitBreaker:
                     "Circuit breaker closed after success",
                     previous_state=prev_state.value,
                 )
-                if self._metrics is not None:
-                    _transition_args = (self.backend_name, prev_state.value, "closed")
+                _transition_args = (self.backend_name, prev_state.value, "closed")
 
         if _transition_args is not None and self._metrics is not None:
             self._safe_emit(
                 self._metrics.record_state_transition,
                 *_transition_args,
             )
+        if _transition_args is not None and self._failover is not None:
+            self._failover.on_cb_state_change(self.backend_name, _transition_args[1], "closed")
 
     def force_open(self, reason: str = "", open_for_seconds: float = 0) -> None:
         """Force the circuit to OPEN state (e.g. on 429 STOP).
@@ -618,6 +628,8 @@ class LLMCircuitBreaker:
                     prev_state_value,
                     "open",
                 )
+            if self._failover is not None and prev_state_value != CircuitState.OPEN.value:
+                self._failover.on_cb_state_change(self.backend_name, prev_state_value, "open")
             return
 
         _transition_args: tuple[str, str, str] | None = None
@@ -639,7 +651,7 @@ class LLMCircuitBreaker:
             if self._adaptive is not None and prev_state != CircuitState.OPEN:
                 self._adaptive.record_open()
             self._log(f"Circuit breaker force-opened: {reason}", open_for_seconds=duration)
-            if self._metrics is not None and prev_state != CircuitState.OPEN:
+            if prev_state != CircuitState.OPEN:
                 _transition_args = (self.backend_name, prev_state.value, "open")
 
         if _transition_args is not None and self._metrics is not None:
@@ -647,6 +659,8 @@ class LLMCircuitBreaker:
                 self._metrics.record_state_transition,
                 *_transition_args,
             )
+        if _transition_args is not None and self._failover is not None:
+            self._failover.on_cb_state_change(self.backend_name, _transition_args[1], "open")
 
     def reset(self) -> None:
         """Reset circuit breaker to initial CLOSED state.
@@ -677,6 +691,8 @@ class LLMCircuitBreaker:
                     prev_state_value,
                     "closed",
                 )
+            if self._failover is not None and prev_state_value != CircuitState.CLOSED.value:
+                self._failover.on_cb_state_change(self.backend_name, prev_state_value, "closed")
             return
 
         _transition_args: tuple[str, str, str] | None = None
@@ -689,7 +705,7 @@ class LLMCircuitBreaker:
             self._half_open_probe_active = False
             if self._adaptive is not None:
                 self._adaptive.reset_open_timer()
-            if self._metrics is not None and prev_state != CircuitState.CLOSED:
+            if prev_state != CircuitState.CLOSED:
                 _transition_args = (self.backend_name, prev_state.value, "closed")
 
         if _transition_args is not None and self._metrics is not None:
@@ -697,6 +713,8 @@ class LLMCircuitBreaker:
                 self._metrics.record_state_transition,
                 *_transition_args,
             )
+        if _transition_args is not None and self._failover is not None:
+            self._failover.on_cb_state_change(self.backend_name, _transition_args[1], "closed")
 
     # -- 429-aware retry wrapper --------------------------------------------
 
@@ -978,6 +996,11 @@ class LLMCircuitBreaker:
     def adaptive(self) -> AdaptiveController | None:
         """The AdaptiveController, if one was attached."""
         return self._adaptive
+
+    @property
+    def failover(self) -> FailoverRouter | None:
+        """The FailoverRouter, if one was attached."""
+        return self._failover
 
     def __repr__(self) -> str:
         if self._store is not None:
