@@ -6,6 +6,7 @@ import asyncio
 import threading
 import time
 import unittest.mock
+from collections.abc import Sequence
 
 import pytest
 
@@ -111,8 +112,9 @@ class TestFailoverConfigValidation:
             enabled=True,
             regions={"gpt-5.4": ["us-east", "eu-west"]},
         )
-        # Field assignment on frozen dataclass.
-        with pytest.raises((AttributeError, Exception), match="(?i)frozen|cannot assign"):
+        # Field assignment on frozen dataclass raises FrozenInstanceError
+        # (subclass of AttributeError).
+        with pytest.raises(AttributeError, match=r"(?i)frozen|cannot assign"):
             cfg.enabled = False  # type: ignore[misc]
         # Inner per-backend list is a tuple -- no append.
         with pytest.raises(AttributeError):
@@ -298,9 +300,15 @@ class TestRecovery:
                 # After the atomic commit fix, pending is cleared at the same
                 # lock acquisition that writes _failover_at, so the "in window"
                 # check is now just "commit just happened" (failover_at != None).
+                # The CLOSED notify must use a STRICTLY GREATER seq than the
+                # OPEN notify currently committing, otherwise on_cb_state_change
+                # drops it as stale and _handle_closed never runs (the test
+                # would still pass via lazy recovery from the assertions, but
+                # would no longer exercise the post-commit recovery path it
+                # claims to test).
                 if not hook_called[0] and router._failover_at.get("gpt-5.4") is not None:
                     hook_called[0] = True
-                    router.on_cb_state_change("gpt-5.4", "open", "closed", seq=1)
+                    router.on_cb_state_change("gpt-5.4", "open", "closed", seq=3)
                 return False
 
         router._lock = PostCommitHookLock()  # type: ignore[assignment]
@@ -586,7 +594,7 @@ class TestLLMCBIntegration:
 
 
 # ---------------------------------------------------------------------------
-# Category F: Concurrency (5 tests)
+# Category F: Concurrency (8 tests)
 # ---------------------------------------------------------------------------
 
 
@@ -597,7 +605,18 @@ class TestConcurrency:
         self,
         simple_config: FailoverConfig,
     ) -> None:
-        """8 threads calling on_cb_state_change("open", seq=1) simultaneously must yield exactly one failover."""
+        """8 threads calling on_cb_state_change("open") simultaneously must yield exactly one failover.
+
+        Each worker passes a distinct seq so multiple notifications can pass
+        the seq-dedup gate (which thread passes depends on lock acquisition
+        order against the strictly-greater-than-last_seq check); the threads
+        that do pass then race in _handle_open against the _failover_pending
+        claim. The invariant being tested is that regardless of dedup order,
+        exactly one thread wins the pending claim and runs the probe, so
+        probe_call_count[0] == 1. Without distinct seq, all 8 share seq=1 and
+        only the first-arriving thread passes dedup, masking the pending
+        claim race entirely.
+        """
         probe_call_count = [0]
         probe_lock = threading.Lock()
 
@@ -610,14 +629,14 @@ class TestConcurrency:
         barrier = threading.Barrier(8)
         errors: list[Exception] = []
 
-        def worker() -> None:
+        def worker(my_seq: int) -> None:
             try:
                 barrier.wait()
-                router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
+                router.on_cb_state_change("gpt-5.4", "closed", "open", seq=my_seq)
             except Exception as exc:  # noqa: BLE001
                 errors.append(exc)
 
-        threads = [threading.Thread(target=worker) for _ in range(8)]
+        threads = [threading.Thread(target=worker, args=(i + 1,)) for i in range(8)]
         for t in threads:
             t.start()
         for t in threads:
@@ -784,6 +803,252 @@ class TestConcurrency:
 
         assert not thread.is_alive()
         assert not router.is_failed_over("gpt-5.4")
+
+    def test_closed_can_race_between_seq_update_and_open_probe_claim(
+        self,
+        simple_config: FailoverConfig,
+    ) -> None:
+        """A fresher CLOSED must still suppress an older OPEN even if it lands before _handle_open claims pending.
+
+        Forces the vulnerable interleaving:
+        1. T_OPEN(seq=1) acquires the seq lock, writes _last_seq=1, then pauses
+           in a wrapped _handle_open before claiming the probe slot.
+        2. T_CLOSED(seq=2) runs while failover_at=None and pending=False, so
+           _handle_closed observes nothing to recover and updates _last_seq=2.
+        3. T_OPEN resumes. It must NOT claim a probe slot and must NOT commit
+           failover, because the CB's authoritative state has advanced past
+           the OPEN we are dispatching for.
+
+        The seq guard at the top of _handle_open's claim block (last_seq > seq
+        => abort) is what makes this safe.
+        """
+        open_handler_entered = threading.Event()
+        allow_open_handler = threading.Event()
+        probe_started = threading.Event()
+
+        def slow_probe(_region: str) -> bool:
+            probe_started.set()
+            return True
+
+        router = FailoverRouter(simple_config, health_probe=slow_probe)
+        original_handle_open = router._handle_open
+
+        def delayed_handle_open(
+            backend: str,
+            old_state: str,
+            region_list: Sequence[str],
+            seq: int,
+        ) -> None:
+            open_handler_entered.set()
+            assert allow_open_handler.wait(timeout=2.0)
+            original_handle_open(backend, old_state, region_list, seq)
+
+        router._handle_open = delayed_handle_open  # type: ignore[method-assign]
+
+        open_thread = threading.Thread(
+            target=router.on_cb_state_change,
+            args=("gpt-5.4", "closed", "open"),
+            kwargs={"seq": 1},
+        )
+        open_thread.start()
+
+        assert open_handler_entered.wait(timeout=2.0)
+        assert router._last_seq["gpt-5.4"] == 1
+        assert router._failover_pending.get("gpt-5.4", False) is False
+
+        closed_thread = threading.Thread(
+            target=router.on_cb_state_change,
+            args=("gpt-5.4", "open", "closed"),
+            kwargs={"seq": 2},
+        )
+        closed_thread.start()
+        closed_thread.join(timeout=2.0)
+
+        assert not closed_thread.is_alive()
+        assert router._last_seq["gpt-5.4"] == 2
+        # _closed_during_probe was removed in favor of _last_state-based
+        # commit guard; assert the equivalent invariant on _last_state instead.
+        assert router._last_state.get("gpt-5.4") == "closed"
+        assert router._failover_at.get("gpt-5.4") is None
+
+        allow_open_handler.set()
+        open_thread.join(timeout=2.0)
+
+        assert not open_thread.is_alive()
+        # Probe must NEVER have started: _handle_open's seq guard sees
+        # _last_seq=2 > seq=1 and aborts before the probe loop.
+        assert not probe_started.is_set()
+        assert router._failover_pending.get("gpt-5.4", False) is False
+        assert not router.is_failed_over("gpt-5.4")
+        assert router.get_active_region("gpt-5.4") == "us-east"
+
+    def test_async_health_probe_rejected_at_construction(self) -> None:
+        """An async health_probe must be rejected at __init__, not silently misused.
+
+        Without the rejection, bool(coroutine) is always True, so every CB
+        OPEN would commit failover without actually probing.
+        """
+        cfg = FailoverConfig(
+            enabled=True,
+            regions={"gpt-5.4": ["us-east", "eu-west"]},
+        )
+
+        async def async_probe(_region: str) -> bool:  # type: ignore[misc]
+            return True
+
+        with pytest.raises(ValueError, match=r"(?i)async probes.*are not supported"):
+            FailoverRouter(cfg, health_probe=async_probe)  # type: ignore[arg-type]
+
+        # Async generator function (yields inside async def) -- bool(async_gen) is True.
+        async def async_gen_probe(_region: str):  # type: ignore[misc]
+            yield True
+
+        with pytest.raises(ValueError, match=r"(?i)async probes.*are not supported"):
+            FailoverRouter(cfg, health_probe=async_gen_probe)  # type: ignore[arg-type]
+
+        # Callable instance whose __call__ is async -- bool(coroutine) is True.
+        class AsyncCallable:
+            async def __call__(self, _region: str) -> bool:
+                return True
+
+        with pytest.raises(ValueError, match=r"(?i)async probes.*are not supported"):
+            FailoverRouter(cfg, health_probe=AsyncCallable())  # type: ignore[arg-type]
+
+    def test_lambda_returning_coroutine_treated_as_probe_failure(
+        self,
+        simple_config: FailoverConfig,
+    ) -> None:
+        """A sync callable that returns a coroutine must be treated as probe failure, not silent success.
+
+        The construction-time _is_async_callable check cannot detect this (the
+        lambda itself is sync), so the probe runner inspects the return value
+        and rejects awaitables. Without this, bool(unawaited coroutine) would
+        be True and every region would falsely pass.
+        """
+
+        async def _async_check(_r: str) -> bool:
+            return True
+
+        # Lambda is sync but returns a coroutine.
+        router = FailoverRouter(simple_config, health_probe=lambda r: _async_check(r))  # type: ignore[arg-type, return-value]
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
+        # Probe returned awaitable -> treated as exception -> region skipped.
+        # Both regions yield coroutines, both skipped, no failover.
+        assert not router.is_failed_over("gpt-5.4")
+        assert router.get_active_region("gpt-5.4") == "us-east"
+
+    def test_sync_callable_returning_sync_generator_treated_as_probe_failure(
+        self,
+        simple_config: FailoverConfig,
+    ) -> None:
+        """Sync callable returning a sync generator iterator must also be rejected.
+
+        Sync generators are not awaitable and not async generators, but
+        bool(sync_gen) is True -- without an explicit isgenerator check, a
+        probe like `lambda r: (x for x in [True])` would falsely report healthy.
+        """
+
+        def make_sync_gen(_r: str):  # type: ignore[no-untyped-def]
+            yield True
+
+        router = FailoverRouter(simple_config, health_probe=make_sync_gen)  # type: ignore[arg-type]
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
+        assert not router.is_failed_over("gpt-5.4")
+        assert router.get_active_region("gpt-5.4") == "us-east"
+
+    def test_sync_callable_returning_async_generator_treated_as_probe_failure(
+        self,
+        simple_config: FailoverConfig,
+    ) -> None:
+        """Sync callable returning an async generator iterator must also be rejected.
+
+        Async gen iterators are not awaitable (so isawaitable returns False)
+        but bool(async_gen_iter) is True -- without the explicit isasyncgen
+        check, every region would falsely pass.
+        """
+
+        def make_async_gen(_r: str):  # type: ignore[no-untyped-def]
+            async def gen():
+                yield True
+
+            return gen()  # async generator iterator
+
+        router = FailoverRouter(simple_config, health_probe=make_async_gen)  # type: ignore[arg-type]
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
+        assert not router.is_failed_over("gpt-5.4")
+        assert router.get_active_region("gpt-5.4") == "us-east"
+
+    def test_open_close_open_during_probe_commits_for_latest_open(
+        self,
+        simple_config: FailoverConfig,
+    ) -> None:
+        """OPEN(1)+CLOSED(2)+OPEN(3) with in-flight probe must commit failover for the latest OPEN.
+
+        Pre-fix: T1 probe aborts at commit (the now-removed
+        _closed_during_probe latch was set by T2); T3 OPEN dropped on
+        pending=True. End state mismatch (CB OPEN, router on primary).
+        Post-fix: commit guard checks _last_state == "open" and commits when
+        a fresher OPEN superseded the CLOSED.
+        """
+        probe_started = threading.Event()
+        allow_probe_finish = threading.Event()
+
+        def slow_probe(_region: str) -> bool:
+            probe_started.set()
+            assert allow_probe_finish.wait(timeout=2.0)
+            return True
+
+        router = FailoverRouter(simple_config, health_probe=slow_probe)
+
+        t1 = threading.Thread(
+            target=router.on_cb_state_change,
+            args=("gpt-5.4", "closed", "open"),
+            kwargs={"seq": 1},
+        )
+        t1.start()
+        assert probe_started.wait(timeout=2.0)
+
+        router.on_cb_state_change("gpt-5.4", "open", "closed", seq=2)
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=3)
+
+        allow_probe_finish.set()
+        t1.join(timeout=2.0)
+        assert not t1.is_alive()
+
+        assert router.is_failed_over("gpt-5.4")
+        assert router.get_active_region("gpt-5.4") == "eu-west"
+
+    def test_open_close_during_probe_does_not_commit(
+        self,
+        simple_config: FailoverConfig,
+    ) -> None:
+        """OPEN(1)+CLOSED(2) during in-flight probe must NOT commit failover (latest is CLOSED)."""
+        probe_started = threading.Event()
+        allow_probe_finish = threading.Event()
+
+        def slow_probe(_region: str) -> bool:
+            probe_started.set()
+            assert allow_probe_finish.wait(timeout=2.0)
+            return True
+
+        router = FailoverRouter(simple_config, health_probe=slow_probe)
+
+        t1 = threading.Thread(
+            target=router.on_cb_state_change,
+            args=("gpt-5.4", "closed", "open"),
+            kwargs={"seq": 1},
+        )
+        t1.start()
+        assert probe_started.wait(timeout=2.0)
+
+        router.on_cb_state_change("gpt-5.4", "open", "closed", seq=2)
+
+        allow_probe_finish.set()
+        t1.join(timeout=2.0)
+        assert not t1.is_alive()
+
+        assert not router.is_failed_over("gpt-5.4")
+        assert router.get_active_region("gpt-5.4") == "us-east"
 
 
 # ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@ Zero external dependencies -- pure Python, builds on existing CB abstractions.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import threading
 import time
@@ -60,15 +61,15 @@ class FailoverConfig:
         """Validate all configuration fields."""
         if self.health_check_timeout_seconds <= 0:
             raise ValueError(
-                f"health_check_timeout_seconds must be > 0, " f"got {self.health_check_timeout_seconds}",
+                f"health_check_timeout_seconds must be > 0, got {self.health_check_timeout_seconds}",
             )
         if self.min_failover_duration_seconds < 0:
             raise ValueError(
-                f"min_failover_duration_seconds must be >= 0, " f"got {self.min_failover_duration_seconds}",
+                f"min_failover_duration_seconds must be >= 0, got {self.min_failover_duration_seconds}",
             )
         if self.recovery_check_interval_seconds <= 0:
             raise ValueError(
-                f"recovery_check_interval_seconds must be > 0, " f"got {self.recovery_check_interval_seconds}",
+                f"recovery_check_interval_seconds must be > 0, got {self.recovery_check_interval_seconds}",
             )
         # Materialize each region sequence into a tuple BEFORE iterating so
         # iterator inputs (which would otherwise be consumed by the first
@@ -144,6 +145,20 @@ class FailoverRouter:
         """
         self._config = config
         self._clock: Callable[[], float] = clock or time.monotonic
+        if health_probe is not None and self._is_async_callable(health_probe):
+            # bool(coroutine) is always True, so an async probe would always
+            # report healthy without ever being awaited. Reject at construction
+            # rather than silently failover on every CB OPEN. The check covers
+            # async def functions, async generator functions, and callable
+            # instances whose __call__ is async.
+            raise ValueError(
+                "health_probe must be a synchronous callable returning bool. "
+                "Async probes (including async def, async generators, and "
+                "callables with async __call__) are not supported in this "
+                "version of FailoverRouter. Wrap your async function with "
+                "asyncio.run() or use a synchronous HTTP client (e.g. "
+                "requests, httpx.Client).",
+            )
         if health_probe is None:
             self._health_probe: Callable[[str], bool] = lambda _region: True
             if config.enabled:
@@ -162,12 +177,10 @@ class FailoverRouter:
         #   _failover_at[backend] = float | None (clock value when failover committed, None if not failed over)
         #   _failover_pending[backend] = bool (True while a probe is in-flight for this backend)
         #     Prevents concurrent threads from all probing and committing independently.
-        #   _closed_during_probe[backend] = bool (True when CLOSED arrived while a probe was pending)
         #     Prevents stale OPEN probes from committing after the CB has already recovered.
         self._active_region: dict[str, str] = {}
         self._failover_at: dict[str, float | None] = {}
         self._failover_pending: dict[str, bool] = {}
-        self._closed_during_probe: dict[str, bool] = {}
         # Last applied transition seq per backend, for out-of-order notify drop.
         # See on_cb_state_change docstring.
         self._last_seq: dict[str, int] = {}
@@ -179,14 +192,45 @@ class FailoverRouter:
         # land under the new probe's pending claim, or let an old probe's
         # finally wipe the new probe's claim.
         self._probe_gen: dict[str, int] = {}
+        # Latest CB state we were notified about, captured under self._lock at
+        # the same point as _last_seq[backend] is updated. Used at probe-commit
+        # time so a probe whose pending claim was made for an OPEN that has
+        # since been superseded by CLOSED (and possibly another OPEN) commits
+        # only when the most recent CB state is still OPEN. Without this,
+        # OPEN(1)+CLOSED(2)+OPEN(3) interleaved with an in-flight probe could
+        # leave the router on the primary while the CB is actually OPEN.
+        self._last_state: dict[str, str] = {}
+
+    @staticmethod
+    def _is_async_callable(probe: object) -> bool:
+        """Return True if ``probe`` would produce an awaitable when called.
+
+        ``asyncio.iscoroutinefunction`` only catches ``async def`` functions;
+        it misses async generator functions and callable instances whose
+        ``__call__`` is async. All three would silently misbehave because
+        ``bool(coroutine_or_async_gen)`` is always True.
+        """
+        if inspect.iscoroutinefunction(probe) or inspect.isasyncgenfunction(probe):
+            return True
+        call = getattr(probe, "__call__", None)
+        if call is not None and (inspect.iscoroutinefunction(call) or inspect.isasyncgenfunction(call)):
+            return True
+        return False
 
     def _try_lazy_recovery_unlocked(self, backend: str, region_list: Sequence[str]) -> None:
         """Restore primary if min_failover_duration has elapsed since failover.
 
-        Caller must hold self._lock. Mutates _active_region and _failover_at
-        when eligible. No-op when not failed over or duration not elapsed.
         Used by get_active_region, is_failed_over, and snapshot to keep router
-        observation methods consistent.
+        observation methods consistent. No-op when not failed over or when the
+        configured min_failover_duration_seconds has not elapsed.
+
+        Locking contract: caller MUST hold self._lock.
+
+        Args:
+            backend: Logical backend name being observed.
+            region_list: Configured ordered region sequence for the backend.
+                regions[backend][0] is restored as the active region when the
+                duration condition is met.
         """
         failover_at = self._failover_at.get(backend)
         if failover_at is None:
@@ -303,17 +347,25 @@ class FailoverRouter:
                 )
                 return
             self._last_seq[backend] = seq
+            self._last_state[backend] = new_state
 
+        # Pass our seq through so the dispatch can detect a newer notify
+        # that arrived between our seq update and our lock re-acquisition.
+        # Without this, low-seq OPEN + high-seq CLOSED dispatched concurrently
+        # could let the OPEN's _handle_open commit a failover after the
+        # CLOSED's _handle_closed already ran (as a no-op, because failover
+        # was not yet committed).
         if new_state == "open":
-            self._handle_open(backend, old_state, region_list)
+            self._handle_open(backend, old_state, region_list, seq)
         else:  # new_state == "closed", guarded above
-            self._handle_closed(backend, old_state, region_list)
+            self._handle_closed(backend, old_state, region_list, seq)
 
     def _handle_open(
         self,
         backend: str,
         old_state: str,
         region_list: Sequence[str],
+        seq: int,
     ) -> None:
         """Internal: evaluate failover when CB enters OPEN.
 
@@ -321,6 +373,24 @@ class FailoverRouter:
         launching independent probes and committing redundant failovers. The
         first thread to set the flag wins the probe; all subsequent callers
         see either the pending flag or the committed failover and return early.
+        A per-claim generation token (_probe_gen[backend], my_gen local) gates
+        both the probe-success commit and the finally cleanup so a stale
+        probe whose slot was reclaimed by reset() + new OPEN cannot commit
+        under the new owner's claim or wipe it during cleanup.
+
+        Locking contract: takes self._lock for the slot claim and again for
+        the probe-success commit. Probe execution and the daemon thread join
+        run OUTSIDE the lock so concurrent reads are not blocked.
+
+        Args:
+            backend: Logical backend name being notified.
+            old_state: CB state value before the transition (for logging).
+            region_list: Configured ordered region sequence for the backend.
+                region_list[0] is the primary; region_list[1:] are probed in
+                order until one passes the health probe.
+            seq: Transition seq we were dispatched with. If _last_seq has
+                advanced past us, a newer notify arrived between
+                on_cb_state_change's lock-release and ours -- abort.
         """
         # The whole probe (lock-claim + probe loop + commit) runs under one
         # try/finally so a BaseException (KeyboardInterrupt, SystemExit,
@@ -335,6 +405,20 @@ class FailoverRouter:
         timeout = self._config.health_check_timeout_seconds
         try:
             with self._lock:
+                # If a newer notify advanced _last_seq past our seq while we
+                # were between on_cb_state_change's lock-release and this
+                # claim, the CB's authoritative state has moved past ours.
+                # Aborting prevents a stale OPEN from committing a failover
+                # after a fresher CLOSED already ran (and observed
+                # failover_at=None as a no-op).
+                if self._last_seq.get(backend, 0) > seq:
+                    logger.debug(
+                        "Failover OPEN seq=%d for %r superseded by later notify (last=%d); aborting.",
+                        seq,
+                        backend,
+                        self._last_seq.get(backend, 0),
+                    )
+                    return
                 already_failed_over = self._failover_at.get(backend) is not None
                 pending = self._failover_pending.get(backend, False)
                 if already_failed_over or pending:
@@ -353,7 +437,6 @@ class FailoverRouter:
                 # is True) and clears the (False) pending flag harmlessly.
                 pending_claimed = True
                 self._failover_pending[backend] = True
-                self._closed_during_probe.pop(backend, None)
                 # Capture a per-claim generation token. Both reset() and a
                 # fresh slot claim in _handle_open bump _probe_gen, so a
                 # stale probe whose generation no longer matches will not
@@ -362,6 +445,27 @@ class FailoverRouter:
                 my_gen = self._probe_gen[backend]
 
             for candidate in region_list[1:]:
+                # Cheap per-iteration abort check: if reset() ran or CB
+                # already returned to CLOSED while we were probing earlier
+                # secondaries, do not waste time probing remaining regions.
+                # The commit guard would catch this anyway, but short-
+                # circuiting here saves up to (len(secondaries) - 1) *
+                # health_check_timeout_seconds of wall-clock time.
+                with self._lock:
+                    if self._probe_gen.get(backend, 0) != my_gen:
+                        logger.info(
+                            "Failover probe for %r aborted mid-loop: probe slot was reclaimed (gen mismatch).",
+                            backend,
+                        )
+                        return
+                    if self._last_state.get(backend, "open") != "open":
+                        logger.info(
+                            "Failover probe for %r aborted mid-loop: latest CB state is %r, not OPEN.",
+                            backend,
+                            self._last_state.get(backend),
+                        )
+                        return
+
                 probe_result = False
                 # Enforce health_check_timeout_seconds via a daemon thread +
                 # join(timeout). A hanging probe must not block the calling
@@ -382,9 +486,32 @@ class FailoverRouter:
                     with the policy in LLMCircuitBreaker._notify_failover. If a
                     probe somehow raises one in this worker thread, it surfaces
                     as a thread crash rather than being absorbed.
+
+                    Detects coroutine/awaitable, async-generator, and sync-
+                    generator return values (e.g. a sync lambda that calls an
+                    async function, or a probe defined with `def f(): yield x`)
+                    and treats them as a probe failure rather than a true
+                    result, since bool(...) is always True for these types.
                     """
                     try:
-                        sink[0] = bool(self._health_probe(region))
+                        result = self._health_probe(region)
+                        # Treat awaitables (coroutines, futures, Tasks) AND
+                        # async generator iterators as probe failures rather
+                        # than silently truthy results. Async gen iterators
+                        # are not awaitable but bool(...) is still True,
+                        # which would falsely report healthy.
+                        if inspect.isawaitable(result) or inspect.isasyncgen(result) or inspect.isgenerator(result):
+                            close = getattr(result, "close", None)
+                            if callable(close):
+                                try:
+                                    close()
+                                except Exception:  # noqa: BLE001 -- best-effort cleanup
+                                    pass
+                            sink[0] = TypeError(
+                                "health_probe returned a coroutine, awaitable, async generator, " "or generator; probes must return bool synchronously -- see " "FailoverRouter.__init__ docstring.",
+                            )
+                            return
+                        sink[0] = bool(result)
                     except Exception as exc:  # noqa: BLE001 -- never let probe break router
                         sink[0] = exc
 
@@ -392,13 +519,18 @@ class FailoverRouter:
                 probe_thread.start()
                 probe_thread.join(timeout=timeout)
                 if probe_thread.is_alive():
+                    # Skip the trailing "Health probe failed for ... trying
+                    # next" log below: the timeout warning already says what
+                    # happened, and we want to move on to the next region
+                    # without the duplicate "failed" message that suggests a
+                    # different cause.
                     logger.warning(
                         "Health probe for %r region %r timed out after %.1fs; treating as failure (thread abandoned).",
                         backend,
                         candidate,
                         timeout,
                     )
-                    probe_result = False
+                    continue
                 elif isinstance(probe_outcome[0], Exception):
                     logger.warning(
                         "Health probe for %r raised %s; skipping region %r.",
@@ -426,20 +558,28 @@ class FailoverRouter:
                                 backend,
                             )
                             return
-                        if self._closed_during_probe.get(backend, False):
+                        if self._last_state.get(backend, "open") != "open":
+                            # Authoritative latest CB state is not OPEN
+                            # (CLOSED arrived during probe AND no fresher
+                            # OPEN superseded it). Do not commit failover.
+                            # If CLOSED was followed by a fresher OPEN, the
+                            # state will be "open" again and we DO commit --
+                            # otherwise OPEN(1)+CLOSED(2)+OPEN(3) interleaved
+                            # with our probe would silently leave the router
+                            # on the primary while the CB is OPEN.
                             logger.info(
-                                "Failover probe for %r succeeded but commit was aborted because the circuit breaker closed during the probe.",
+                                "Failover probe for %r succeeded but commit was aborted because latest CB state is %r, not OPEN.",
                                 backend,
+                                self._last_state.get(backend),
                             )
                             return
                         self._active_region[backend] = candidate
                         self._failover_at[backend] = self._clock()
-                        # Atomically clear pending+latch so observers don't see
-                        # a transient (failed_over=True, pending=True) state
+                        # Atomically clear pending so observers don't see a
+                        # transient (failed_over=True, pending=True) state
                         # that could cause a subsequent OPEN event to be
                         # wrongly suppressed if recovery races with this commit.
                         self._failover_pending[backend] = False
-                        self._closed_during_probe.pop(backend, None)
                     logger.info(
                         "Failover committed for %r: %r -> %r (CB transitioned %s -> open).",
                         backend,
@@ -474,16 +614,43 @@ class FailoverRouter:
                 with self._lock:
                     if self._probe_gen.get(backend, 0) == my_gen:
                         self._failover_pending[backend] = False
-                        self._closed_during_probe.pop(backend, None)
 
     def _handle_closed(
         self,
         backend: str,
         old_state: str,
         region_list: Sequence[str],
+        seq: int,
     ) -> None:
-        """Internal: evaluate recovery when CB returns to CLOSED."""
+        """Internal: evaluate recovery when CB returns to CLOSED.
+
+        Restores primary if the configured min_failover_duration_seconds has
+        elapsed since the failover; otherwise logs a deferral. When a probe
+        is currently in flight, the commit-time guard in _handle_open reads
+        self._last_state (which on_cb_state_change updated to "closed" before
+        dispatching us) and aborts the commit, so the CLOSED notification is
+        not silently lost.
+
+        Locking contract: takes self._lock for the duration of the routine.
+
+        Args:
+            backend: Logical backend name being notified.
+            old_state: CB state value before the transition (for logging).
+            region_list: Configured ordered region sequence for the backend.
+                region_list[0] is the primary that recovery restores.
+            seq: Transition seq we were dispatched with. If _last_seq has
+                advanced past us, a newer notify arrived between
+                on_cb_state_change's lock-release and ours -- abort.
+        """
         with self._lock:
+            if self._last_seq.get(backend, 0) > seq:
+                logger.debug(
+                    "Failover CLOSED seq=%d for %r superseded by later notify (last=%d); aborting.",
+                    seq,
+                    backend,
+                    self._last_seq.get(backend, 0),
+                )
+                return
             failover_at = self._failover_at.get(backend)
             if failover_at is not None:
                 now = self._clock()
@@ -513,12 +680,6 @@ class FailoverRouter:
                         min_duration,
                     )
                 return
-            if self._failover_pending.get(backend, False):
-                self._closed_during_probe[backend] = True
-                logger.debug(
-                    "CLOSED notification for %r arrived during an in-flight failover probe; " "marking probe for abort.",
-                    backend,
-                )
 
     def is_failed_over(self, backend: str) -> bool:
         """Return True iff the backend is currently routing to a secondary region.
@@ -574,8 +735,8 @@ class FailoverRouter:
         """Administratively restore the primary region for a backend.
 
         Clears all per-backend tracking state -- active region, failover
-        timestamp, in-flight probe pending flag, closed-during-probe latch,
-        and last-applied seq -- regardless of min_failover_duration_seconds
+        timestamp, in-flight probe pending flag, last-applied seq, and
+        latest CB state -- regardless of min_failover_duration_seconds
         and regardless of whether a failover is currently in progress.
         Clearing _last_seq lets a fresh producer (e.g. a hot-swapped CB
         instance whose _transition_seq starts at 0) resume notifying without
@@ -593,11 +754,11 @@ class FailoverRouter:
             self._active_region.pop(backend, None)
             self._failover_at[backend] = None
             self._failover_pending[backend] = False
-            self._closed_during_probe.pop(backend, None)
             # Clear seq history so a new producer (or hot-swapped CB instance
             # whose _transition_seq starts at 0) can resume notifying without
             # its early notifies being dropped as stale by lingering last_seq.
             self._last_seq.pop(backend, None)
+            self._last_state.pop(backend, None)
             # Bump probe generation so any in-flight probe whose slot we just
             # cleared cannot commit (gen mismatch) and cannot wipe a fresh
             # claim made by a subsequent OPEN.
