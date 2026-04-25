@@ -86,7 +86,8 @@ class FailoverRouter:
     Pure Python, zero external dependencies.
 
     The router is event-driven: callers notify it via on_cb_state_change()
-    when a CB transitions. No background threads are created.
+    when a CB transitions, passing a required monotonically-increasing seq
+    so out-of-order notifies are dropped. No background threads are created.
     """
 
     def __init__(
@@ -103,16 +104,32 @@ class FailoverRouter:
             clock: Monotonic clock for measuring failover duration. Defaults to
                 time.monotonic. Injectable for tests.
             health_probe: Callable that accepts a region string and returns True
-                if the region is healthy. Defaults to a function that always
-                returns True (assume healthy). Injectable for tests to simulate
-                failures. Any exception raised by the probe is caught and treated
-                as a probe failure -- no failover is committed. Each probe call
-                runs under a `health_check_timeout_seconds` deadline; on timeout
-                the probe is treated as a failure and the next region is tried.
+                if the region is healthy. When None, defaults to a function that
+                always returns True. WARNING: the default is NOT production safe
+                -- it will commit failover to the configured secondary on every
+                CB OPEN even if the secondary is also down. Production callers
+                must provide an explicit probe that actually checks the region.
+                A one-shot WARNING is logged at construction when config.enabled
+                is True and no explicit probe is supplied. Any exception raised
+                by the probe is caught and treated as a probe failure -- no
+                failover is committed. Each probe call runs under a
+                health_check_timeout_seconds deadline; on timeout the probe is
+                treated as a failure and the next region is tried.
         """
         self._config = config
         self._clock: Callable[[], float] = clock or time.monotonic
-        self._health_probe: Callable[[str], bool] = health_probe or (lambda _region: True)
+        if health_probe is None:
+            self._health_probe: Callable[[str], bool] = lambda _region: True
+            if config.enabled:
+                logger.warning(
+                    "FailoverRouter constructed with enabled=True and no explicit "
+                    "health_probe; using default probe that returns True for all "
+                    "regions. This is NOT production safe -- failover will commit "
+                    "to the configured secondary even if it is also unhealthy. "
+                    "Provide a real probe via the health_probe= kwarg.",
+                )
+        else:
+            self._health_probe = health_probe
         self._lock = threading.Lock()
         # Per-backend failover state:
         #   _active_region[backend] = str (current active region)
@@ -125,6 +142,9 @@ class FailoverRouter:
         self._failover_at: dict[str, float | None] = {}
         self._failover_pending: dict[str, bool] = {}
         self._closed_during_probe: dict[str, bool] = {}
+        # Last applied transition seq per backend, for out-of-order notify drop.
+        # See on_cb_state_change docstring.
+        self._last_seq: dict[str, int] = {}
 
     def _try_lazy_recovery_unlocked(self, backend: str, region_list: list[str]) -> None:
         """Restore primary if min_failover_duration has elapsed since failover.
@@ -180,7 +200,14 @@ class FailoverRouter:
             self._try_lazy_recovery_unlocked(backend, region_list)
             return self._active_region.get(backend, region_list[0])
 
-    def on_cb_state_change(self, backend: str, old_state: str, new_state: str) -> None:
+    def on_cb_state_change(
+        self,
+        backend: str,
+        old_state: str,
+        new_state: str,
+        *,
+        seq: int,
+    ) -> None:
         """Evaluate failover or recovery when a circuit breaker changes state.
 
         When new_state=="open": attempt failover to the first secondary region
@@ -194,22 +221,58 @@ class FailoverRouter:
         This method is a no-op when:
         - config.enabled is False
         - backend is not in config.regions
+        - new_state is not "open" or "closed" (e.g. "half_open" or any
+          unrecognized value -- ignored without consuming a seq slot)
         - An exception is raised by the health probe (treated as probe failure)
+        - seq is not strictly greater than the last applied seq for this
+          backend (the notify is stale and would otherwise overwrite a
+          fresher CB state with an older view)
 
         Args:
             backend: Logical backend name.
             old_state: CB state before the transition (for logging).
             new_state: CB state after the transition.
+            seq: Monotonically increasing transition sequence number from the
+                CB. Required, kwarg-only. record_failure / record_success
+                release self._lock before calling _notify_failover, so a stale
+                notify can otherwise overwrite a fresher one and leave the
+                router in a state inconsistent with the actual CB state. Pass
+                a unique strictly-increasing integer from the producer; tests
+                calling this method directly may use any monotonically
+                increasing sequence (e.g. 1, 2, 3 ...).
         """
         if not self._config.enabled:
             return
         region_list = self._config.regions.get(backend)
         if not region_list:
             return
+        # Drop notifies with new_state that this router doesn't act on
+        # (e.g. "half_open"). Without this guard an unknown state would
+        # consume a seq slot and silently drop subsequent legitimate
+        # notifies whose seq is <= the consumed value.
+        if new_state not in ("open", "closed"):
+            logger.debug(
+                "Ignoring failover notify for %r with unsupported new_state=%r.",
+                backend,
+                new_state,
+            )
+            return
+
+        with self._lock:
+            last = self._last_seq.get(backend, 0)
+            if seq <= last:
+                logger.debug(
+                    "Dropping stale failover notify for %r: seq=%d <= last=%d.",
+                    backend,
+                    seq,
+                    last,
+                )
+                return
+            self._last_seq[backend] = seq
 
         if new_state == "open":
             self._handle_open(backend, old_state, region_list)
-        elif new_state == "closed":
+        else:  # new_state == "closed", guarded above
             self._handle_closed(backend, old_state, region_list)
 
     def _handle_open(
@@ -269,12 +332,19 @@ class FailoverRouter:
                 # leaks until process exit. The thread is daemon so it does
                 # not delay shutdown. Probe authors should use timeouts in
                 # their HTTP clients to avoid the leak in practice.
-                probe_outcome: list[bool | BaseException] = [False]
+                probe_outcome: list[bool | Exception] = [False]
 
-                def _probe_runner(region: str = candidate, sink: list[bool | BaseException] = probe_outcome) -> None:
+                def _probe_runner(region: str = candidate, sink: list[bool | Exception] = probe_outcome) -> None:
+                    """Run health probe in a daemon thread; record bool or Exception in sink.
+
+                    KeyboardInterrupt and SystemExit are not caught -- consistent
+                    with the policy in LLMCircuitBreaker._notify_failover. If a
+                    probe somehow raises one in this worker thread, it surfaces
+                    as a thread crash rather than being absorbed.
+                    """
                     try:
                         sink[0] = bool(self._health_probe(region))
-                    except BaseException as exc:  # noqa: BLE001 -- never let probe break router
+                    except Exception as exc:  # noqa: BLE001 -- never let probe break router
                         sink[0] = exc
 
                 probe_thread = threading.Thread(target=_probe_runner, name=f"failover-probe-{candidate}", daemon=True)
@@ -288,7 +358,7 @@ class FailoverRouter:
                         timeout,
                     )
                     probe_result = False
-                elif isinstance(probe_outcome[0], BaseException):
+                elif isinstance(probe_outcome[0], Exception):
                     logger.warning(
                         "Health probe for %r raised %s; skipping region %r.",
                         backend,
@@ -451,8 +521,14 @@ class FailoverRouter:
     def reset(self, backend: str) -> None:
         """Administratively restore the primary region for a backend.
 
-        Clears failover state regardless of min_failover_duration_seconds.
-        Safe to call when not failed over (no-op in that case).
+        Clears all per-backend tracking state -- active region, failover
+        timestamp, in-flight probe pending flag, closed-during-probe latch,
+        and last-applied seq -- regardless of min_failover_duration_seconds
+        and regardless of whether a failover is currently in progress.
+        Clearing _last_seq lets a fresh producer (e.g. a hot-swapped CB
+        instance whose _transition_seq starts at 0) resume notifying without
+        having its early notifies dropped as stale. No-op when backend is
+        not in config.regions.
 
         Args:
             backend: Logical backend name.
@@ -466,4 +542,8 @@ class FailoverRouter:
             self._failover_at[backend] = None
             self._failover_pending[backend] = False
             self._closed_during_probe.pop(backend, None)
+            # Clear seq history so a new producer (or hot-swapped CB instance
+            # whose _transition_seq starts at 0) can resume notifying without
+            # its early notifies being dropped as stale by lingering last_seq.
+            self._last_seq.pop(backend, None)
         logger.info("Administrative reset for %r: restored primary %r.", backend, region_list[0])

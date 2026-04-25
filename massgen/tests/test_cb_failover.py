@@ -118,13 +118,13 @@ class TestFailoverTrigger:
         """on_cb_state_change("open") with probe returning True must failover."""
         router = FailoverRouter(simple_config, health_probe=lambda _r: True)
         assert not router.is_failed_over("gpt-5.4")
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=2)
         assert router.is_failed_over("gpt-5.4")
 
     def test_open_with_failing_probe_stays_on_primary(self, simple_config: FailoverConfig) -> None:
         """on_cb_state_change("open") with probe returning False must not failover."""
         router = FailoverRouter(simple_config, health_probe=lambda _r: False)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=2)
         assert not router.is_failed_over("gpt-5.4")
 
     def test_open_with_probe_raising_stays_on_primary(self, simple_config: FailoverConfig) -> None:
@@ -134,7 +134,7 @@ class TestFailoverTrigger:
             raise RuntimeError("network error")
 
         router = FailoverRouter(simple_config, health_probe=raising_probe)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert not router.is_failed_over("gpt-5.4")
 
     def test_hanging_probe_times_out_per_health_check_timeout_seconds(self) -> None:
@@ -159,7 +159,7 @@ class TestFailoverTrigger:
         router = FailoverRouter(cfg, health_probe=hanging_probe)
 
         start = time.monotonic()
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         elapsed = time.monotonic() - start
 
         # Two secondaries x 0.05s timeout => bounded above by ~0.5s with thread overhead.
@@ -171,7 +171,7 @@ class TestFailoverTrigger:
     def test_get_active_region_returns_secondary_after_failover(self, simple_config: FailoverConfig) -> None:
         """get_active_region must return the secondary region after failover."""
         router = FailoverRouter(simple_config, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         active = router.get_active_region("gpt-5.4")
         assert active == "eu-west"
 
@@ -184,7 +184,7 @@ class TestFailoverTrigger:
         """FailoverConfig(enabled=False) must make get_active_region/is_failed_over/on_cb_state_change all no-ops."""
         cfg = FailoverConfig(enabled=False, regions={"gpt-5.4": ["us-east", "eu-west"]})
         router = FailoverRouter(cfg, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert not router.is_failed_over("gpt-5.4")
         assert router.get_active_region("gpt-5.4") is None
 
@@ -198,7 +198,7 @@ class TestRecovery:
     """on_cb_state_change("closed") + lazy recovery via observation methods."""
 
     def test_closed_after_min_duration_restores_primary(self, simple_config: FailoverConfig) -> None:
-        """on_cb_state_change("closed") after min_failover_duration elapsed must restore primary."""
+        """on_cb_state_change("closed", seq=1) after min_failover_duration elapsed must restore primary."""
         now = [0.0]
 
         def fake_clock() -> float:
@@ -210,16 +210,16 @@ class TestRecovery:
             min_failover_duration_seconds=30.0,
         )
         router = FailoverRouter(cfg, clock=fake_clock, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert router.is_failed_over("gpt-5.4")
 
         now[0] = 31.0
-        router.on_cb_state_change("gpt-5.4", "open", "closed")
+        router.on_cb_state_change("gpt-5.4", "open", "closed", seq=2)
         assert not router.is_failed_over("gpt-5.4")
         assert router.get_active_region("gpt-5.4") == "us-east"
 
     def test_closed_before_min_duration_defers_recovery(self, simple_config: FailoverConfig) -> None:
-        """on_cb_state_change("closed") before min duration elapsed must keep secondary."""
+        """on_cb_state_change("closed", seq=1) before min duration elapsed must keep secondary."""
         now = [0.0]
 
         def fake_clock() -> float:
@@ -231,11 +231,11 @@ class TestRecovery:
             min_failover_duration_seconds=30.0,
         )
         router = FailoverRouter(cfg, clock=fake_clock, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert router.is_failed_over("gpt-5.4")
 
         now[0] = 5.0  # only 5s elapsed, min is 30s
-        router.on_cb_state_change("gpt-5.4", "open", "closed")
+        router.on_cb_state_change("gpt-5.4", "open", "closed", seq=2)
         # Too soon -- must remain failed over
         assert router.is_failed_over("gpt-5.4")
         assert router.get_active_region("gpt-5.4") == "eu-west"
@@ -278,12 +278,12 @@ class TestRecovery:
                 # check is now just "commit just happened" (failover_at != None).
                 if not hook_called[0] and router._failover_at.get("gpt-5.4") is not None:
                     hook_called[0] = True
-                    router.on_cb_state_change("gpt-5.4", "open", "closed")
+                    router.on_cb_state_change("gpt-5.4", "open", "closed", seq=1)
                 return False
 
         router._lock = PostCommitHookLock()  # type: ignore[assignment]
 
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=2)
 
         assert hook_called[0]
         assert not router.is_failed_over("gpt-5.4")
@@ -303,7 +303,7 @@ class TestRecovery:
             min_failover_duration_seconds=30.0,
         )
         router = FailoverRouter(cfg, clock=fake_clock, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert router.is_failed_over("gpt-5.4")
 
         now[0] = 50.0
@@ -325,7 +325,7 @@ class TestRecovery:
             min_failover_duration_seconds=30.0,
         )
         router = FailoverRouter(cfg, clock=fake_clock, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert router.is_failed_over("gpt-5.4")
 
         now[0] = 20.0
@@ -346,7 +346,7 @@ class TestRecovery:
             min_failover_duration_seconds=30.0,
         )
         router = FailoverRouter(cfg, clock=fake_clock, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert router.is_failed_over("gpt-5.4")
 
         now[0] = 50.0
@@ -368,7 +368,7 @@ class TestRecovery:
             min_failover_duration_seconds=30.0,
         )
         router = FailoverRouter(cfg, clock=fake_clock, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
 
         now[0] = 50.0
 
@@ -392,7 +392,7 @@ class TestRecovery:
             min_failover_duration_seconds=30.0,
         )
         router = FailoverRouter(cfg, clock=fake_clock, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert router.is_failed_over("gpt-5.4")
 
         # Clock skews backward.
@@ -414,7 +414,7 @@ class TestRecovery:
             min_failover_duration_seconds=0.0,
         )
         router = FailoverRouter(cfg, clock=fake_clock, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
 
         # First observation at the same clock instant: elapsed = 0 >= 0 -> recover.
         assert router.get_active_region("gpt-5.4") == "us-east"
@@ -423,7 +423,7 @@ class TestRecovery:
     def test_reset_admin_restores_primary_immediately(self, simple_config: FailoverConfig) -> None:
         """reset() must restore primary regardless of min_failover_duration."""
         router = FailoverRouter(simple_config, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert router.is_failed_over("gpt-5.4")
 
         router.reset("gpt-5.4")
@@ -431,9 +431,9 @@ class TestRecovery:
         assert router.get_active_region("gpt-5.4") == "us-east"
 
     def test_closed_when_not_failed_over_is_noop(self, simple_config: FailoverConfig) -> None:
-        """on_cb_state_change("closed") when not failed over must not crash."""
+        """on_cb_state_change("closed", seq=1) when not failed over must not crash."""
         router = FailoverRouter(simple_config)
-        router.on_cb_state_change("gpt-5.4", "open", "closed")  # must not raise
+        router.on_cb_state_change("gpt-5.4", "open", "closed", seq=2)  # must not raise
         assert not router.is_failed_over("gpt-5.4")
 
     def test_reset_unknown_backend_is_noop(self, simple_config: FailoverConfig) -> None:
@@ -463,7 +463,7 @@ class TestMultiBackendIsolation:
             },
         )
         router = FailoverRouter(cfg, health_probe=lambda _r: True)
-        router.on_cb_state_change("backend-a", "closed", "open")
+        router.on_cb_state_change("backend-a", "closed", "open", seq=1)
         assert router.is_failed_over("backend-a")
         assert not router.is_failed_over("backend-b")
         assert router.get_active_region("backend-b") == "ap-southeast"
@@ -556,7 +556,7 @@ class TestLLMCBIntegration:
         cb_config: LLMCircuitBreakerConfig,
         simple_config: FailoverConfig,
     ) -> None:
-        """force_open must call on_cb_state_change('open') on the router."""
+        """force_open must call on_cb_state_change('open', seq=1) on the router."""
         router = FailoverRouter(simple_config, health_probe=lambda _r: True)
         cb = LLMCircuitBreaker(cb_config, backend_name="gpt-5.4", failover=router)
         cb.force_open(reason="test")
@@ -575,7 +575,7 @@ class TestConcurrency:
         self,
         simple_config: FailoverConfig,
     ) -> None:
-        """8 threads calling on_cb_state_change("open") simultaneously must yield exactly one failover."""
+        """8 threads calling on_cb_state_change("open", seq=1) simultaneously must yield exactly one failover."""
         probe_call_count = [0]
         probe_lock = threading.Lock()
 
@@ -591,7 +591,7 @@ class TestConcurrency:
         def worker() -> None:
             try:
                 barrier.wait()
-                router.on_cb_state_change("gpt-5.4", "closed", "open")
+                router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
             except Exception as exc:  # noqa: BLE001
                 errors.append(exc)
 
@@ -605,7 +605,7 @@ class TestConcurrency:
         # Exactly one failover committed (subsequent calls are idempotent)
         assert router.is_failed_over("gpt-5.4")
         assert router.get_active_region("gpt-5.4") == "eu-west"
-        assert probe_call_count[0] <= 1
+        assert probe_call_count[0] == 1
 
     def test_concurrent_get_and_set_does_not_corrupt_state(
         self,
@@ -627,7 +627,7 @@ class TestConcurrency:
             try:
                 for i in range(50):
                     if i % 2 == 0:
-                        router.on_cb_state_change("gpt-5.4", "closed", "open")
+                        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
                     else:
                         router.reset("gpt-5.4")
             except Exception as exc:  # noqa: BLE001
@@ -659,6 +659,7 @@ class TestConcurrency:
         thread = threading.Thread(
             target=router.on_cb_state_change,
             args=("gpt-5.4", "closed", "open"),
+            kwargs={"seq": 1},
         )
 
         thread.start()
@@ -688,11 +689,13 @@ class TestConcurrency:
         thread = threading.Thread(
             target=router.on_cb_state_change,
             args=("gpt-5.4", "closed", "open"),
+            kwargs={"seq": 1},
         )
 
         thread.start()
         assert probe_started.wait(timeout=2.0)
-        router.on_cb_state_change("gpt-5.4", "open", "closed")
+        # Use a strictly greater seq so the CLOSED is not dropped as stale.
+        router.on_cb_state_change("gpt-5.4", "open", "closed", seq=2)
         probe_release.set()
         thread.join(timeout=2.0)
 
@@ -714,7 +717,7 @@ class TestAdversarial:
     ) -> None:
         """on_cb_state_change with a garbage old_state must not raise."""
         router = FailoverRouter(simple_config, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "totally_invalid_state", "open")
+        router.on_cb_state_change("gpt-5.4", "totally_invalid_state", "open", seq=1)
         # Should have committed failover normally
         assert router.is_failed_over("gpt-5.4")
 
@@ -728,7 +731,7 @@ class TestAdversarial:
             raise ValueError("bad region")
 
         router = FailoverRouter(simple_config, health_probe=evil_probe)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert not router.is_failed_over("gpt-5.4")
 
     def test_clock_backward_skew_does_not_cause_premature_recovery(
@@ -749,11 +752,11 @@ class TestAdversarial:
             min_failover_duration_seconds=30.0,
         )
         router = FailoverRouter(cfg, clock=fake_clock, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert router.is_failed_over("gpt-5.4")
 
         now[0] = 90.0  # clock skew backward
-        router.on_cb_state_change("gpt-5.4", "open", "closed")
+        router.on_cb_state_change("gpt-5.4", "open", "closed", seq=2)
         # Both _handle_closed and lazy recovery in is_failed_over must see negative elapsed.
         assert router.is_failed_over("gpt-5.4")
         assert router.get_active_region("gpt-5.4") == "eu-west"
@@ -762,7 +765,7 @@ class TestAdversarial:
         self,
         simple_config: FailoverConfig,
     ) -> None:
-        """on_cb_state_change("open") while already failed over must not double-failover."""
+        """on_cb_state_change("open", seq=1) while already failed over must not double-failover."""
         probe_count = [0]
 
         def counting_probe(_region: str) -> bool:
@@ -770,11 +773,11 @@ class TestAdversarial:
             return True
 
         router = FailoverRouter(simple_config, health_probe=counting_probe)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         first_probe_count = probe_count[0]
 
         # Second open event while already on secondary
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=2)
         assert probe_count[0] == first_probe_count, "Probe called again despite already failed over"
         assert router.get_active_region("gpt-5.4") == "eu-west"
 
@@ -790,7 +793,7 @@ class TestAdversarial:
         assert entry["failed_over"] is False
         assert entry["failover_at"] is None
 
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         snap2 = router.snapshot()
         entry2 = snap2["backends"]["gpt-5.4"]
         assert entry2["failed_over"] is True
@@ -804,17 +807,17 @@ class TestAdversarial:
             regions={"gpt-5.4": ["us-east"]},  # no secondary
         )
         router = FailoverRouter(cfg, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open")
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert not router.is_failed_over("gpt-5.4")
 
 
 # ---------------------------------------------------------------------------
-# Category H: Phase 6 integration (4 tests)
+# Category H: Phase 6 integration (9 tests)
 # ---------------------------------------------------------------------------
 
 
 class TestPhase6Integration:
-    """Phase 6 BaseException handler integration with LLMCircuitBreaker."""
+    """Phase 6 integration: BaseException handler, KI/SE re-raise, seq drop, default probe warning, reset+seq, unknown new_state."""
 
     @pytest.mark.asyncio
     async def test_base_exception_probe_reopen_notifies_failover(
@@ -838,11 +841,10 @@ class TestPhase6Integration:
         with pytest.raises(asyncio.CancelledError):
             await cb.call_with_retry(cancelled_probe, max_retries=1)
 
-        failover.on_cb_state_change.assert_called_with(
-            "gpt-5.4",
-            "half_open",
-            "open",
-        )
+        # seq is passed by LLMCircuitBreaker; assert positional + seq present.
+        call = failover.on_cb_state_change.call_args
+        assert call.args == ("gpt-5.4", "half_open", "open")
+        assert call.kwargs.get("seq", 0) > 0
 
     def test_notify_failover_propagates_keyboard_interrupt(
         self,
@@ -884,3 +886,106 @@ class TestPhase6Integration:
             cb.record_failure()
         assert cb.state == CircuitState.OPEN
         assert failover.on_cb_state_change.called
+
+    def test_stale_seq_notifications_dropped_by_router(self) -> None:
+        """on_cb_state_change must drop notifications whose seq <= last applied.
+
+        Simulates the record_failure / record_success out-of-order race: a
+        stale 'open' notify arriving after a fresher 'closed' notify must
+        not leave the router stuck on secondary while the CB is closed.
+        """
+        # Use a stable clock + large min duration so lazy recovery does not
+        # mask the seq-drop semantics being tested.
+        now = [0.0]
+
+        def fake_clock() -> float:
+            return now[0]
+
+        cfg = FailoverConfig(
+            enabled=True,
+            regions={"gpt-5.4": ["us-east", "eu-west"]},
+            min_failover_duration_seconds=30.0,
+        )
+        router = FailoverRouter(cfg, clock=fake_clock, health_probe=lambda _r: True)
+
+        # Fresh transition: CLOSED -> OPEN at seq=10, fails over.
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=10)
+        assert router.is_failed_over("gpt-5.4")
+
+        # Fresher transition: OPEN -> CLOSED at seq=11, advance clock past
+        # min_failover_duration so recovery commits.
+        now[0] = 31.0
+        router.on_cb_state_change("gpt-5.4", "open", "closed", seq=11)
+        assert not router.is_failed_over("gpt-5.4")
+
+        # Stale CLOSED -> OPEN at seq=5 arrives late (race) -- must be dropped.
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=5)
+        assert not router.is_failed_over("gpt-5.4")
+
+        # Stale equal-seq must also be dropped.
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=11)
+        assert not router.is_failed_over("gpt-5.4")
+
+    def test_default_probe_warning_when_enabled(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Constructing FailoverRouter with enabled=True and no probe must log a WARNING."""
+        cfg = FailoverConfig(
+            enabled=True,
+            regions={"gpt-5.4": ["us-east", "eu-west"]},
+        )
+        with caplog.at_level("WARNING", logger="massgen.backend.cb_failover"):
+            FailoverRouter(cfg)
+        assert any("NOT production safe" in rec.message for rec in caplog.records)
+
+    def test_default_probe_no_warning_when_disabled(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Disabled router constructed with no probe must not warn."""
+        cfg = FailoverConfig(enabled=False)
+        with caplog.at_level("WARNING", logger="massgen.backend.cb_failover"):
+            FailoverRouter(cfg)
+        assert not any("NOT production safe" in rec.message for rec in caplog.records)
+
+    def test_unknown_new_state_does_not_consume_seq_slot(self) -> None:
+        """Unsupported new_state ('half_open' etc) must NOT advance _last_seq.
+
+        Otherwise a stray notify with new_state='half_open' would silently
+        block subsequent legitimate 'open' / 'closed' notifies whose seq is
+        less than or equal to the consumed value.
+        """
+        cfg = FailoverConfig(
+            enabled=True,
+            regions={"gpt-5.4": ["us-east", "eu-west"]},
+            min_failover_duration_seconds=30.0,
+        )
+        router = FailoverRouter(cfg, health_probe=lambda _r: True)
+
+        # Stray notify with unsupported new_state -- ignored, seq not consumed.
+        router.on_cb_state_change("gpt-5.4", "open", "half_open", seq=100)
+        assert router._last_seq.get("gpt-5.4", 0) == 0
+
+        # Subsequent notify arriving later in time but with a smaller seq must still apply.
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=5)
+        assert router.is_failed_over("gpt-5.4")
+
+    def test_reset_clears_last_seq_for_subsequent_lower_seq_notifies(self) -> None:
+        """reset() must clear _last_seq so a fresh producer (e.g. hot-swapped CB) resumes from seq=1.
+
+        Without this, a router admin reset followed by a new CB instance whose
+        _transition_seq starts at 0 would have its early notifies dropped as
+        stale because the router still remembers the old CB's high seq.
+        """
+        cfg = FailoverConfig(
+            enabled=True,
+            regions={"gpt-5.4": ["us-east", "eu-west"]},
+            min_failover_duration_seconds=30.0,
+        )
+        router = FailoverRouter(cfg, health_probe=lambda _r: True)
+
+        # First lifecycle: failover at seq=10, admin reset.
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=10)
+        assert router.is_failed_over("gpt-5.4")
+        router.reset("gpt-5.4")
+        assert not router.is_failed_over("gpt-5.4")
+
+        # Simulate a fresh producer (e.g. hot-swapped CB whose seq counter
+        # restarted at 0). seq=1 must apply, NOT be dropped as stale.
+        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
+        assert router.is_failed_over("gpt-5.4")

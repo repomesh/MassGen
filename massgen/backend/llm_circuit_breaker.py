@@ -257,6 +257,16 @@ class LLMCircuitBreaker:
         self._last_failure_time = 0.0
         self._open_until = 0.0  # monotonic deadline for OPEN state
         self._half_open_probe_active = False
+        # Monotonically increasing sequence for state transitions, captured
+        # under self._lock at the same point as the transition itself. The
+        # number is passed to FailoverRouter.on_cb_state_change so observers
+        # can drop notifications that arrive out-of-order relative to the
+        # actual CB state mutation order. Concurrent record_failure /
+        # record_success on the same backend can otherwise interleave such
+        # that a stale "open" notify arrives at the router AFTER a "closed"
+        # notify, leaving the router stuck on secondary while the CB is
+        # actually closed.
+        self._transition_seq = 0
 
     # -- Public interface ---------------------------------------------------
 
@@ -435,7 +445,7 @@ class LLMCircuitBreaker:
                             "half_open",
                             "open",
                         )
-                    self._notify_failover("half_open", "open")
+                    self._notify_failover("half_open", "open", seq=self._next_seq())
                 else:
                     self._log(
                         "Circuit breaker opened",
@@ -449,7 +459,7 @@ class LLMCircuitBreaker:
                             prev_label,  # now from _prev_state, never stale
                             "open",
                         )
-                    self._notify_failover(prev_label, "open")
+                    self._notify_failover(prev_label, "open", seq=self._next_seq())
             else:
                 self._log(
                     "Failure recorded",
@@ -460,6 +470,7 @@ class LLMCircuitBreaker:
             return
 
         _transition_args: tuple[str, str, str] | None = None
+        _seq = 0
         with self._lock:
             self._failure_count += 1
             now = time.monotonic()
@@ -478,6 +489,8 @@ class LLMCircuitBreaker:
                     error_type=error_type,
                 )
                 _transition_args = (self.backend_name, "half_open", "open")
+                self._transition_seq += 1
+                _seq = self._transition_seq
 
             elif self._failure_count >= effective_max:
                 if prev_state == CircuitState.OPEN:
@@ -501,6 +514,8 @@ class LLMCircuitBreaker:
                         error_type=error_type,
                     )
                     _transition_args = (self.backend_name, prev_state.value, "open")
+                    self._transition_seq += 1
+                    _seq = self._transition_seq
             else:
                 self._log(
                     "Failure recorded",
@@ -515,7 +530,7 @@ class LLMCircuitBreaker:
                 *_transition_args,
             )
         if _transition_args is not None:
-            self._notify_failover(_transition_args[1], "open")
+            self._notify_failover(_transition_args[1], "open", seq=_seq)
 
     def record_success(self) -> None:
         """Record a successful API call. Resets failure counter and closes circuit."""
@@ -543,10 +558,11 @@ class LLMCircuitBreaker:
                         prev_state_str,
                         "closed",
                     )
-                self._notify_failover(prev_state_str, "closed")
+                self._notify_failover(prev_state_str, "closed", seq=self._next_seq())
             return
 
         _transition_args: tuple[str, str, str] | None = None
+        _seq = 0
         with self._lock:
             prev_state = self._state
             self._state = CircuitState.CLOSED
@@ -561,6 +577,8 @@ class LLMCircuitBreaker:
                     previous_state=prev_state.value,
                 )
                 _transition_args = (self.backend_name, prev_state.value, "closed")
+                self._transition_seq += 1
+                _seq = self._transition_seq
 
         if _transition_args is not None and self._metrics is not None:
             self._safe_emit(
@@ -568,7 +586,7 @@ class LLMCircuitBreaker:
                 *_transition_args,
             )
         if _transition_args is not None:
-            self._notify_failover(_transition_args[1], "closed")
+            self._notify_failover(_transition_args[1], "closed", seq=_seq)
 
     def force_open(self, reason: str = "", open_for_seconds: float = 0) -> None:
         """Force the circuit to OPEN state (e.g. on 429 STOP).
@@ -633,10 +651,11 @@ class LLMCircuitBreaker:
                     "open",
                 )
             if prev_state_value != CircuitState.OPEN.value:
-                self._notify_failover(prev_state_value, "open")
+                self._notify_failover(prev_state_value, "open", seq=self._next_seq())
             return
 
         _transition_args: tuple[str, str, str] | None = None
+        _seq = 0
         with self._lock:
             now = time.monotonic()
             prev_state = self._state
@@ -657,6 +676,8 @@ class LLMCircuitBreaker:
             self._log(f"Circuit breaker force-opened: {reason}", open_for_seconds=duration)
             if prev_state != CircuitState.OPEN:
                 _transition_args = (self.backend_name, prev_state.value, "open")
+                self._transition_seq += 1
+                _seq = self._transition_seq
 
         if _transition_args is not None and self._metrics is not None:
             self._safe_emit(
@@ -664,7 +685,7 @@ class LLMCircuitBreaker:
                 *_transition_args,
             )
         if _transition_args is not None:
-            self._notify_failover(_transition_args[1], "open")
+            self._notify_failover(_transition_args[1], "open", seq=_seq)
 
     def reset(self) -> None:
         """Reset circuit breaker to initial CLOSED state.
@@ -696,10 +717,11 @@ class LLMCircuitBreaker:
                     "closed",
                 )
             if prev_state_value != CircuitState.CLOSED.value:
-                self._notify_failover(prev_state_value, "closed")
+                self._notify_failover(prev_state_value, "closed", seq=self._next_seq())
             return
 
         _transition_args: tuple[str, str, str] | None = None
+        _seq = 0
         with self._lock:
             prev_state = self._state
             self._state = CircuitState.CLOSED
@@ -711,6 +733,8 @@ class LLMCircuitBreaker:
                 self._adaptive.reset_open_timer()
             if prev_state != CircuitState.CLOSED:
                 _transition_args = (self.backend_name, prev_state.value, "closed")
+                self._transition_seq += 1
+                _seq = self._transition_seq
 
         if _transition_args is not None and self._metrics is not None:
             self._safe_emit(
@@ -718,7 +742,7 @@ class LLMCircuitBreaker:
                 *_transition_args,
             )
         if _transition_args is not None:
-            self._notify_failover(_transition_args[1], "closed")
+            self._notify_failover(_transition_args[1], "closed", seq=_seq)
 
     # -- 429-aware retry wrapper --------------------------------------------
 
@@ -933,8 +957,9 @@ class LLMCircuitBreaker:
                                 "half_open",
                                 "open",
                             )
-                        self._notify_failover("half_open", "open")
+                        self._notify_failover("half_open", "open", seq=self._next_seq())
                 else:
+                    _seq = 0
                     with self._lock:
                         if self._state == CircuitState.HALF_OPEN and self._half_open_probe_active:
                             self._state = CircuitState.OPEN
@@ -944,13 +969,15 @@ class LLMCircuitBreaker:
                             self._half_open_probe_active = False
                             self._log("Probe terminated abnormally, circuit breaker re-opened")
                             _transition_args = (self.backend_name, "half_open", "open")
+                            self._transition_seq += 1
+                            _seq = self._transition_seq
                     if _transition_args is not None and self._metrics is not None:
                         self._safe_emit(
                             self._metrics.record_state_transition,
                             *_transition_args,
                         )
                     if _transition_args is not None:
-                        self._notify_failover(_transition_args[1], "open")
+                        self._notify_failover(_transition_args[1], "open", seq=_seq)
             raise
 
     # -- Internal helpers ---------------------------------------------------
@@ -966,19 +993,46 @@ class LLMCircuitBreaker:
         except Exception:  # noqa: BLE001
             pass
 
-    def _notify_failover(self, prev_state: str, new_state: str) -> None:
+    def _next_seq(self) -> int:
+        """Atomically increment and return the next transition sequence number.
+
+        Thread-safe: increment runs under self._lock. For in-memory state
+        transitions, callers should instead capture self._transition_seq
+        inline within the existing lock block that performs the transition,
+        so the seq value is captured at the same point as the state mutation.
+        For the store backend, where the state is mutated atomically by the
+        store and there is no local lock around the mutation, this helper
+        provides best-effort per-process monotonic seq.
+        """
+        with self._lock:
+            self._transition_seq += 1
+            return self._transition_seq
+
+    def _notify_failover(self, prev_state: str, new_state: str, seq: int) -> None:
         """Notify the attached failover router of a CB state transition.
 
-        Catches Exception and asyncio.CancelledError (a BaseException since
-        Python 3.8) so an observer bug or in-flight cancellation cannot break
-        CB state mutation. KeyboardInterrupt and SystemExit are re-raised so
-        user/process control signals are never silently swallowed. No-op when
-        no router is attached.
+        Any exception raised by the router is caught and logged at WARNING so
+        an observer bug or in-flight cancellation cannot break CB state
+        mutation. The catch covers Exception and other BaseException
+        subclasses including asyncio.CancelledError (a BaseException since
+        Python 3.8), GeneratorExit, and MemoryError. KeyboardInterrupt and
+        SystemExit are explicitly re-raised so user/process control signals
+        are never silently swallowed. No-op when no router is attached.
+
+        Args:
+            prev_state: CB state value (e.g. "closed", "half_open") before
+                the transition.
+            new_state: CB state value after the transition (typically "open"
+                or "closed").
+            seq: Monotonically increasing transition sequence number captured
+                under self._lock at the transition site. Lets the router
+                discard notifications that arrive out-of-order relative to
+                the actual CB state mutation order.
         """
         if self._failover is None:
             return
         try:
-            self._failover.on_cb_state_change(self.backend_name, prev_state, new_state)
+            self._failover.on_cb_state_change(self.backend_name, prev_state, new_state, seq=seq)
         except (KeyboardInterrupt, SystemExit):
             # Never swallow user/process control signals.
             raise
@@ -990,6 +1044,7 @@ class LLMCircuitBreaker:
                     "error_message": str(exc),
                     "prev_state": prev_state,
                     "new_state": new_state,
+                    "seq": seq,
                 },
                 exc_info=True,
             )
