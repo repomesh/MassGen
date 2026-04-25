@@ -1012,6 +1012,12 @@ class LLMCircuitBreaker:
         order. FailoverRouter mitigates this by tracking _last_seq[backend]
         and dropping stale notifications, so the next genuine transition
         resyncs router state with CB state.
+
+        WARNING: in-memory transition paths must NOT call this helper. They
+        must capture ``self._transition_seq`` inline under the lock that
+        guards the state mutation so the seq is captured at the same point
+        as the mutation. Calling _next_seq() from those paths would re-
+        acquire self._lock and break that invariant.
         """
         with self._lock:
             self._transition_seq += 1

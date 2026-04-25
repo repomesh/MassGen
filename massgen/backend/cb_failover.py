@@ -17,6 +17,7 @@ import logging
 import threading
 import time
 import types
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -92,7 +93,7 @@ class FailoverConfig:
                         f"regions[{backend!r}] contains invalid region: {region!r}",
                     )
             if len(regions_tuple) != len(set(regions_tuple)):
-                duplicates = [r for r in regions_tuple if regions_tuple.count(r) > 1]
+                duplicates = sorted(r for r, c in Counter(regions_tuple).items() if c > 1)
                 raise ValueError(
                     f"regions[{backend!r}] contains duplicate region(s): {duplicates!r}",
                 )
@@ -505,8 +506,11 @@ class FailoverRouter:
                             if callable(close):
                                 try:
                                     close()
-                                except Exception:  # noqa: BLE001 -- best-effort cleanup
-                                    pass
+                                except Exception as close_exc:  # noqa: BLE001 -- best-effort cleanup
+                                    logger.debug(
+                                        "Best-effort close() on probe return value raised %s; ignoring.",
+                                        type(close_exc).__name__,
+                                    )
                             sink[0] = TypeError(
                                 "health_probe returned a coroutine, awaitable, async generator, " "or generator; probes must return bool synchronously -- see " "FailoverRouter.__init__ docstring.",
                             )
