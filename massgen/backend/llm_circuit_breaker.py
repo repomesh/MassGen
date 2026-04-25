@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import logging
 import random
 import threading
 import time
@@ -24,6 +25,8 @@ from typing import TYPE_CHECKING, Any
 
 from ..logger_config import log_backend_activity
 from .cb_store import DEFAULT_CIRCUIT_BREAKER_STATE
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from massgen.observability.prometheus import CircuitBreakerMetrics
@@ -217,6 +220,10 @@ class LLMCircuitBreaker:
                 ``config`` so the adaptive math stays consistent with the
                 static fall-through behavior; a mismatch raises
                 ``ValueError``. When None, fixed thresholds are used.
+            failover: Optional FailoverRouter for multi-region failover routing.
+                Default None preserves existing behavior. When provided, the CB
+                notifies the router on state transitions to trigger failover or
+                recovery.
 
         Raises:
             ValueError: If ``adaptive`` is provided and its base config's
@@ -929,6 +936,22 @@ class LLMCircuitBreaker:
                                 "half_open",
                                 "open",
                             )
+                        if self._failover is not None:
+                            try:
+                                self._failover.on_cb_state_change(
+                                    self.backend_name,
+                                    "half_open",
+                                    "open",
+                                )
+                            except BaseException as exc:
+                                logger.warning(
+                                    "Failover notification failed in BaseException handler " "(store path)",
+                                    extra={
+                                        "error_type": type(exc).__name__,
+                                        "error_message": str(exc),
+                                    },
+                                    exc_info=True,
+                                )
                 else:
                     with self._lock:
                         if self._state == CircuitState.HALF_OPEN and self._half_open_probe_active:
@@ -938,13 +961,28 @@ class LLMCircuitBreaker:
                             self._open_until = time.monotonic() + self._effective_reset_time()
                             self._half_open_probe_active = False
                             self._log("Probe terminated abnormally, circuit breaker re-opened")
-                            if self._metrics is not None:
-                                _transition_args = (self.backend_name, "half_open", "open")
+                            _transition_args = (self.backend_name, "half_open", "open")
                     if _transition_args is not None and self._metrics is not None:
                         self._safe_emit(
                             self._metrics.record_state_transition,
                             *_transition_args,
                         )
+                    if _transition_args is not None and self._failover is not None:
+                        try:
+                            self._failover.on_cb_state_change(
+                                self.backend_name,
+                                _transition_args[1],
+                                "open",
+                            )
+                        except BaseException as exc:
+                            logger.warning(
+                                "Failover notification failed in BaseException handler " "(in-memory path)",
+                                extra={
+                                    "error_type": type(exc).__name__,
+                                    "error_message": str(exc),
+                                },
+                                exc_info=True,
+                            )
             raise
 
     # -- Internal helpers ---------------------------------------------------
