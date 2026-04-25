@@ -1003,6 +1003,15 @@ class LLMCircuitBreaker:
         For the store backend, where the state is mutated atomically by the
         store and there is no local lock around the mutation, this helper
         provides best-effort per-process monotonic seq.
+
+        Caveat: in the store branches (callers of atomic_record_failure,
+        atomic_record_success, cas_state) the seq is captured AFTER the
+        store mutation returns. Two concurrent threads can therefore order
+        their store mutations one way and their _next_seq() calls the other
+        way, producing notifications whose seq does not match store-commit
+        order. FailoverRouter mitigates this by tracking _last_seq[backend]
+        and dropping stale notifications, so the next genuine transition
+        resyncs router state with CB state.
         """
         with self._lock:
             self._transition_seq += 1

@@ -44,7 +44,7 @@ def cb_config() -> LLMCircuitBreakerConfig:
 
 
 # ---------------------------------------------------------------------------
-# Category A: FailoverConfig validation (10 tests)
+# Category A: FailoverConfig validation (11 tests)
 # ---------------------------------------------------------------------------
 
 
@@ -105,6 +105,25 @@ class TestFailoverConfigValidation:
         )
         assert len(cfg.regions["gpt-5.4"]) == 3
 
+    def test_post_construction_mutation_rejected(self) -> None:
+        """Frozen dataclass + tuple-ized + MappingProxyType regions must reject all post-construction mutation."""
+        cfg = FailoverConfig(
+            enabled=True,
+            regions={"gpt-5.4": ["us-east", "eu-west"]},
+        )
+        # Field assignment on frozen dataclass.
+        with pytest.raises((AttributeError, Exception), match="(?i)frozen|cannot assign"):
+            cfg.enabled = False  # type: ignore[misc]
+        # Inner per-backend list is a tuple -- no append.
+        with pytest.raises(AttributeError):
+            cfg.regions["gpt-5.4"].append("ap-southeast")  # type: ignore[attr-defined]
+        # Outer mapping is MappingProxyType -- no item assignment.
+        with pytest.raises(TypeError):
+            cfg.regions["new-backend"] = ("a", "b")  # type: ignore[index]
+        # Outer mapping has no del either.
+        with pytest.raises(TypeError):
+            del cfg.regions["gpt-5.4"]  # type: ignore[misc]
+
 
 # ---------------------------------------------------------------------------
 # Category B: Failover trigger (7 tests)
@@ -163,7 +182,10 @@ class TestFailoverTrigger:
         elapsed = time.monotonic() - start
 
         # Two secondaries x 0.05s timeout => bounded above by ~0.5s with thread overhead.
-        assert elapsed < 1.0, f"on_cb_state_change should complete near timeout, took {elapsed:.2f}s"
+        # Bound is generous (>= ~6x theoretical max) so slow CI runners
+        # don't flake. The probe sleeps 5.0s, so any value < 5.0 still
+        # proves the timeout fired and the caller was unblocked early.
+        assert elapsed < 2.0, f"on_cb_state_change should complete near timeout, took {elapsed:.2f}s"
         assert not router.is_failed_over("gpt-5.4")
         # The pending flag must be cleared so a subsequent OPEN can retry.
         assert router._failover_pending.get("gpt-5.4", False) is False
@@ -564,7 +586,7 @@ class TestLLMCBIntegration:
 
 
 # ---------------------------------------------------------------------------
-# Category F: Concurrency (4 tests)
+# Category F: Concurrency (5 tests)
 # ---------------------------------------------------------------------------
 
 
@@ -671,6 +693,67 @@ class TestConcurrency:
         assert not thread.is_alive()
         assert not router.is_failed_over("gpt-5.4")
         assert router.get_active_region("gpt-5.4") == "us-east"
+
+    def test_reset_then_concurrent_new_open_does_not_lose_new_failover(
+        self,
+        simple_config: FailoverConfig,
+    ) -> None:
+        """T1 probing + admin reset() + T2 new OPEN must not let T1 wipe T2's claim or commit under T2's slot.
+
+        Without per-claim generation tokens, T1's terminal finally could clear
+        _failover_pending after T2 already re-claimed it, silently dropping
+        T2's failover. Or T1's late successful probe could commit T1's region
+        choice under T2's pending claim.
+        """
+        probe_started = threading.Event()
+        t1_probe_release = threading.Event()
+        t2_probe_release = threading.Event()
+        probe_call = [0]
+
+        def slow_probe(_region: str) -> bool:
+            probe_call[0] += 1
+            n = probe_call[0]
+            if n == 1:
+                probe_started.set()
+                assert t1_probe_release.wait(timeout=2.0)
+                return True  # T1 probe succeeds late.
+            # T2's probe -- release immediately when signalled.
+            assert t2_probe_release.wait(timeout=2.0)
+            return True
+
+        router = FailoverRouter(simple_config, health_probe=slow_probe)
+        t1 = threading.Thread(
+            target=router.on_cb_state_change,
+            args=("gpt-5.4", "closed", "open"),
+            kwargs={"seq": 1},
+        )
+        t1.start()
+        assert probe_started.wait(timeout=2.0)
+
+        # Admin reset -- bumps probe generation, clears pending + last_seq.
+        router.reset("gpt-5.4")
+
+        # T2 starts a fresh OPEN. seq=1 is fine because reset() cleared _last_seq.
+        t2 = threading.Thread(
+            target=router.on_cb_state_change,
+            args=("gpt-5.4", "closed", "open"),
+            kwargs={"seq": 1},
+        )
+        t2.start()
+
+        # Let both probes complete. T2 first so it can claim and commit, then
+        # T1 so its late commit attempt sees the generation mismatch.
+        t2_probe_release.set()
+        t1_probe_release.set()
+        t1.join(timeout=2.0)
+        t2.join(timeout=2.0)
+
+        assert not t1.is_alive()
+        assert not t2.is_alive()
+        # T2's failover must stand. T1's late commit must not have wiped it
+        # via the finally cleanup or overridden the active region.
+        assert router.is_failed_over("gpt-5.4")
+        assert router.get_active_region("gpt-5.4") == "eu-west"
 
     def test_closed_during_inflight_probe_aborts_failover(
         self,
@@ -800,15 +883,17 @@ class TestAdversarial:
         assert isinstance(entry2["failover_at"], float)
         assert entry2["active_region"] == "eu-west"
 
-    def test_no_secondary_configured_logs_warning_no_crash(self) -> None:
-        """Backend with only one region (no secondary) must not raise on OPEN."""
+    def test_no_secondary_configured_logs_warning_no_crash(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Backend with only one region (no secondary) must log WARNING and not raise on OPEN."""
         cfg = FailoverConfig(
             enabled=True,
             regions={"gpt-5.4": ["us-east"]},  # no secondary
         )
         router = FailoverRouter(cfg, health_probe=lambda _r: True)
-        router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
+        with caplog.at_level("WARNING", logger="massgen.backend.cb_failover"):
+            router.on_cb_state_change("gpt-5.4", "closed", "open", seq=1)
         assert not router.is_failed_over("gpt-5.4")
+        assert any("no secondary region configured" in rec.message for rec in caplog.records)
 
 
 # ---------------------------------------------------------------------------

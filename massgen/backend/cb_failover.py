@@ -15,28 +15,40 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Callable
+import types
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class FailoverConfig:
     """Configuration for the multi-region failover router.
 
     All fields have safe defaults so existing CB configs need no changes.
-    Set enabled=True and populate regions to activate failover.
+    Set enabled=True and populate regions to activate failover. The dataclass
+    is frozen and `regions` is normalized to an immutable mapping in
+    __post_init__ so callers cannot mutate the config after construction
+    and bypass validation.
     """
 
     enabled: bool = False
-    # Map backend name to ordered list of region strings.
-    # First element is the primary; subsequent elements are secondaries
-    # tried in order. Example: {"gpt-5.4": ["us-east", "eu-west"]}
-    regions: dict[str, list[str]] = field(default_factory=dict)
+    # Map backend name to ordered sequence of region strings. First element
+    # is the primary; subsequent elements are secondaries tried in order.
+    # Example input: {"gpt-5.4": ["us-east", "eu-west"]}. Annotated as a
+    # read-only Mapping[str, Sequence[str]] so type checkers reject
+    # mutation attempts (e.g. cfg.regions["x"].append("y") or
+    # cfg.regions["x"] = (...)). __post_init__ normalizes the validated
+    # input to MappingProxyType[str, tuple[str, ...]] so the runtime form
+    # also rejects mutation.
+    regions: Mapping[str, Sequence[str]] = field(default_factory=dict)
     # Seconds to wait for health probe before committing failover.
-    # Must be > 0.
+    # Must be > 0. Probe authors MUST also apply a client-level timeout
+    # (e.g. requests.get(..., timeout=...)) so the underlying socket
+    # actually closes; the daemon-thread timeout here only unblocks the
+    # caller and abandons the probe thread.
     health_check_timeout_seconds: float = 5.0
     # Minimum seconds to stay on secondary after a failover before
     # restoring primary on CB recovery. Prevents flapping. >= 0.
@@ -58,25 +70,39 @@ class FailoverConfig:
             raise ValueError(
                 f"recovery_check_interval_seconds must be > 0, " f"got {self.recovery_check_interval_seconds}",
             )
+        # Materialize each region sequence into a tuple BEFORE iterating so
+        # iterator inputs (which would otherwise be consumed by the first
+        # for-loop and report a misleading "non-empty list" error from the
+        # subsequent len() check) are handled correctly.
+        materialized: dict[str, tuple[str, ...]] = {}
         for backend, region_list in self.regions.items():
             if not isinstance(backend, str) or not backend.strip():
                 raise ValueError(
                     f"regions keys must be non-empty strings, got {backend!r}",
                 )
-            if not region_list:
+            regions_tuple = tuple(region_list)
+            if not regions_tuple:
                 raise ValueError(
                     f"regions[{backend!r}] must be a non-empty list, got {region_list!r}",
                 )
-            for region in region_list:
+            for region in regions_tuple:
                 if not isinstance(region, str) or not region.strip():
                     raise ValueError(
                         f"regions[{backend!r}] contains invalid region: {region!r}",
                     )
-            if len(region_list) != len(set(region_list)):
-                duplicates = [r for r in region_list if region_list.count(r) > 1]
+            if len(regions_tuple) != len(set(regions_tuple)):
+                duplicates = [r for r in regions_tuple if regions_tuple.count(r) > 1]
                 raise ValueError(
                     f"regions[{backend!r}] contains duplicate region(s): {duplicates!r}",
                 )
+            materialized[backend] = regions_tuple
+        # Freeze the validated regions so callers cannot mutate the config
+        # post-construction and bypass the checks above. The inner per-
+        # backend tuples were created during validation; here we wrap the
+        # outer dict in types.MappingProxyType so the mapping itself is
+        # also read-only. The dataclass is frozen so we use
+        # object.__setattr__ to write through.
+        object.__setattr__(self, "regions", types.MappingProxyType(materialized))
 
 
 class FailoverRouter:
@@ -145,8 +171,16 @@ class FailoverRouter:
         # Last applied transition seq per backend, for out-of-order notify drop.
         # See on_cb_state_change docstring.
         self._last_seq: dict[str, int] = {}
+        # Per-backend probe generation token. Incremented when a probe slot is
+        # claimed in _handle_open AND when reset() runs. The probing thread
+        # captures its generation locally and only commits / runs finally
+        # cleanup when the stored generation still matches. Without this, an
+        # admin reset() racing with a new OPEN can let an old probe's commit
+        # land under the new probe's pending claim, or let an old probe's
+        # finally wipe the new probe's claim.
+        self._probe_gen: dict[str, int] = {}
 
-    def _try_lazy_recovery_unlocked(self, backend: str, region_list: list[str]) -> None:
+    def _try_lazy_recovery_unlocked(self, backend: str, region_list: Sequence[str]) -> None:
         """Restore primary if min_failover_duration has elapsed since failover.
 
         Caller must hold self._lock. Mutates _active_region and _failover_at
@@ -279,7 +313,7 @@ class FailoverRouter:
         self,
         backend: str,
         old_state: str,
-        region_list: list[str],
+        region_list: Sequence[str],
     ) -> None:
         """Internal: evaluate failover when CB enters OPEN.
 
@@ -295,6 +329,7 @@ class FailoverRouter:
         # flag is set BEFORE _failover_pending so the finally cleanup is
         # always reachable when the actual flag is set.
         pending_claimed = False
+        my_gen = 0
         primary = region_list[0]
         committed = False
         timeout = self._config.health_check_timeout_seconds
@@ -319,6 +354,12 @@ class FailoverRouter:
                 pending_claimed = True
                 self._failover_pending[backend] = True
                 self._closed_during_probe.pop(backend, None)
+                # Capture a per-claim generation token. Both reset() and a
+                # fresh slot claim in _handle_open bump _probe_gen, so a
+                # stale probe whose generation no longer matches will not
+                # commit and will not wipe the new owner's claim in finally.
+                self._probe_gen[backend] = self._probe_gen.get(backend, 0) + 1
+                my_gen = self._probe_gen[backend]
 
             for candidate in region_list[1:]:
                 probe_result = False
@@ -370,6 +411,15 @@ class FailoverRouter:
                     probe_result = bool(probe_outcome[0])
                 if probe_result:
                     with self._lock:
+                        # Generation mismatch means reset() ran (or another
+                        # probe took over the slot) since we claimed it. Do
+                        # not clobber the new owner's state.
+                        if self._probe_gen.get(backend, 0) != my_gen:
+                            logger.info(
+                                "Failover probe for %r succeeded but commit was aborted because the probe slot was reclaimed (gen mismatch).",
+                                backend,
+                            )
+                            return
                         if not self._failover_pending.get(backend, False):
                             logger.info(
                                 "Failover probe for %r succeeded but commit was aborted because pending failover state was cleared before commit.",
@@ -415,20 +465,22 @@ class FailoverRouter:
         finally:
             # Clean up only when:
             # - we actually claimed the probe slot (pending_claimed=True), AND
-            # - the probe did not commit (commit clears pending atomically).
-            # This prevents (a) wiping a subsequent concurrent probe's claim
-            # after a successful commit, and (b) leaving _failover_pending stuck
-            # True if a BaseException fires between slot claim and probe start.
+            # - the probe did not commit (commit clears pending atomically), AND
+            # - the probe generation we own still matches the current generation
+            #   (i.e. reset() did not run and another probe did not claim the
+            #   slot in the meantime). This prevents wiping a subsequent
+            #   concurrent probe's claim after our probe was superseded.
             if pending_claimed and not committed:
                 with self._lock:
-                    self._failover_pending[backend] = False
-                    self._closed_during_probe.pop(backend, None)
+                    if self._probe_gen.get(backend, 0) == my_gen:
+                        self._failover_pending[backend] = False
+                        self._closed_during_probe.pop(backend, None)
 
     def _handle_closed(
         self,
         backend: str,
         old_state: str,
-        region_list: list[str],
+        region_list: Sequence[str],
     ) -> None:
         """Internal: evaluate recovery when CB returns to CLOSED."""
         with self._lock:
@@ -546,4 +598,8 @@ class FailoverRouter:
             # whose _transition_seq starts at 0) can resume notifying without
             # its early notifies being dropped as stale by lingering last_seq.
             self._last_seq.pop(backend, None)
+            # Bump probe generation so any in-flight probe whose slot we just
+            # cleared cannot commit (gen mismatch) and cannot wipe a fresh
+            # claim made by a subsequent OPEN.
+            self._probe_gen[backend] = self._probe_gen.get(backend, 0) + 1
         logger.info("Administrative reset for %r: restored primary %r.", backend, region_list[0])
