@@ -12,7 +12,5 @@
 - **Try It**:
   ```bash
   pip install massgen==0.1.81
-  # Try checkpoint MCP in Claude Code
-  claude mcp add massgen-checkpoint-mcp -- \
-    uvx --from massgen massgen-checkpoint-mcp --config path/to/config.yaml
+  uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
   ```
