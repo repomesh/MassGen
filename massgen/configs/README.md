@@ -227,21 +227,28 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.80 - Latest
+### v0.1.81 - Latest
+**New Features:** Multi-Region Circuit Breaker Failover (Phase 6)
+
+**Key Features:**
+- **Multi-Region Failover**: LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy
+- **Production-Grade Resilience**: Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds)
+
+**Try It:**
+```bash
+pip install massgen==0.1.81
+# Try checkpoint MCP in Claude Code
+claude mcp add massgen-checkpoint-mcp -- \
+  uvx --from massgen massgen-checkpoint-mcp --config path/to/config.yaml
+```
+
+### v0.1.80
 **New Features:** Adaptive Circuit Breaker & Checkpoint Modes
 
 **Key Features:**
 - **Circuit Breaker Adaptive Thresholds (Phase 5)**: Self-tuning thresholds that respond to each backend's actual failure patterns
 - **Single Checkpoint Mode**: New standalone checkpoint mode — no recheckpointing within a single operation
 - **Draft Plan Verify Mode**: New standalone checkpoint mode — verify a draft plan before executing
-
-**Try It:**
-```bash
-pip install massgen==0.1.80
-# Try checkpoint MCP in Claude Code
-claude mcp add massgen-checkpoint-mcp -- \
-  uvx --from massgen massgen-checkpoint-mcp --config path/to/config.yaml
-```
 
 ### v0.1.79
 **New Features:** Fast Mode Speed Control & Broader Checkpoint Framing

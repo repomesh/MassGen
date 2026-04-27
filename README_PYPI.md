@@ -68,7 +68,7 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🆕 Latest Features</h3></summary>
 
-- [v0.1.80 Features](#-latest-features-v0180)
+- [v0.1.81 Features](#-latest-features-v0181)
 </details>
 
 <details open>
@@ -121,15 +121,15 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🗺️ Roadmap</h3></summary>
 
-- [Recent Achievements (v0.1.80)](#recent-achievements-v0180)
-- [Previous Achievements (v0.0.3 - v0.1.79)](#previous-achievements-v003---v0179)
+- [Recent Achievements (v0.1.81)](#recent-achievements-v0181)
+- [Previous Achievements (v0.0.3 - v0.1.80)](#previous-achievements-v003---v0180)
 - [Key Future Enhancements](#key-future-enhancements)
   - Bug Fixes & Backend Improvements
   - Advanced Agent Collaboration
   - Expanded Model, Tool & Agent Integrations
   - Improved Performance & Scalability
   - Enhanced Developer Experience
-- [v0.1.81 Roadmap](#v0181-roadmap)
+- [v0.1.82 Roadmap](#v0182-roadmap)
 </details>
 
 <details open>
@@ -154,18 +154,16 @@ This project started with the "threads of thought" and "iterative refinement" id
 
 ---
 
-## 🆕 Latest Features (v0.1.80)
+## 🆕 Latest Features (v0.1.81)
 
-**🎉 Released: April 22, 2026**
+**🎉 Released: April 27, 2026**
 
-**What's New in v0.1.80:**
-- **🎯 Circuit Breaker Adaptive Thresholds (Phase 5)** - Self-tuning thresholds that respond to each backend's actual failure patterns.
-- **🛡️ Single Checkpoint Mode** - New standalone checkpoint mode — no recheckpointing within a single operation.
-- **📋 Draft Plan Verify Mode** - New standalone checkpoint mode — verify a draft plan before executing.
+**What's New in v0.1.81:**
+- **🌐 Multi-Region Circuit Breaker Failover (Phase 6)** - LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy.
 
-**Try v0.1.80 Features:**
+**Try v0.1.81 Features:**
 ```bash
-pip install massgen==0.1.80
+pip install massgen==0.1.81
 # Try checkpoint MCP in Claude Code
 claude mcp add massgen-checkpoint-mcp -- \
   uvx --from massgen massgen-checkpoint-mcp --config path/to/config.yaml
@@ -1240,16 +1238,17 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 ⚠️ **Early Stage Notice:** As MassGen is in active development, please expect upcoming breaking architecture changes as we continue to refine and improve the system.
 
-### Recent Achievements (v0.1.80)
+### Recent Achievements (v0.1.81)
 
-**🎉 Released: April 22, 2026**
+**🎉 Released: April 27, 2026**
 
-#### Adaptive Circuit Breaker & Checkpoint Modes
-- **Circuit Breaker Adaptive Thresholds (Phase 5)** ([#1065](https://github.com/massgen/MassGen/pull/1065)): Self-tuning thresholds that respond to each backend's actual failure patterns
-- **Single Checkpoint Mode** ([#1070](https://github.com/massgen/MassGen/pull/1070)): No recheckpointing within a single operation
-- **Draft Plan Verify Mode** ([#1070](https://github.com/massgen/MassGen/pull/1070)): Verify a draft plan before executing
+#### Multi-Region Circuit Breaker Failover (Phase 6)
+- **Multi-Region Failover** ([#1072](https://github.com/massgen/MassGen/pull/1072)): LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy
+- **Production-Grade Resilience**: Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds)
 
-### Previous Achievements (v0.0.3 - v0.1.79)
+### Previous Achievements (v0.0.3 - v0.1.80)
+
+✅ **Adaptive Circuit Breaker & Checkpoint Modes (v0.1.80)**: Circuit breaker Phase 5 with self-tuning adaptive thresholds. New standalone checkpoint modes: single checkpoint and draft plan verify.
 
 ✅ **Fast Mode Speed Control & Broader Checkpoint Framing (v0.1.79)**: New fast mode options for fine-grained speed vs. quality control. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases.
 
@@ -1554,9 +1553,9 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 We welcome community contributions to achieve these goals.
 
-### v0.1.81 Roadmap
+### v0.1.82 Roadmap
 
-Version 0.1.81 focuses on cloud execution (deferred again from v0.1.80):
+Version 0.1.82 focuses on cloud execution (deferred again from v0.1.81):
 
 #### Planned Features
 - **Cloud Modal MVP** ([#982](https://github.com/massgen/MassGen/issues/982)): Run MassGen as a cloud job on Modal — progress streams to terminal, results saved locally under `.massgen/cloud_jobs/`
