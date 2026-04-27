@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.80
+**Current Version:** v0.1.81
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** April 22, 2026
+**Last Updated:** April 27, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,11 +42,24 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.81** | 04/24/26 | Cloud Modal MVP | @ncrispino | Run MassGen as a cloud job on Modal — deferred again ([#982](https://github.com/massgen/MassGen/issues/982)) |
-| **v0.1.82** | 04/27/26 | OpenAI Audio API | @ncrispino | Support OpenAI audio API for audio understanding ([#960](https://github.com/massgen/MassGen/issues/960)) |
-| **v0.1.83** | 04/29/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) |
+| **v0.1.82** | 04/29/26 | Cloud Modal MVP | @ncrispino | Run MassGen as a cloud job on Modal — deferred again ([#982](https://github.com/massgen/MassGen/issues/982)) |
+| **v0.1.83** | 05/01/26 | OpenAI Audio API | @ncrispino | Support OpenAI audio API for audio understanding ([#960](https://github.com/massgen/MassGen/issues/960)) |
+| **v0.1.84** | 05/04/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.81 - Multi-Region Circuit Breaker Failover (Phase 6) (Completed)
+
+**Released:** April 27, 2026 | PRs: [#1072](https://github.com/massgen/MassGen/pull/1072)
+
+### Features
+- **Multi-Region Failover**: LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy
+- **Production-Grade Resilience**: Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds) for full multi-region resilience
+
+### Notes
+- Cloud Modal MVP originally planned for v0.1.81 — deferred again to v0.1.82.
 
 ---
 
@@ -126,7 +139,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.81 - Cloud Modal MVP (Deferred from v0.1.80)
+## 📋 v0.1.82 - Cloud Modal MVP (Deferred from v0.1.81)
 
 ### Features
 
@@ -142,7 +155,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.82 - OpenAI Audio API
+## 📋 v0.1.83 - OpenAI Audio API
 
 ### Features
 
@@ -158,7 +171,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.83 - Image/Video Edit Capabilities
+## 📋 v0.1.84 - Image/Video Edit Capabilities
 
 ### Features
 

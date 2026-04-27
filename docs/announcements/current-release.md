@@ -1,4 +1,4 @@
-# MassGen v0.1.80 Release Announcement
+# MassGen v0.1.81 Release Announcement
 
 <!--
 This is the current release announcement. Copy this + feature-highlights.md to LinkedIn/X.
@@ -7,17 +7,17 @@ After posting, update the social links below.
 
 ## Release Summary
 
-We're excited to release MassGen v0.1.80 — Adaptive Circuit Breaker & Checkpoint Modes! 🚀 Circuit breaker Phase 5 adds adaptive thresholds that tune themselves to each backend's behavior. New standalone checkpoint modes: single checkpoint (no recheckpointing) and draft plan verify mode.
+We're excited to release MassGen v0.1.81 — Multi-Region Circuit Breaker Failover (Phase 6)! 🚀 The LLM circuit breaker can now fail over to backup regions when the primary trips OPEN, keeping coordination running through regional outages.
 
 ## Install
 
 ```bash
-pip install massgen==0.1.80
+pip install massgen==0.1.81
 ```
 
 ## Links
 
-- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.80
+- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.81
 - **X post:** [TO BE ADDED AFTER POSTING]
 - **LinkedIn post:** [TO BE ADDED AFTER POSTING]
 
@@ -29,30 +29,23 @@ Copy everything below this line, then append content from `feature-highlights.md
 
 ---
 
-We're excited to release MassGen v0.1.80 — Adaptive Circuit Breaker & Checkpoint Modes! 🚀 Circuit breaker Phase 5 adds adaptive thresholds that tune themselves to each backend's behavior. New standalone checkpoint modes for tighter safety loops.
+We're excited to release MassGen v0.1.81 — Multi-Region Circuit Breaker Failover (Phase 6)! 🚀 The LLM circuit breaker can now fail over to backup regions when the primary trips OPEN, keeping coordination running through regional outages.
 
 **Key Improvements:**
 
-🎯 **Circuit Breaker Adaptive Thresholds (Phase 5)** — Self-tuning rate-limit protection:
-- Adaptive thresholds respond to each backend's actual failure patterns
-- Effective threshold computation helpers for cleaner logic
-- `force_open` metrics gated on actual state transitions
-- Preserves `_open_until` with intent comments for clearer semantics
-
-🛡️ **New Standalone Checkpoint Modes** — Tighter safety loops:
-- **Single checkpoint mode** — No recheckpointing within a single operation
-- **Draft plan verify mode** — Verify a draft plan before executing
+🌐 **Multi-Region Failover (Phase 6)** — Stay running through regional outages:
+- Circuit breaker fails over to backup regions when the primary trips OPEN
+- Automatic recovery when the primary region returns to healthy
+- Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds) for production-grade resilience
 
 **Getting Started:**
 
 ```bash
-pip install massgen==0.1.80
-# Try checkpoint MCP in Claude Code
-claude mcp add massgen-checkpoint-mcp -- \
-  uvx --from massgen massgen-checkpoint-mcp --config path/to/config.yaml
+pip install massgen==0.1.81
+uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
 ```
 
-Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.80
+Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.81
 
 Feature highlights:
 
