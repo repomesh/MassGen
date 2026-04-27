@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.81 (April 27, 2026)** - Multi-Region Circuit Breaker Failover (Phase 6)
+LLM circuit breaker can now fail over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy. Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds).
+
 **v0.1.80 (April 22, 2026)** - Adaptive Circuit Breaker & Checkpoint Modes
 Circuit breaker Phase 5 adds adaptive thresholds that tune to each backend's behavior. New standalone checkpoint modes: single checkpoint (no recheckpointing) and draft plan verify mode.
 
@@ -17,6 +20,18 @@ New fast mode options for fine-grained speed vs. quality control. Checkpoint fra
 
 **v0.1.78 (April 17, 2026)** - Circuit Breaker Distributed Store (Phase 4)
 Pluggable distributed state store for the LLM circuit breaker — share state across workers/processes. Adds `InMemoryStore` (zero-deps) and optional `RedisStore`, with atomic `record_failure`/`record_success` operations for linearizability under concurrent access.
+
+---
+
+## [0.1.81] - 2026-04-27
+
+### Added
+- **Multi-Region Circuit Breaker Failover (Phase 6)** ([#1072](https://github.com/massgen/MassGen/pull/1072)): LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy
+
+### Technical Details
+- **Major Focus**: Multi-region failover for production-grade circuit breaker resilience — completes the circuit breaker series (Phase 1-6)
+- **PRs Merged**: [#1072](https://github.com/massgen/MassGen/pull/1072)
+- **Contributors**: @amabito, @HenryQi and the MassGen team
 
 ---
 
