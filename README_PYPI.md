@@ -121,15 +121,15 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🗺️ Roadmap</h3></summary>
 
-- [Recent Achievements (v0.1.81)](#recent-achievements-v0181)
-- [Previous Achievements (v0.0.3 - v0.1.80)](#previous-achievements-v003---v0180)
+- [Recent Achievements (v0.1.82)](#recent-achievements-v0182)
+- [Previous Achievements (v0.0.3 - v0.1.81)](#previous-achievements-v003---v0181)
 - [Key Future Enhancements](#key-future-enhancements)
   - Bug Fixes & Backend Improvements
   - Advanced Agent Collaboration
   - Expanded Model, Tool & Agent Integrations
   - Improved Performance & Scalability
   - Enhanced Developer Experience
-- [v0.1.82 Roadmap](#v0182-roadmap)
+- [v0.1.83 Roadmap](#v0183-roadmap)
 </details>
 
 <details open>
@@ -154,16 +154,17 @@ This project started with the "threads of thought" and "iterative refinement" id
 
 ---
 
-## 🆕 Latest Features (v0.1.81)
+## 🆕 Latest Features (v0.1.82)
 
-**🎉 Released: April 27, 2026**
+**🎉 Released: April 29, 2026**
 
-**What's New in v0.1.81:**
-- **🌐 Multi-Region Circuit Breaker Failover (Phase 6)** - LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy.
+**What's New in v0.1.82:**
+- **📋 TUI Copy Mode** - New `Ctrl+Shift+S` toggle releases terminal mouse tracking so you can drag-select and copy text natively; press again to restore Textual's mouse behavior.
+- **🔒 Checkpoint Quality Improvements** - Enhanced checkpoint plan quality criteria with selective branch depth scoring, optional workspace context for reviewer agents, and single-checkpoint agent recovery guidance.
 
-**Try v0.1.81 Features:**
+**Try v0.1.82 Features:**
 ```bash
-pip install massgen==0.1.81
+pip install massgen==0.1.82
 uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
 ```
 
@@ -1236,15 +1237,20 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 ⚠️ **Early Stage Notice:** As MassGen is in active development, please expect upcoming breaking architecture changes as we continue to refine and improve the system.
 
-### Recent Achievements (v0.1.81)
+### Recent Achievements (v0.1.82)
 
-**🎉 Released: April 27, 2026**
+**🎉 Released: April 29, 2026**
 
-#### Multi-Region Circuit Breaker Failover (Phase 6)
-- **Multi-Region Failover** ([#1072](https://github.com/massgen/MassGen/pull/1072)): LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy
-- **Production-Grade Resilience**: Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds)
+#### TUI Copy Mode & Checkpoint Quality Improvements
+- **TUI Copy Mode** ([#1076](https://github.com/massgen/MassGen/pull/1076)): New `Ctrl+Shift+S` toggle releases terminal mouse tracking so users can drag-select text natively and copy with the terminal's built-in shortcut; auto-restores on exit
+- **Checkpoint Workspace Context** ([#1076](https://github.com/massgen/MassGen/pull/1076)): New `include_workspace_context` config option for the standalone checkpoint MCP server — optionally mounts the executor's workspace as read-only context for reviewer agents
+- **Checkpoint Plan Quality Criteria** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Mode-aware quality criteria score selective branch depth and fallback handling in generated plans
+- **Single-Checkpoint Agent Recovery** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Detailed recovery workflow in `checkpoint_instructions.md` for when a plan branch resolves to `terminate` — agents find safe alternates before giving up
+- **TUI Visual Polish** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Ribbon dividers changed from `│` to `·` for a cleaner, lighter look
 
-### Previous Achievements (v0.0.3 - v0.1.80)
+### Previous Achievements (v0.0.3 - v0.1.81)
+
+✅ **Multi-Region Circuit Breaker Failover (v0.1.81)**: LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy. Completes the circuit breaker series (Phase 1-6).
 
 ✅ **Adaptive Circuit Breaker & Checkpoint Modes (v0.1.80)**: Circuit breaker Phase 5 with self-tuning adaptive thresholds. New standalone checkpoint modes: single checkpoint and draft plan verify.
 
@@ -1551,12 +1557,13 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 We welcome community contributions to achieve these goals.
 
-### v0.1.82 Roadmap
+### v0.1.83 Roadmap
 
-Version 0.1.82 focuses on cloud execution (deferred again from v0.1.81):
+Version 0.1.83 focuses on checkpoint safety hardening and round evaluator quality:
 
 #### Planned Features
-- **Cloud Modal MVP** ([#982](https://github.com/massgen/MassGen/issues/982)): Run MassGen as a cloud job on Modal — progress streams to terminal, results saved locally under `.massgen/cloud_jobs/`
+- **Checkpoint Safety Mode for Irreversible Actions** ([#1026](https://github.com/massgen/MassGen/issues/1026)): Dedicated safety mode that gates irreversible actions (deletes, deploys, external writes) behind checkpoint approval before execution
+- **Fix: Round Evaluator Over-indexes on Incremental Fixes** ([#994](https://github.com/massgen/MassGen/issues/994)): Managed round evaluator incorrectly prioritizes incremental fixes despite high spend and strong strategic critique
 
 ---
 
