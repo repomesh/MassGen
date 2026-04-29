@@ -69,7 +69,7 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🆕 Latest Features</h3></summary>
 
-- [v0.1.79 Features](#-latest-features-v0179)
+- [v0.1.81 Features](#-latest-features-v0181)
 </details>
 
 <details open>
@@ -122,15 +122,15 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🗺️ Roadmap</h3></summary>
 
-- [Recent Achievements (v0.1.79)](#recent-achievements-v0179)
-- [Previous Achievements (v0.0.3 - v0.1.78)](#previous-achievements-v003---v0178)
+- [Recent Achievements (v0.1.81)](#recent-achievements-v0181)
+- [Previous Achievements (v0.0.3 - v0.1.80)](#previous-achievements-v003---v0180)
 - [Key Future Enhancements](#key-future-enhancements)
   - Bug Fixes & Backend Improvements
   - Advanced Agent Collaboration
   - Expanded Model, Tool & Agent Integrations
   - Improved Performance & Scalability
   - Enhanced Developer Experience
-- [v0.1.80 Roadmap](#v0180-roadmap)
+- [v0.1.82 Roadmap](#v0182-roadmap)
 </details>
 
 <details open>
@@ -155,18 +155,16 @@ This project started with the "threads of thought" and "iterative refinement" id
 
 ---
 
-## 🆕 Latest Features (v0.1.79)
+## 🆕 Latest Features (v0.1.81)
 
-**🎉 Released: April 20, 2026**
+**🎉 Released: April 27, 2026**
 
-**What's New in v0.1.79:**
-- **⚡ Better Fast Mode Options** - New options to control coordination speed — fine-grained speed vs. quality tradeoff.
-- **🛡️ Broader Checkpoint Framing** - Checkpoint mode now covers both high-stakes actions AND coordinated phases, not just safety-only.
-- **📋 Checkpoint Instructions Clarity** - More clarity in trust settings for checkpoint agents.
+**What's New in v0.1.81:**
+- **🌐 Multi-Region Circuit Breaker Failover (Phase 6)** - LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy.
 
-**Try v0.1.79 Features:**
+**Try v0.1.81 Features:**
 ```bash
-pip install massgen==0.1.79
+pip install massgen==0.1.81
 uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
 ```
 
@@ -1239,16 +1237,19 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 ⚠️ **Early Stage Notice:** As MassGen is in active development, please expect upcoming breaking architecture changes as we continue to refine and improve the system.
 
-### Recent Achievements (v0.1.79)
+### Recent Achievements (v0.1.81)
 
-**🎉 Released: April 20, 2026**
+**🎉 Released: April 27, 2026**
 
-#### Fast Mode Speed Control & Broader Checkpoint Framing
-- **Better Fast Mode Options**: New options to control coordination speed — fine-grained speed vs. quality tradeoff
-- **Broader Checkpoint Framing**: Checkpoint mode framing broadened from safety-only to high-stakes and coordinated phases
-- **Checkpoint Instructions Clarity**: More clarity in trust settings for checkpoint agents
+#### Multi-Region Circuit Breaker Failover (Phase 6)
+- **Multi-Region Failover** ([#1072](https://github.com/massgen/MassGen/pull/1072)): LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy
+- **Production-Grade Resilience**: Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds)
 
-### Previous Achievements (v0.0.3 - v0.1.78)
+### Previous Achievements (v0.0.3 - v0.1.80)
+
+✅ **Adaptive Circuit Breaker & Checkpoint Modes (v0.1.80)**: Circuit breaker Phase 5 with self-tuning adaptive thresholds. New standalone checkpoint modes: single checkpoint and draft plan verify.
+
+✅ **Fast Mode Speed Control & Broader Checkpoint Framing (v0.1.79)**: New fast mode options for fine-grained speed vs. quality control. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases.
 
 ✅ **Circuit Breaker Distributed Store (v0.1.78)**: Pluggable distributed state store for the LLM circuit breaker — share state across workers/processes. In-memory (zero-deps) and Redis-backed implementations with atomic state transitions.
 
@@ -1551,9 +1552,9 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 We welcome community contributions to achieve these goals.
 
-### v0.1.80 Roadmap
+### v0.1.82 Roadmap
 
-Version 0.1.80 focuses on cloud execution (deferred again from v0.1.79):
+Version 0.1.82 focuses on cloud execution (deferred again from v0.1.81):
 
 #### Planned Features
 - **Cloud Modal MVP** ([#982](https://github.com/massgen/MassGen/issues/982)): Run MassGen as a cloud job on Modal — progress streams to terminal, results saved locally under `.massgen/cloud_jobs/`

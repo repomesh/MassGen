@@ -227,19 +227,33 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.79 - Latest
+### v0.1.81 - Latest
+**New Features:** Multi-Region Circuit Breaker Failover (Phase 6)
+
+**Key Features:**
+- **Multi-Region Failover**: LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy
+- **Production-Grade Resilience**: Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds)
+
+**Try It:**
+```bash
+pip install massgen==0.1.81
+uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
+```
+
+### v0.1.80
+**New Features:** Adaptive Circuit Breaker & Checkpoint Modes
+
+**Key Features:**
+- **Circuit Breaker Adaptive Thresholds (Phase 5)**: Self-tuning thresholds that respond to each backend's actual failure patterns
+- **Single Checkpoint Mode**: New standalone checkpoint mode — no recheckpointing within a single operation
+- **Draft Plan Verify Mode**: New standalone checkpoint mode — verify a draft plan before executing
+
+### v0.1.79
 **New Features:** Fast Mode Speed Control & Broader Checkpoint Framing
 
 **Key Features:**
 - **Better Fast Mode Options**: New options to control coordination speed — fine-grained speed vs. quality tradeoff
 - **Broader Checkpoint Framing**: Checkpoint mode framing broadened from safety-only to high-stakes and coordinated phases
-- **Checkpoint Instructions Clarity**: More clarity in trust settings for checkpoint agents
-
-**Try It:**
-```bash
-pip install massgen==0.1.79
-uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
-```
 
 ### v0.1.78
 **New Features:** Circuit Breaker Distributed Store (Phase 4)

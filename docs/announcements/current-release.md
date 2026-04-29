@@ -1,4 +1,4 @@
-# MassGen v0.1.79 Release Announcement
+# MassGen v0.1.81 Release Announcement
 
 <!--
 This is the current release announcement. Copy this + feature-highlights.md to LinkedIn/X.
@@ -7,17 +7,17 @@ After posting, update the social links below.
 
 ## Release Summary
 
-We're excited to release MassGen v0.1.79 — Fast Mode Speed Control & Broader Checkpoint Framing! 🚀 New fast mode options give fine-grained control over speed vs. quality tradeoffs. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Checkpoint instructions clarity improvements.
+We're excited to release MassGen v0.1.81 — Multi-Region Circuit Breaker Failover (Phase 6)! 🚀 The LLM circuit breaker can now fail over to backup regions when the primary trips OPEN, keeping coordination running through regional outages.
 
 ## Install
 
 ```bash
-pip install massgen==0.1.79
+pip install massgen==0.1.81
 ```
 
 ## Links
 
-- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.79
+- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.81
 - **X post:** [TO BE ADDED AFTER POSTING]
 - **LinkedIn post:** [TO BE ADDED AFTER POSTING]
 
@@ -29,29 +29,23 @@ Copy everything below this line, then append content from `feature-highlights.md
 
 ---
 
-We're excited to release MassGen v0.1.79 — Fast Mode Speed Control & Broader Checkpoint Framing! 🚀 New fast mode options give fine-grained control over speed vs. quality tradeoffs. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases.
+We're excited to release MassGen v0.1.81 — Multi-Region Circuit Breaker Failover (Phase 6)! 🚀 The LLM circuit breaker can now fail over to backup regions when the primary trips OPEN, keeping coordination running through regional outages.
 
 **Key Improvements:**
 
-⚡ **Better Fast Mode Options** — Fine-grained speed control:
-- New options to control how fast the coordination runs
-- Dial in the right speed vs. quality tradeoff for your use case
-
-🛡️ **Broader Checkpoint Framing** — Beyond safety-only:
-- Checkpoint mode now covers both high-stakes actions AND coordinated phases
-- Use checkpoint for deploys, deletions, financial ops — AND for coordinated planning steps
-
-**Plus:**
-- 📋 **Checkpoint instructions clarity** — More clarity in trust settings for checkpoint agents
+🌐 **Multi-Region Failover (Phase 6)** — Stay running through regional outages:
+- Circuit breaker fails over to backup regions when the primary trips OPEN
+- Automatic recovery when the primary region returns to healthy
+- Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds) for production-grade resilience
 
 **Getting Started:**
 
 ```bash
-pip install massgen==0.1.79
+pip install massgen==0.1.81
 uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
 ```
 
-Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.79
+Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.81
 
 Feature highlights:
 
