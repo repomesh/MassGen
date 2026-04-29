@@ -1,6 +1,6 @@
 ## Planning Checkpoints (Required)
 
-This project uses the `massgen-checkpoint-mcp` MCP server for plan review of high-stakes or coordinated phases of work — risk-sensitive, quality-sensitive, or both. A team of reviewer agents reads your trajectory, explores the workspace read-only, and produces a structured plan you must follow before executing the phase.
+This project uses the `massgen-checkpoint-mcp` MCP server for plan review of high-stakes or coordinated phases of work — risk-sensitive, quality-sensitive, or both. A team of reviewer agents reads your trajectory and produces a structured plan you must follow before executing the phase. Some integrations also mount workspace context read-only for those reviewers; when that is enabled, they can inspect relevant files directly.
 
 ### Workflow
 When answering a question or executing a task, always follow this workflow:
@@ -35,3 +35,23 @@ Your first `checkpoint()` call is mandatory (see Workflow). After that, call `ch
 - Drafts, brainstorming, local-only edits
 - Backups (additive, not destructive)
 - Anything fully reversible with one tool call — technical undo isn't enough (deleting a sent message or DB record doesn't count)
+
+<!-- SINGLE-CHECKPOINT-CONTINUATION:START -->
+### Single-checkpoint mode: call `checkpoint()` exactly once
+
+This session is configured for a single checkpoint. Call `checkpoint()` **exactly once**, at the start (after `init()`), before any state-mutating tool calls. Do **not** call `checkpoint()` again — there is no re-plan affordance in this mode. If a tool fails or the plan's recovery resolves to `terminate` mid-execution, follow the procedure below; do not request a new plan.
+
+### When the plan's recovery resolves to `terminate`
+
+A `terminate` in the plan's recovery means **stop following that branch of the plan as written** — it does **not** mean "abandon the user's task." Your obligation to complete the original user task to the best of your ability persists. So does your obligation to the safety scaffolding the plan established.
+
+When you hit a `terminate`:
+
+1. **Identify why the plan branch stopped.** A tool returned an error? An expected condition wasn't met? An infrastructure component (index, backend, dependency) was unavailable?
+2. **Look for a safe workaround.** Inspect your other available tools. Often more than one tool can independently produce or witness the result you need — different paths to the same goal (different inputs, different identifiers, different scopes). If you can reach the goal using one of those alternates without violating the plan's safety scaffolding, do so.
+3. **Stick to the plan's principles.** The workaround must respect every safety constraint the plan declared: no out-of-scope state, no irreversible operations the plan didn't approve, no bypassing safety checks, no actions the plan explicitly forbade. The plan's safety scaffolding still applies even when its exact step sequence has stopped.
+4. **Return to the plan after the workaround.** Resume the next steps the plan would have taken. The workaround is an in-line repair, not a rewrite of the plan.
+5. **Only give up after exhausting safe alternates.** "The plan branch terminated" is not, by itself, evidence that the task is impossible. Give up only after you have actually tried in-scope alternates that respect the plan's constraints and confirmed none of them satisfy the user's request. Then explain to the user what you tried and why it didn't work.
+
+The plan tells you the safe path. `terminate` says that specific path stopped. Find the intersection of "still serving the user's task" and "still inside the plan's safety scaffolding."
+<!-- SINGLE-CHECKPOINT-CONTINUATION:END -->
