@@ -99,7 +99,7 @@ class ToolSection(Vertical):
 
         # Count badge
         if self.tool_count > 0:
-            text.append(" ─" + "─" * 40 + "─ ", style="dim")
+            text.append("  ", style="dim")
             text.append(
                 f"{self.tool_count} call{'s' if self.tool_count != 1 else ''}",
                 style="cyan",
@@ -486,7 +486,7 @@ class TimelineSection(ScrollableContainer):
             # Hint doesn't exist yet - mount it if we need to show it
             if show:
                 hint = Static(
-                    "─────────────── Press f to see final answer ───────────────",
+                    "Press f to see final answer",
                     id="winner_hint",
                     classes="winner-hint",
                 )
@@ -1713,12 +1713,12 @@ class TimelineSection(ScrollableContainer):
                 widget = RestartBanner(label=label, subtitle=subtitle, id=widget_id)
                 logger.debug(f"TimelineSection.add_separator: Created RestartBanner for '{label}' subtitle='{subtitle}'")
             else:
-                # Regular separator
+                # Regular separator: a thin dim rule with the label centered.
                 sep_text = Text()
-                sep_text.append("─" * 50, style="dim")
                 if label:
-                    sep_text.append(f" {label} ", style="dim italic")
-                    sep_text.append("─" * 10, style="dim")
+                    sep_text.append(f"{label}", style="dim italic")
+                else:
+                    sep_text.append("─" * 60, style="dim")
                 widget = Static(sep_text, id=widget_id)
 
             # Tag with round class for navigation (scroll-to behavior)
@@ -2101,7 +2101,7 @@ class ThinkingSection(Vertical):
         # Show hidden line count when collapsed
         if self.is_collapsed and self._line_count > self.PREVIEW_LINES:
             hidden_count = self._line_count - self.PREVIEW_LINES
-            text.append(" ─" + "─" * 20 + "─ ", style="dim")
+            text.append("  ", style="dim")
             text.append(f"[+{hidden_count} more lines]", style="dim cyan")
 
         return text
@@ -2373,9 +2373,9 @@ class CompletionFooter(Static):
     def render(self) -> Text:
         """Render the footer line."""
         if self.status == "completed":
-            return Text("─" * 30 + " ✓ Complete " + "─" * 30, style="dim green")
+            return Text("✓ Complete", style="dim green")
         elif self.status == "error":
-            return Text("─" * 30 + " ✗ Error " + "─" * 30, style="dim red")
+            return Text("✗ Error", style="dim red")
         else:
             return Text("")
 

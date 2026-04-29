@@ -423,15 +423,6 @@ AgentStatusRibbon {
     padding: 0 1;
 }
 
-/* Theme-class based separator colors for dynamic switching */
-.theme-light AgentStatusRibbon {
-    border-top: solid #eaeef2;
-}
-
-.theme-dark AgentStatusRibbon {
-    border-top: solid #30363d;
-}
-
 AgentStatusRibbon .ribbon-container {
     width: 100%;
     height: auto;
@@ -1453,6 +1444,26 @@ SuggestionRow.selected {
     border: solid $warning;
 }
 
+/* === Copy Mode Banner === */
+/* Shown when Ctrl+Shift+S is pressed; mouse tracking is released so the user
+   can drag-select text in the terminal natively. */
+CopyModeBanner {
+    height: 1;
+    width: 1fr;
+    background: $warning 20%;
+    color: $warning;
+    text-style: bold;
+    border: none;
+    padding: 0 1;
+    margin: 0;
+    overflow: hidden hidden;
+    text-align: center;
+}
+
+CopyModeBanner.hidden {
+    display: none;
+}
+
 /* === Queued Input Banner === */
 /* Shows above input bar when input is queued for injection during execution */
 #queued_input_banner {
@@ -1667,7 +1678,7 @@ ToolDetailModal > Container {
     height: auto;
     max-height: 80%;
     background: $surface;
-    border: double $primary;
+    border: solid $primary;
     border-left: thick $primary;
     padding: 1 2;
 }
@@ -1769,7 +1780,7 @@ TaskPlanModal > Container {
     height: auto;
     max-height: 80%;
     background: $surface;
-    border: double $secondary;
+    border: solid $secondary;
     border-left: thick $secondary;
     padding: 1 2;
 }
@@ -3037,7 +3048,7 @@ ToolCallCard.type-subagent.expanded {
 /* Minimalist emphasis: left accent bar only, muted colors */
 ToolCallCard.terminal-tool {
     border: none;
-    border-left: tall $tool-card-border;
+    border-left: thick $tool-card-border;
     background: transparent;
     min-height: 3;
     max-height: 12;
@@ -3047,32 +3058,32 @@ ToolCallCard.terminal-tool {
 
 ToolCallCard.terminal-tool.status-running {
     border: none;
-    border-left: tall $tool-card-border;
+    border-left: thick $tool-card-border;
     background: transparent;
 }
 
 ToolCallCard.terminal-tool.status-success {
     border: none;
-    border-left: tall $success;
+    border-left: thick $success;
     background: transparent;
 }
 
 ToolCallCard.terminal-tool.status-error {
     border: none;
-    border-left: tall $error;
+    border-left: thick $error;
     background: transparent;
 }
 
 ToolCallCard.terminal-tool:hover {
     background: transparent;
     border: none;
-    border-left: tall $primary-lighten-1;
+    border-left: thick $primary-lighten-1;
 }
 
 ToolCallCard.terminal-tool:focus {
     background: transparent;
     border: none;
-    border-left: tall $primary;
+    border-left: thick $primary;
     outline: none;
 }
 
@@ -3200,14 +3211,15 @@ CollapsibleTextCard.label-content {
 
 /* === Content Sections === */
 
-/* Tool Section - fixed size collapsible box for tool cards */
+/* Tool Section - collapsible region for tool cards.
+   Visual weight comes from each child card's border-left, not from a wrapping box. */
 ToolSection {
     height: auto;
     max-height: 40%;
     margin: 0 0 1 0;
     padding: 0;
-    border: solid $surface-lighten-1;
-    background: $surface;
+    border: none;
+    background: transparent;
 }
 
 ToolSection.collapsed {

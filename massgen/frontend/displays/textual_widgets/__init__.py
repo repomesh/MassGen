@@ -30,6 +30,7 @@ from .content_sections import (
     TimelineSection,
     ToolSection,
 )
+from .copy_mode_banner import CopyModeBanner
 from .execution_status_line import ExecutionStatusLine
 from .final_answer_view import FinalAnswerView
 from .injection_card import InjectionSubCard
@@ -179,6 +180,7 @@ __all__ = [
     "FinalAnswerView",
     # Input widgets
     "MultiLineInput",
+    "CopyModeBanner",
     "QueuedInputBanner",
     # Path autocomplete
     "PathSuggestion",

@@ -88,6 +88,7 @@ try:
         BroadcastModeChanged,
         CompletionFooter,
         ContextPathsClicked,
+        CopyModeBanner,
         ExecuteAutoContinueChanged,
         ExecutePrefillRequested,
         ExecuteRefinementModeChanged,
@@ -122,6 +123,10 @@ try:
         ViewAnalysisRequested,
         ViewPlanRequested,
         ViewSelected,
+    )
+    from .textual_widgets.copy_mode_banner import (
+        COPY_MODE_BINDING,
+        set_terminal_mouse_capture,
     )
     from .tui_event_pipeline import TimelineEventAdapter
     from .tui_modes import TuiModeState
@@ -3648,6 +3653,8 @@ if TEXTUAL_AVAILABLE:
             Binding("ctrl+shift+i", "toggle_human_input_target", "Inject Target", priority=True, show=False),
             # Theme toggle
             Binding("ctrl+shift+t", "toggle_theme", "Theme", priority=True, show=False),
+            # Copy mode - releases the mouse so the user can drag-select text
+            Binding(COPY_MODE_BINDING, "toggle_copy_mode", "Copy Mode", priority=True, show=False),
             # Evaluation criteria viewer
             Binding("ctrl+e", "show_evaluation_criteria", "Criteria", priority=True, show=False),
         ]
@@ -4069,6 +4076,8 @@ if TEXTUAL_AVAILABLE:
             # === BOTTOM DOCKED WIDGETS (yield order: last yielded = very bottom) ===
             # Input area container - dock: bottom
             with Container(id="input_area"):
+                # Copy mode banner (hidden by default; Ctrl+Shift+S toggles)
+                yield CopyModeBanner(id="copy_mode_banner")
                 # Runtime injection queue strip above mode/status rows.
                 with Vertical(id="queued_input_region") as queued_input_region:
                     self._queued_input_region = queued_input_region
@@ -4388,6 +4397,14 @@ if TEXTUAL_AVAILABLE:
                 pass
             self._heartbeat_timer = None
             self._stop_stall_watchdog()
+            # If the user exits while copy mode is on, the terminal is left without
+            # mouse tracking. Restore it before the driver tears down.
+            if getattr(self, "_copy_mode_active", False):
+                try:
+                    self._set_terminal_mouse_capture(True)
+                except Exception:
+                    pass
+                self._copy_mode_active = False
 
         def set_hover_updates_suppressed(self, suppressed: bool, reason: str = "") -> None:
             """Enable/disable hover-style recalculation for responsiveness."""
@@ -10524,6 +10541,31 @@ Type your question and press Enter to ask the agents.
             # Update status bar indicator
             self._update_theme_indicator()
             self.notify(f"Theme: {new_theme.title()}", timeout=1.5)
+
+        def action_toggle_copy_mode(self) -> None:
+            """Toggle copy mode (Ctrl+Shift+S).
+
+            Releases the terminal mouse so the user can drag-select text natively
+            and copy with the terminal's built-in shortcut. Press again to restore
+            Textual's normal mouse behavior.
+            """
+            try:
+                banner = self.query_one(CopyModeBanner)
+            except Exception:
+                logger.warning("[copy_mode] banner not mounted; cannot toggle")
+                return
+            new_state = not banner.active
+            banner.set_active(new_state)
+            self._set_terminal_mouse_capture(not new_state)
+            self._copy_mode_active = new_state
+            self.notify(
+                "Copy mode ON — drag to select, then Cmd/Ctrl+C in your terminal" if new_state else "Copy mode OFF",
+                timeout=2.0,
+            )
+
+        def _set_terminal_mouse_capture(self, enabled: bool) -> None:
+            """Toggle terminal mouse-tracking escape codes via the Textual driver."""
+            set_terminal_mouse_capture(getattr(self, "_driver", None), enabled)
 
         def action_show_help(self) -> None:
             """Show help modal (Ctrl+/ binding)."""
