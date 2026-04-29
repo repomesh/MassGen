@@ -9,17 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.82 (April 29, 2026)** - TUI Copy Mode & Checkpoint Quality Improvements
+New `Ctrl+Shift+S` copy mode toggle releases terminal mouse tracking so users can drag-select text natively. Checkpoint standalone improvements: workspace context option, enhanced plan quality criteria, and single-checkpoint agent recovery guidance.
+
 **v0.1.81 (April 27, 2026)** - Multi-Region Circuit Breaker Failover (Phase 6)
 LLM circuit breaker can now fail over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy. Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds).
 
 **v0.1.80 (April 22, 2026)** - Adaptive Circuit Breaker & Checkpoint Modes
 Circuit breaker Phase 5 adds adaptive thresholds that tune to each backend's behavior. New standalone checkpoint modes: single checkpoint (no recheckpointing) and draft plan verify mode.
 
-**v0.1.79 (April 20, 2026)** - Fast Mode Speed Control & Broader Checkpoint Framing
-New fast mode options for fine-grained speed vs. quality control. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Checkpoint instructions clarity improvements.
+---
 
-**v0.1.78 (April 17, 2026)** - Circuit Breaker Distributed Store (Phase 4)
-Pluggable distributed state store for the LLM circuit breaker — share state across workers/processes. Adds `InMemoryStore` (zero-deps) and optional `RedisStore`, with atomic `record_failure`/`record_success` operations for linearizability under concurrent access.
+## [0.1.82] - 2026-04-29
+
+### Added
+- **TUI Copy Mode** ([#1076](https://github.com/massgen/MassGen/pull/1076)): New `Ctrl+Shift+S` toggle that releases terminal mouse tracking so users can drag-select text natively and copy with the terminal's built-in shortcut; press again to restore Textual's normal mouse behavior. Auto-restores mouse capture on exit if copy mode is active
+  - `massgen/frontend/displays/textual_widgets/copy_mode_banner.py` — banner widget and `set_terminal_mouse_capture` helper
+  - `massgen/frontend/displays/textual_terminal_display.py` — `action_toggle_copy_mode` and `CopyModeBanner` integration
+- **Checkpoint Workspace Context Option** ([#1076](https://github.com/massgen/MassGen/pull/1076)): New `include_workspace_context` config field for the standalone checkpoint MCP server — optionally mounts the executor's workspace directory as read-only context for reviewer agents (default `false`)
+  - `massgen/mcp_tools/standalone/checkpoint_mcp_server.py`
+- **Checkpoint Plan Quality Criteria** ([#1076](https://github.com/massgen/MassGen/pull/1076)): New `_build_checkpoint_plan_quality_criteria` produces mode-aware quality criteria (single vs. multi-checkpoint) that score selective branch depth and fallback handling in generated plans
+- **Checkpoint Agent Recovery Guidance** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Single-checkpoint mode continuation workflow added to `checkpoint_instructions.md` — detailed recovery steps for agents when a plan branch resolves to `terminate` without requiring a re-checkpoint
+
+### Changed
+- **TUI Ribbon Dividers** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Visual separators in the agent status ribbon changed from `│` (pipe) to `·` (dot) for a cleaner look
+  - `massgen/frontend/displays/textual_widgets/agent_status_ribbon.py`
+- **Checkpoint "Better Means" Safety Guidance** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Extended checkpoint planning prompt with four axes for recognizing when a cheaper path becomes unsafe: scarcity/contention, external visibility, authority substitution, and scope expansion
+  - `massgen/mcp_tools/standalone/checkpoint_mcp_server.py`
+- **Checkpoint Workspace Section Templated** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Workspace section in checkpoint planning prompt now uses a `{workspace_section}` template variable, with content injected based on `include_workspace_context` setting
+- **Docker Image Reference** ([#1076](https://github.com/massgen/MassGen/pull/1076)): `fast_iteration.yaml` switched to `massgen/mcp-runtime-sudo:latest` instead of `ghcr.io/massgen/mcp-runtime-sudo:latest`
+  - `massgen/configs/features/fast_iteration.yaml`
+
+### Fixed
+- **TUI Copy Mode Exit Cleanup** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Mouse tracking is correctly restored before the driver tears down when the user exits while copy mode is active
+
+### Documentations, Configurations and Resources
+- **Updated Checkpoint Instructions**: `massgen/mcp_tools/standalone/checkpoint_instructions.md` — single-checkpoint continuation workflow with agent recovery steps for `terminate` branches
+- **Configuration**: `massgen/configs/features/fast_iteration.yaml` — switched Docker image to local registry
+
+### Technical Details
+- **Major Focus**: TUI copy mode for easier text selection and checkpoint quality/safety improvements
+- **PRs Merged**: [#1076](https://github.com/massgen/MassGen/pull/1076)
+- **Contributors**: @ncrispino, @HenryQi and the MassGen team
 
 ---
 

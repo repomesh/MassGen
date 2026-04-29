@@ -200,6 +200,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.82 (April 29, 2026)** - TUI Copy Mode & Checkpoint Quality Improvements
+
+New ``Ctrl+Shift+S`` copy mode toggle releases terminal mouse tracking so users can drag-select text natively. Checkpoint standalone improvements: optional workspace context for reviewer agents, enhanced plan quality criteria with selective branch depth scoring, and single-checkpoint agent recovery guidance.
+
 **v0.1.81 (April 27, 2026)** - Multi-Region Circuit Breaker Failover (Phase 6)
 
 LLM circuit breaker can now fail over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy. Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds).
@@ -207,10 +211,6 @@ LLM circuit breaker can now fail over to backup regions when the primary trips O
 **v0.1.80 (April 22, 2026)** - Adaptive Circuit Breaker & Checkpoint Modes
 
 Circuit breaker Phase 5 adds adaptive thresholds that tune to each backend's behavior. New standalone checkpoint modes: single checkpoint (no recheckpointing) and draft plan verify mode.
-
-**v0.1.79 (April 20, 2026)** - Fast Mode Speed Control & Broader Checkpoint Framing
-
-New fast mode options for fine-grained speed vs. quality control. Checkpoint framing broadened from safety-only to high-stakes and coordinated phases. Checkpoint instructions clarity improvements.
 
 :doc:`Full changelog → <changelog>`
 
