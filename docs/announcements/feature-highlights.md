@@ -25,7 +25,7 @@ Update this when major new features ship.
 
 🐳Code execution — Run commands with Docker isolation and a filesystem-based code mode for efficient tool execution. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/tools/code_execution.html
 
-🖥️Interactive TUI & Web UI — Real-time Terminal UI with mode cycling, log analysis, tool batching, and keyboard shortcuts. Session viewer for observing automation runs. Modernized Web UI with inline final answers, automation auto-start, skill integration, and checkpoint monitoring. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/webui.html
+🖥️Interactive TUI & Web UI — Real-time Terminal UI with mode cycling, log analysis, tool batching, keyboard shortcuts, and Copy Mode (Ctrl+Shift+S) for native text selection. Session viewer for observing automation runs. Modernized Web UI with inline final answers, automation auto-start, skill integration, and checkpoint monitoring. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/webui.html
 
 🪪Trace workflows — Orchestration logs, execution traces with background trace analysis that feeds insights into memory, workspace snapshots, cost tracking, and Logfire integration. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/logging.html#logging-directory-structure
 
@@ -47,7 +47,7 @@ Update this when major new features ship.
 
 🐳Code execution — Run commands with Docker isolation and a filesystem-based code mode for efficient tool execution. 👉 More Info: https://lnkd.in/gDy5imFE
 
-🖥️Interactive TUI & Web UI — Real-time Terminal UI with mode cycling, log analysis, tool batching, and keyboard shortcuts. Session viewer for observing automation runs. Modernized Web UI with inline final answers, automation auto-start, skill integration, and checkpoint monitoring. 👉 More Info: https://lnkd.in/gxWNKCB6
+🖥️Interactive TUI & Web UI — Real-time Terminal UI with mode cycling, log analysis, tool batching, keyboard shortcuts, and Copy Mode (Ctrl+Shift+S) for native text selection. Session viewer for observing automation runs. Modernized Web UI with inline final answers, automation auto-start, skill integration, and checkpoint monitoring. 👉 More Info: https://lnkd.in/gxWNKCB6
 
 🪪Trace workflows — Orchestration logs, execution traces with background trace analysis that feeds insights into memory, workspace snapshots, cost tracking, and Logfire integration. 👉 More Info: https://lnkd.in/gecFJE2z
 

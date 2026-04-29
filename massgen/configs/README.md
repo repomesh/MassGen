@@ -227,18 +227,27 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.81 - Latest
+### v0.1.82 - Latest
+**New Features:** TUI Copy Mode & Checkpoint Quality Improvements
+
+**Key Features:**
+- **TUI Copy Mode**: New `Ctrl+Shift+S` toggle releases terminal mouse tracking so users can drag-select text natively and copy with the terminal's built-in shortcut
+- **Checkpoint Workspace Context**: New `include_workspace_context` config option for the standalone checkpoint MCP server (default `false`)
+- **Checkpoint Plan Quality Criteria**: Mode-aware quality criteria score selective branch depth and fallback handling in generated plans
+- **Single-Checkpoint Agent Recovery**: Recovery workflow in `checkpoint_instructions.md` for when a plan branch resolves to `terminate`
+
+**Try It:**
+```bash
+pip install massgen==0.1.82
+uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
+```
+
+### v0.1.81
 **New Features:** Multi-Region Circuit Breaker Failover (Phase 6)
 
 **Key Features:**
 - **Multi-Region Failover**: LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy
 - **Production-Grade Resilience**: Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds)
-
-**Try It:**
-```bash
-pip install massgen==0.1.81
-uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
-```
 
 ### v0.1.80
 **New Features:** Adaptive Circuit Breaker & Checkpoint Modes
