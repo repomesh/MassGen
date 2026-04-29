@@ -37,15 +37,12 @@ Circuit breaker Phase 5 adds adaptive thresholds that tune to each backend's beh
 - **Checkpoint "Better Means" Safety Guidance** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Extended checkpoint planning prompt with four axes for recognizing when a cheaper path becomes unsafe: scarcity/contention, external visibility, authority substitution, and scope expansion
   - `massgen/mcp_tools/standalone/checkpoint_mcp_server.py`
 - **Checkpoint Workspace Section Templated** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Workspace section in checkpoint planning prompt now uses a `{workspace_section}` template variable, with content injected based on `include_workspace_context` setting
-- **Docker Image Reference** ([#1076](https://github.com/massgen/MassGen/pull/1076)): `fast_iteration.yaml` switched to `massgen/mcp-runtime-sudo:latest` instead of `ghcr.io/massgen/mcp-runtime-sudo:latest`
-  - `massgen/configs/features/fast_iteration.yaml`
 
 ### Fixed
 - **TUI Copy Mode Exit Cleanup** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Mouse tracking is correctly restored before the driver tears down when the user exits while copy mode is active
 
 ### Documentations, Configurations and Resources
 - **Updated Checkpoint Instructions**: `massgen/mcp_tools/standalone/checkpoint_instructions.md` — single-checkpoint continuation workflow with agent recovery steps for `terminate` branches
-- **Configuration**: `massgen/configs/features/fast_iteration.yaml` — switched Docker image to local registry
 
 ### Technical Details
 - **Major Focus**: TUI copy mode for easier text selection and checkpoint quality/safety improvements

@@ -14,9 +14,6 @@
 ### 🖥️ TUI Visual Polish
 - **Ribbon dividers** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Changed from `│` (pipe) to `·` (dot) for a cleaner, lighter agent status ribbon
 
-### 🐳 Configuration
-- **Docker image** ([#1076](https://github.com/massgen/MassGen/pull/1076)): `fast_iteration.yaml` switched to `massgen/mcp-runtime-sudo:latest` (local registry)
-
 ---
 
 ### 📖 Getting Started
