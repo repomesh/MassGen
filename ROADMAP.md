@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.81
+**Current Version:** v0.1.82
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** April 27, 2026
+**Last Updated:** April 29, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,11 +42,28 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.82** | 04/29/26 | Cloud Modal MVP | @ncrispino | Run MassGen as a cloud job on Modal — deferred again ([#982](https://github.com/massgen/MassGen/issues/982)) |
-| **v0.1.83** | 05/01/26 | OpenAI Audio API | @ncrispino | Support OpenAI audio API for audio understanding ([#960](https://github.com/massgen/MassGen/issues/960)) |
-| **v0.1.84** | 05/04/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) |
+| **v0.1.83** | 05/01/26 | Checkpoint Safety Mode for Irreversible Actions | @ncrispino | Dedicated safety mode that gates irreversible actions behind checkpoint approval ([#1026](https://github.com/massgen/MassGen/issues/1026)) |
+| | | Fix: Round Evaluator Over-indexes on Incremental Fixes | @ncrispino | Managed round evaluator prioritizes incremental fixes despite high spend and strong strategic critique ([#994](https://github.com/massgen/MassGen/issues/994)) |
+| **v0.1.84** | 05/04/26 | Dispatch Discoverability Description | @ncrispino | Add description to improve Dispatch discoverability ([#1034](https://github.com/massgen/MassGen/issues/1034)) |
+| | | GNAP: Git-Native Multi-Agent Coordination | @ncrispino | Git-native coordination for MassGen's collaborative multi-agent scaling system ([#1001](https://github.com/massgen/MassGen/issues/1001)) |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.82 - TUI Copy Mode & Checkpoint Quality Improvements (Completed)
+
+**Released:** April 29, 2026 | PRs: [#1076](https://github.com/massgen/MassGen/pull/1076)
+
+### Features
+- **TUI Copy Mode**: New `Ctrl+Shift+S` toggle releases terminal mouse tracking so users can drag-select text natively; auto-restores on exit
+- **Checkpoint Workspace Context**: New `include_workspace_context` config option for standalone checkpoint MCP server (default off)
+- **Checkpoint Plan Quality Criteria**: Mode-aware quality criteria with selective branch depth scoring for single vs. multi-checkpoint modes
+- **Single-Checkpoint Agent Recovery**: Detailed recovery workflow for agents when a plan branch resolves to `terminate`
+- **TUI Visual Polish**: Ribbon dividers changed from `│` to `·`
+
+### Notes
+- Cloud Modal MVP deferred from v0.1.82 to v0.1.83.
 
 ---
 
@@ -139,23 +156,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.82 - Cloud Modal MVP (Deferred from v0.1.81)
-
-### Features
-
-**1. Cloud Modal MVP** (@ncrispino)
-- Issue: [#982](https://github.com/massgen/MassGen/issues/982)
-- Run MassGen jobs in the cloud via `--cloud` option on Modal
-- Progress streams to terminal, results saved locally under `.massgen/cloud_jobs/`
-- **Use Case**: Run multi-agent tasks in the cloud without local GPU/resource constraints
-
-### Success Criteria
-- ✅ Cloud job execution functional on Modal
-- ✅ Progress streaming and artifact extraction working
-
----
-
-## 📋 v0.1.83 - OpenAI Audio API
+## 📋 v0.1.83 - OpenAI Audio API & Cloud Modal MVP
 
 ### Features
 
