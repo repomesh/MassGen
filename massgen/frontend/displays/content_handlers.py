@@ -13,7 +13,10 @@ from typing import Any
 
 from .content_normalizer import ContentNormalizer, NormalizedContent
 from .shared import get_tool_category as shared_get_tool_category
-from .shared.tool_registry import format_tool_display_name  # noqa: F401 - re-export
+from .shared.tool_registry import (  # noqa: F401 - re-export
+    format_tool_display_name,
+    is_terminal_tool,
+)
 from .shared.tui_debug import tui_log
 
 
@@ -357,6 +360,20 @@ class ToolBatchTracker:
             return ("update_standalone", server_name, None, None)
 
         # New tool starting (status == "running")
+
+        # Hero/terminal tools (`checkpoint`, `new_answer`, `vote`) must
+        # never be silently nested inside a batch card — they own their
+        # own expanded standalone rendering. Finalize any pending batch
+        # first so the previous tools render as standalone cards, then
+        # let this hero be standalone too.
+        if is_terminal_tool(tool_data.tool_name):
+            self._finalize_pending()
+            self._current_server = server_name
+            self._pending_tool_id = tool_data.tool_id
+            tui_log(
+                f"[BATCH] tool={tool_data.tool_name} mcp_server={server_name} " f"-> action=pending (terminal/hero tool, never batched)",
+            )
+            return ("pending", server_name, None, None)
 
         # Already have an active batch for this server?
         if self._current_batch_id and self._current_server == server_name:

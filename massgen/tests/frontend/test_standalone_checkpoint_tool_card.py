@@ -74,6 +74,55 @@ def test_renderer_handles_standalone_action_goals_schema():
     assert "2 action goals" in plain
 
 
+def test_terminal_helper_matches_card_detection():
+    """tool_card._detect_terminal_tool delegates to the shared helper so the
+    batch tracker can apply the same predicate. Lock the contract."""
+    from massgen.frontend.displays.shared.tool_registry import is_terminal_tool
+
+    card = ToolCallCard(tool_name="mcp__massgen_checkpoint_standalone__checkpoint")
+    assert card._detect_terminal_tool("mcp__massgen_checkpoint_standalone__checkpoint") is True
+    assert is_terminal_tool("mcp__massgen_checkpoint_standalone__checkpoint") is True
+    assert card._detect_terminal_tool("mcp__massgen_checkpoint_standalone__init") is False
+    assert is_terminal_tool("mcp__massgen_checkpoint_standalone__init") is False
+
+
+def test_batch_tracker_does_not_swallow_hero_checkpoint():
+    """When `init` (non-hero) and `checkpoint` (hero) arrive consecutively
+    from the same server, the batcher must NOT collapse them into a batch
+    card — the hero checkpoint must render as its own expanded standalone
+    card. Regression for the visual-inconsistency bug where init+checkpoint
+    showed up as a nested batch row instead of a hero card."""
+    from datetime import datetime, timezone
+
+    from massgen.frontend.displays.content_handlers import (
+        ToolBatchTracker,
+        ToolDisplayData,
+    )
+
+    def make_tool(tid: str, name: str) -> ToolDisplayData:
+        return ToolDisplayData(
+            tool_id=tid,
+            tool_name=name,
+            display_name=name,
+            tool_type="mcp",
+            category="checkpoint",
+            icon="C",
+            color="gold",
+            status="running",
+            start_time=datetime.now(timezone.utc),
+        )
+
+    tracker = ToolBatchTracker()
+    a1, _, b1, _ = tracker.process_tool(make_tool("t1", "mcp__massgen_checkpoint_standalone__init"))
+    assert a1 == "pending"
+    assert b1 is None
+
+    # The hero checkpoint must NOT convert pending into a batch.
+    a2, _, b2, _ = tracker.process_tool(make_tool("t2", "mcp__massgen_checkpoint_standalone__checkpoint"))
+    assert a2 == "pending", f"Hero checkpoint should be standalone, got {a2!r}"
+    assert b2 is None
+
+
 def test_renderer_handles_standalone_plan_result():
     """The standalone tool's success result is `{plan: [...], logs_dir: ...}`,
     not `{message: ...}`. The renderer must summarize the plan length."""

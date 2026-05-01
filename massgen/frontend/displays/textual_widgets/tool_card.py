@@ -17,6 +17,7 @@ from textual.message import Message
 from textual.widgets import Static
 
 from massgen.frontend.displays.shared import format_tool_display_name, get_tool_category
+from massgen.frontend.displays.shared.tool_registry import is_terminal_tool
 
 if TYPE_CHECKING:
     pass
@@ -184,26 +185,13 @@ class ToolCallCard(Static):
             self.add_class("collapsed")
 
     def _detect_terminal_tool(self, tool_name: str) -> bool:
-        """Check if this is a terminal coordination tool (hero tool).
+        """Whether to render this card as a "hero" tool.
 
-        Terminal tools like new_answer and vote are the culmination of an
-        agent's work and deserve prominent visual treatment.
-
-        The standalone checkpoint server exposes both `init` (housekeeping,
-        called once per session) and `checkpoint` (heavy, spawns a sub-MassGen).
-        Only `checkpoint` deserves the hero card; `init` should render as a
-        regular collapsed MCP tool.
-
-        Args:
-            tool_name: The tool name to check.
-
-        Returns:
-            True if this is a terminal tool, False otherwise.
+        Delegates to the shared helper so the batch tracker can apply the
+        same predicate (a hero tool must not be silently nested inside a
+        batch card).
         """
-        name_lower = tool_name.lower()
-        if name_lower.endswith("__init") and "checkpoint" in name_lower:
-            return False
-        return any(t in name_lower for t in ("new_answer", "vote", "checkpoint"))
+        return is_terminal_tool(tool_name)
 
     def on_mount(self) -> None:
         """Start the elapsed time timer and complete appearance animation."""

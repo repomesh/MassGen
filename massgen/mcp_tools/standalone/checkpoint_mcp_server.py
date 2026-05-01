@@ -293,7 +293,7 @@ present on every step; the validator rejects plans missing them.
       "approved_action": {{
         "goal_id": "edit_welcome",
         "tool": "Write",
-        "args": {{"file_path": "/abs/path", "content": "..."}},
+        "args": {{"file_path": "/abs/path", "content": "<executor-fills: edited welcome message body>"}},
         "rollback": null
       }},
       "recovery": {{
@@ -302,7 +302,7 @@ present on every step; the validator rejects plans missing them.
         "else": {{
           "compensate": {{
             "tool": "Write",
-            "args": {{"file_path": "/abs/path", "content": "<previous content>"}}
+            "args": {{"file_path": "/abs/path", "content": "<executor-fills: original content snapshotted before step 2 ran>"}}
           }},
           "then": "terminate",
           "reason": "Restore the original file before stopping"
@@ -345,6 +345,56 @@ On `kind: action` steps, `approved_action.rollback` is REQUIRED — \
 either a non-null action spec dict (`{{tool, args}}`) or explicit \
 `null` for truly irreversible actions. On other kinds, `rollback` \
 is forbidden.
+
+  **Every `args` value has a provenance — label it.** The executor \
+agent is the one producing artifacts, documents, code, designs — \
+you are NOT. So when you write `args`, mark every value by who \
+supplies it. Use these three placeholder forms for any value the \
+panel does not literally know at planning time:
+
+  - `<planner-fixed>` — you, the panel, decide this value now and \
+the executor must use it verbatim. Paths, namespaces, scopes, \
+identifiers, dry-run flags, version pins. The fixity is the point: \
+the executor is not free to change it. (Often you will just inline \
+the literal value, e.g. `"namespace": "prod"`; use the placeholder \
+when the literal would be generic or when you want to flag the \
+fixity explicitly.)
+  - `<executor-fills: short directive>` — the executor writes the \
+value at runtime, guided by the step's `description` and \
+`constraints`. Use this for any payload the executor was supposed \
+to author: drafted prose, code bodies, SVG/HTML content, message \
+text, generated configuration. The directive inside the placeholder \
+is a one-line steer, not the payload.
+  - `<from:step:N>` — the value is the output of step N (which must \
+be an earlier step). Use this whenever step M's correct input \
+cannot be known until step N has run — created IDs, returned \
+tokens, observed counts, resolved paths.
+
+  Exception: tiny exact strings the executor genuinely cannot \
+derive (a 5-line patch, a one-line config flip, a specific \
+hash/identifier the panel verified) MAY appear inline as the \
+literal value — that *is* the planner-fixed value. Anything over a \
+couple hundred characters of inline content is a smell; if you are \
+tempted to inline a payload, use `<executor-fills: ...>` instead.
+
+  Worked examples:
+
+  - `{{"path": "/abs/path/agent.svg", "content": "<executor-fills: \
+single inline SVG, viewBox follows the description's spec>"}}` — \
+path is panel-decided; content is delegated.
+  - `{{"namespace": "prod", "pod": "api-7"}}` — both identifiers \
+ARE the action; the panel pinned them inline.
+  - `{{"job_id": "<from:step:2>", "status": "cancelled"}}` — step 2 \
+created or fetched the job; step 4 cancels it by ID.
+
+  Apply the same labels in `approved_action.rollback.args` and in \
+any `recovery.compensate.args` — same action-spec shape, same \
+provenance discipline.
+
+  INVALID: any `args` value that is a giant verbatim payload (full \
+SVG, full essay, full source file) the executor was supposed to \
+author. If you find yourself pasting the deliverable inline, swap \
+it for `<executor-fills: ...>`.
 
 RECOVERY NODE TYPES (the `recovery` field and any nested `then`/`else`):
 1. Terminal string: one of these exact bare strings — no extra text, \
