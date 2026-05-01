@@ -1,4 +1,4 @@
-# MassGen v0.1.82 Release Announcement
+# MassGen v0.1.83 Release Announcement
 
 <!--
 This is the current release announcement. Copy this + feature-highlights.md to LinkedIn/X.
@@ -7,17 +7,17 @@ After posting, update the social links below.
 
 ## Release Summary
 
-We're excited to release MassGen v0.1.82 — TUI Copy Mode & Checkpoint Quality Improvements! 🚀 A new `Ctrl+Shift+S` copy mode lets you drag-select text natively in the terminal UI, and the standalone checkpoint MCP server gets stronger plan quality criteria and agent recovery guidance.
+We're excited to release MassGen v0.1.83 — In-Session Standalone Checkpoint MCP Integration! 🚀 The standalone checkpoint MCP server can now run *inside* a normal MassGen single-agent session, exposing the richer `init` + `checkpoint` tools backed by its own reviewer team.
 
 ## Install
 
 ```bash
-pip install massgen==0.1.82
+pip install massgen==0.1.83
 ```
 
 ## Links
 
-- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.82
+- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.83
 - **X post:** [TO BE ADDED AFTER POSTING]
 - **LinkedIn post:** [TO BE ADDED AFTER POSTING]
 
@@ -29,31 +29,30 @@ Copy everything below this line, then append content from `feature-highlights.md
 
 ---
 
-We're excited to release MassGen v0.1.82 — TUI Copy Mode & Checkpoint Quality Improvements! 🚀 A new `Ctrl+Shift+S` copy mode lets you drag-select text natively in the terminal UI, and the standalone checkpoint MCP server gets stronger plan quality criteria and agent recovery guidance.
+We're excited to release MassGen v0.1.83 — In-Session Standalone Checkpoint MCP Integration! 🚀 The standalone checkpoint MCP server can now run *inside* a normal MassGen single-agent session, exposing the richer `init` + `checkpoint` tools backed by its own reviewer team.
 
 **Key Improvements:**
 
-📋 **TUI Copy Mode** — Select and copy terminal output natively:
-- Press `Ctrl+Shift+S` to release mouse tracking — drag to select text, then copy with your terminal's shortcut
-- Press again to restore Textual's normal mouse behavior
-- Auto-restores mouse capture if you exit while copy mode is active
+🔌 **In-Session Standalone Checkpoint MCP** — The richer planning affordance, now in-session:
+- Single-agent sessions can call the standalone server's `init` + `checkpoint` tools backed by their own reviewer team
+- New `coordination.standalone_checkpoint` config block: `enabled`, `team_config`, `mode` (`generate` | `verify`), `single_checkpoint`, `include_workspace_context`
+- Invalid `mode` values fall back to `generate` with a warning — typos surface instead of silently running the wrong mode
+- Multi-agent parents skip the standalone server with a warning (the standalone server runs its own reviewer panel)
 
-🔒 **Checkpoint Quality Improvements** — Smarter, safer checkpoint plans:
-- New `include_workspace_context` config option mounts the executor's workspace as read-only context for reviewer agents (default off)
-- Mode-aware plan quality criteria score selective branch depth and fallback handling (single vs. multi-checkpoint)
-- Single-checkpoint agent recovery workflow: detailed steps for when a plan branch resolves to `terminate` — find safe alternates before giving up
-- Extended "better means" safety guidance with four axes for recognizing when a cheaper path becomes unsafe
+🎴 **Enhanced Checkpoint Tool Card** — TUI tool card visualization distinguishes primary checkpoint operations from system tasks with improved context and result display
 
-🖥️ **TUI Visual Polish** — Ribbon dividers changed from `│` to `·` for a cleaner look
+📦 **Example Configs** — Runnable in-session standalone checkpoint setups:
+- `massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml`
+- `massgen/configs/checkpoint/standalone_mcp/reviewers.yaml`
 
 **Getting Started:**
 
 ```bash
-pip install massgen==0.1.82
-uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
+pip install massgen==0.1.83
+uv run massgen --config massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml "Create an SVG of an AI agent coding. Call the checkpoint tool first to get a structured plan from the reviewer panel, then produce the SVG following that plan."
 ```
 
-Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.82
+Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.83
 
 Feature highlights:
 

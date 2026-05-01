@@ -9,14 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.83 (May 1, 2026)** - In-Session Standalone Checkpoint MCP Integration
+The standalone checkpoint MCP server can now be exposed *inside* a normal MassGen run via a new `coordination.standalone_checkpoint` config block, giving single-agent sessions access to the richer `init` + `checkpoint` tools backed by their own reviewer team. Enhanced checkpoint tool card visualization separates primary operations from system tasks.
+
 **v0.1.82 (April 29, 2026)** - TUI Copy Mode & Checkpoint Quality Improvements
 New `Ctrl+Shift+S` copy mode toggle releases terminal mouse tracking so users can drag-select text natively. Checkpoint standalone improvements: workspace context option, enhanced plan quality criteria, and single-checkpoint agent recovery guidance.
 
 **v0.1.81 (April 27, 2026)** - Multi-Region Circuit Breaker Failover (Phase 6)
 LLM circuit breaker can now fail over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy. Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds).
 
-**v0.1.80 (April 22, 2026)** - Adaptive Circuit Breaker & Checkpoint Modes
-Circuit breaker Phase 5 adds adaptive thresholds that tune to each backend's behavior. New standalone checkpoint modes: single checkpoint (no recheckpointing) and draft plan verify mode.
+---
+
+## [0.1.83] - 2026-05-01
+
+### Added
+- **In-Session Standalone Checkpoint MCP** ([#1079](https://github.com/massgen/MassGen/pull/1079)): The standalone checkpoint MCP server (originally for external hosts like Claude Code) can now be exposed *inside* a normal MassGen run, so a single-agent session can call its richer `init` + `checkpoint` tools and have its own reviewer team evaluate plans
+  - `massgen/mcp_tools/standalone/checkpoint_mcp_server.py` — wired into in-session orchestration
+  - `massgen/orchestrator.py` — orchestrator integration with affordance gating
+  - `massgen/system_message_builder.py`, `massgen/system_prompt_sections.py` — standalone checkpoint prompt section
+- **`coordination.standalone_checkpoint` Config Block** ([#1079](https://github.com/massgen/MassGen/pull/1079)): New YAML block under `orchestrator.coordination` with fields:
+  - `enabled` (bool, default `false`) — opt-in gate
+  - `team_config` (path) — team YAML the standalone server runs
+  - `mode` (`generate` | `verify`, default `generate`) — invalid values fall back to `generate` with a warning
+  - `single_checkpoint` (bool, default `false`) — one-shot checkpoint per session
+  - `include_workspace_context` (bool, default `false`) — mount parent workspace read-only for reviewers
+  - `massgen/agent_config.py` — `CoordinationConfig` fields and `to_dict` serialization
+  - `massgen/cli.py` — `_parse_standalone_checkpoint` parser with mode validation
+- **Enhanced Checkpoint Tool Card** ([#1079](https://github.com/massgen/MassGen/pull/1079)): Tool card visualization distinguishes primary operations from system tasks with improved context and result display
+  - `massgen/frontend/displays/textual_widgets/tool_card.py`
+- **Example Configs** ([#1079](https://github.com/massgen/MassGen/pull/1079)):
+  - `massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml` — fast-iteration single-agent run with in-session standalone checkpoint
+  - `massgen/configs/checkpoint/standalone_mcp/reviewers.yaml` — reviewer team config for the standalone server
+
+### Changed
+- **Single-Agent-Only Affordance Gating** ([#1079](https://github.com/massgen/MassGen/pull/1079)): When `standalone_checkpoint.enabled: true` is set on a multi-agent parent, the system skips the standalone server with a warning (the standalone server runs its own reviewer panel)
+- **Workspace Metadata Exclusions** ([#1079](https://github.com/massgen/MassGen/pull/1079)): Updated `_metadata_dirs` in filesystem manager constants to keep standalone-checkpoint metadata out of final snapshots
+  - `massgen/filesystem_manager/_constants.py`
+- **Backend & API Param Exclusion Lists** ([#1079](https://github.com/massgen/MassGen/pull/1079)): New coordination keys excluded from forwarded backend/API params
+  - `massgen/backend/base.py`, `massgen/api_params_handler/_api_params_handler_base.py`
+
+### Documentations, Configurations and Resources
+- **New Checkpoint Module Section**: `docs/modules/checkpoint.md` — added "Standalone Checkpoint MCP (in-session)" subsection with config schema, behavior table, and sample config reference
+- **Configuration Examples**: `massgen/configs/checkpoint/standalone_mcp/{fast_iteration,reviewers}.yaml` — runnable examples for in-session standalone checkpoint
+
+### Tests
+- `massgen/tests/test_standalone_checkpoint_config.py` — config parsing & defaults
+- `massgen/tests/test_standalone_checkpoint_mcp_config.py` — MCP server config wiring
+- `massgen/tests/test_standalone_checkpoint_injection.py` — orchestrator-level injection
+- `massgen/tests/test_standalone_checkpoint_prompt.py` — prompt section rendering across modes
+- `massgen/tests/test_standalone_checkpoint_backend_parity.py` — backend parity coverage
+- `massgen/tests/frontend/test_standalone_checkpoint_tool_card.py` — TUI tool card visualization
+
+### Notes
+- **Originally-planned features deferred**: Checkpoint Safety Mode for Irreversible Actions ([#1026](https://github.com/massgen/MassGen/issues/1026)) and Round Evaluator over-indexing fix ([#994](https://github.com/massgen/MassGen/issues/994)) deferred to a future release.
+
+### Technical Details
+- **Major Focus**: Bringing the standalone checkpoint MCP's richer planning affordance into single-agent in-session use, with explicit single-agent-only gating
+- **PRs Merged**: [#1079](https://github.com/massgen/MassGen/pull/1079)
+- **Contributors**: @ncrispino, @HenryQi and the MassGen team
 
 ---
 

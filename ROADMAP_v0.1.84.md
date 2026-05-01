@@ -1,51 +1,35 @@
-# MassGen v0.1.83 Roadmap
+# MassGen v0.1.84 Roadmap
 
-**Target Release:** May 1, 2026
+**Target Release:** May 4, 2026
 
 ## Overview
 
-Version 0.1.83 focuses on checkpoint safety hardening and a round evaluator bug fix.
+Version 0.1.84 focuses on image/video edit capabilities across providers.
 
 ---
 
-## Feature: Checkpoint Safety Mode for Irreversible Actions
+## Feature: Image/Video Edit Capabilities
 
-**Issue:** [#1026](https://github.com/massgen/MassGen/issues/1026)
+**Issue:** [#959](https://github.com/massgen/MassGen/issues/959)
 **Owner:** @ncrispino
 
 ### Goals
 
-- **Safety Gate**: Dedicated safety mode that gates irreversible actions (deletes, deploys, writes to external systems) behind checkpoint approval before execution
-- Complements the existing checkpoint coordination mode with explicit irreversibility detection
+- **Edit Capability Coverage**: Investigate and support image and video editing capabilities across providers
+- **Multi-Turn Editing**: Multi-turn editing workflows with continuation IDs
 
 ### Success Criteria
 
-- [ ] Irreversible action detection working in checkpoint safety mode
-- [ ] Checkpoint approval flow blocks execution until reviewer agents sign off
-
----
-
-## Bug Fix: Round Evaluator Over-indexes on Incremental Fixes
-
-**Issue:** [#994](https://github.com/massgen/MassGen/issues/994)
-**Owner:** @ncrispino
-
-### Problem
-
-Managed round evaluator prioritizes incremental fixes despite high spend and strong strategic critique — agents keep polishing surface details instead of making the bold improvements the evaluator flagged.
-
-### Success Criteria
-
-- [ ] Round evaluator correctly weights strategic critique vs. incremental suggestions
-- [ ] High-spend rounds trigger more decisive directional changes
+- [ ] Image editing capabilities documented and tested
+- [ ] Video editing capabilities documented and tested
+- [ ] Multi-turn editing flow works end-to-end
 
 ---
 
 ## Related Tracks
 
-- **v0.1.82**: TUI Copy Mode & Checkpoint Quality Improvements ([#1076](https://github.com/massgen/MassGen/pull/1076))
-- **v0.1.84**: Dispatch Discoverability ([#1034](https://github.com/massgen/MassGen/issues/1034)), GNAP git-native coordination ([#1001](https://github.com/massgen/MassGen/issues/1001))
+- **v0.1.83**: In-Session Standalone Checkpoint MCP Integration ([#1079](https://github.com/massgen/MassGen/pull/1079))
 
 ## What's Next
 
-- **v0.1.84**: Dispatch discoverability description + GNAP git-native coordination for multi-agent scaling
+- Continued multimodal expansion and provider parity

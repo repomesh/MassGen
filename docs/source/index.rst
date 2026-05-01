@@ -200,6 +200,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.83 (May 1, 2026)** - In-Session Standalone Checkpoint MCP Integration
+
+The standalone checkpoint MCP server can now be exposed *inside* a normal MassGen run via a new ``coordination.standalone_checkpoint`` config block, giving single-agent sessions access to the richer ``init`` + ``checkpoint`` tools backed by their own reviewer team. Enhanced checkpoint tool card visualization separates primary operations from system tasks.
+
 **v0.1.82 (April 29, 2026)** - TUI Copy Mode & Checkpoint Quality Improvements
 
 New ``Ctrl+Shift+S`` copy mode toggle releases terminal mouse tracking so users can drag-select text natively. Checkpoint standalone improvements: optional workspace context for reviewer agents, enhanced plan quality criteria with selective branch depth scoring, and single-checkpoint agent recovery guidance.
@@ -207,10 +211,6 @@ New ``Ctrl+Shift+S`` copy mode toggle releases terminal mouse tracking so users 
 **v0.1.81 (April 27, 2026)** - Multi-Region Circuit Breaker Failover (Phase 6)
 
 LLM circuit breaker can now fail over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy. Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds).
-
-**v0.1.80 (April 22, 2026)** - Adaptive Circuit Breaker & Checkpoint Modes
-
-Circuit breaker Phase 5 adds adaptive thresholds that tune to each backend's behavior. New standalone checkpoint modes: single checkpoint (no recheckpointing) and draft plan verify mode.
 
 :doc:`Full changelog → <changelog>`
 
