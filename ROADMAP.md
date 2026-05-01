@@ -42,10 +42,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.84** | 05/04/26 | Dispatch Discoverability Description | @ncrispino | Add description to improve Dispatch discoverability ([#1034](https://github.com/massgen/MassGen/issues/1034)) |
-| | | GNAP: Git-Native Multi-Agent Coordination | @ncrispino | Git-native coordination for MassGen's collaborative multi-agent scaling system ([#1001](https://github.com/massgen/MassGen/issues/1001)) |
-| **v0.1.85** | 05/06/26 | Checkpoint Safety Mode for Irreversible Actions | @ncrispino | Dedicated safety mode that gates irreversible actions behind checkpoint approval — deferred from v0.1.83 ([#1026](https://github.com/massgen/MassGen/issues/1026)) |
-| | | Fix: Round Evaluator Over-indexes on Incremental Fixes | @ncrispino | Round evaluator prioritizes incremental fixes despite high spend and strong strategic critique — deferred from v0.1.83 ([#994](https://github.com/massgen/MassGen/issues/994)) |
+| **v0.1.84** | 05/04/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) |
 
 *All releases ship on MWF @ 9am PT when ready*
 
@@ -63,7 +60,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 - **Example Configs**: `massgen/configs/checkpoint/standalone_mcp/{fast_iteration,reviewers}.yaml`
 
 ### Notes
-- Originally-planned Checkpoint Safety Mode ([#1026](https://github.com/massgen/MassGen/issues/1026)) and Round Evaluator over-indexing fix ([#994](https://github.com/massgen/MassGen/issues/994)) deferred to v0.1.85.
+- Originally-planned Checkpoint Safety Mode ([#1026](https://github.com/massgen/MassGen/issues/1026)) and Round Evaluator over-indexing fix ([#994](https://github.com/massgen/MassGen/issues/994)) deferred to a future release.
 
 ---
 
@@ -172,45 +169,19 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.84 - Dispatch Discoverability & GNAP
+## 📋 v0.1.84 - Image/Video Edit Capabilities
 
 ### Features
 
-**1. Dispatch Discoverability Description** (@ncrispino)
-- Issue: [#1034](https://github.com/massgen/MassGen/issues/1034)
-- Add description to improve Dispatch discoverability so users can quickly understand what it is and when to use it
-- Surface clearer entry points in CLI help, README, and Sphinx docs
-- **Use Case**: Make Dispatch findable and self-explanatory for new users
-
-**2. GNAP — Git-Native Multi-Agent Coordination** (@ncrispino)
-- Issue: [#1001](https://github.com/massgen/MassGen/issues/1001)
-- Coordination protocol that uses git as the durable substrate (branches/worktrees/commits) for sharing intermediate state, votes, and final answers
-- **Use Case**: Auditable, forkable agent collaboration through standard git tooling
+**1. Check Image/Video Edit Capabilities** (@ncrispino)
+- Issue: [#959](https://github.com/massgen/MassGen/issues/959)
+- Investigate and support image and video editing capabilities across providers
+- Multi-turn editing workflows with continuation IDs
+- **Use Case**: Enable iterative media editing within multi-agent workflows
 
 ### Success Criteria
-- ✅ Dispatch description in CLI `--help` and docs
-- ✅ Agents publish intermediate states/answers as commits on coordination branches
-- ✅ Voting and convergence reconstructable from git history
-
----
-
-## 📋 v0.1.85 - Checkpoint Safety Mode & Round Evaluator Fix (Deferred from v0.1.83)
-
-### Features
-
-**1. Checkpoint Safety Mode for Irreversible Actions** (@ncrispino)
-- Issue: [#1026](https://github.com/massgen/MassGen/issues/1026)
-- Dedicated safety mode that gates irreversible actions (deletes, deploys, external writes) behind checkpoint approval before execution
-- **Use Case**: Hard-stop unsafe operations until reviewer agents sign off
-
-**2. Fix: Round Evaluator Over-indexes on Incremental Fixes** (@ncrispino)
-- Issue: [#994](https://github.com/massgen/MassGen/issues/994)
-- Round evaluator currently prioritizes incremental fixes despite high spend and strong strategic critique
-- **Use Case**: High-spend rounds should trigger decisive directional changes, not surface polishing
-
-### Success Criteria
-- ✅ Irreversible action detection working in checkpoint safety mode
-- ✅ Round evaluator correctly weights strategic critique vs. incremental suggestions
+- ✅ Image editing capabilities documented and tested
+- ✅ Video editing capabilities documented and tested
 
 ---
 

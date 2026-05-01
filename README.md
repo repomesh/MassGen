@@ -1562,11 +1562,10 @@ We welcome community contributions to achieve these goals.
 
 ### v0.1.84 Roadmap
 
-Version 0.1.84 focuses on Dispatch discoverability and git-native multi-agent coordination:
+Version 0.1.84 focuses on image/video edit capabilities:
 
 #### Planned Features
-- **Dispatch Discoverability** ([#1034](https://github.com/massgen/MassGen/issues/1034)): Add description to improve Dispatch discoverability
-- **GNAP: Git-Native Multi-Agent Coordination** ([#1001](https://github.com/massgen/MassGen/issues/1001)): Git-native coordination protocol for MassGen's collaborative multi-agent scaling system
+- **Image/Video Edit Capabilities** ([#959](https://github.com/massgen/MassGen/issues/959)): Investigate and support image and video editing capabilities across providers, with multi-turn editing workflows via continuation IDs
 
 ---
 
