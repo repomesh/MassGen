@@ -166,7 +166,7 @@ This project started with the "threads of thought" and "iterative refinement" id
 **Try v0.1.83 Features:**
 ```bash
 pip install massgen==0.1.83
-uv run massgen --config @examples/checkpoint/standalone_mcp/fast_iteration.yaml "Plan a refactor of the auth module."
+uv run massgen --config massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml "Create an SVG of an AI agent coding. Call the checkpoint tool first to get a structured plan from the reviewer panel, then produce the SVG following that plan."
 ```
 
 → [See full release history and examples](massgen/configs/README.md#release-history--examples)

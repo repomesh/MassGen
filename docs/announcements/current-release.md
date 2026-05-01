@@ -49,7 +49,7 @@ We're excited to release MassGen v0.1.83 — In-Session Standalone Checkpoint MC
 
 ```bash
 pip install massgen==0.1.83
-uv run massgen --config @examples/checkpoint/standalone_mcp/fast_iteration.yaml "Plan a refactor of the auth module."
+uv run massgen --config massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml "Create an SVG of an AI agent coding. Call the checkpoint tool first to get a structured plan from the reviewer panel, then produce the SVG following that plan."
 ```
 
 Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.83
