@@ -205,7 +205,7 @@ class TestSubrunConfigGeneration:
         )
 
         assert config["name"] == "massgen_checkpoint"
-        assert config["transport"] == "stdio"
+        assert config["type"] == "stdio"
         assert "--workspace-path" in config["args"]
         assert "/tmp/workspace" in config["args"]
         assert "--agent-id" in config["args"]
