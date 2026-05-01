@@ -6355,6 +6355,93 @@ The file will be read automatically and injected into external API calls.
 
 
 @dataclass
+class StandaloneCheckpointSection(SystemPromptSection):
+    """System prompt section explaining the standalone checkpoint MCP.
+
+    Only registered when `coordination.standalone_checkpoint.enabled` is true.
+    The standalone server exposes `init` (call once at session start) and
+    `checkpoint` (call when ready to consult the multi-agent panel). Modes
+    (single_checkpoint, generate vs verify, include_workspace_context) are
+    surface-toggled here so the model only sees affordances actually granted.
+    """
+
+    title: str = "Standalone Checkpoint Tool"
+    priority: Priority = Priority.HIGH
+    xml_tag: str | None = "standalone_checkpoint"
+    mode: str = "generate"
+    single_checkpoint: bool = False
+    include_workspace_context: bool = False
+
+    def build_content(self) -> str:
+        # Reuse the canonical checkpoint instructions that the standalone
+        # server publishes for external hosts (Claude Code, Codex, etc.) —
+        # `setup_instructions.load_template` already handles the
+        # RECHECKPOINT vs SINGLE-CHECKPOINT-CONTINUATION composition. Only
+        # *append* in-session-specific overlay (path pre-wiring + the
+        # blocking-call convention); never re-state what the canonical
+        # file already says.
+        from massgen.mcp_tools.standalone.setup_instructions import load_template
+
+        base = load_template(single_checkpoint=self.single_checkpoint).strip()
+        overlay_lines: list[str] = [
+            "",
+            "### In-session integration notes",
+            "",
+            "When MassGen runs this server in-session (the case here), " "three things differ from external hosts:",
+            "",
+            "1. **The tool names are namespaced.** The canonical doc "
+            "above refers to bare `init()` / `checkpoint()` because "
+            "that's how external hosts (Claude Code etc.) see them. "
+            "In this MassGen run the server is registered as "
+            "`massgen_checkpoint_standalone`, so the actual tool names "
+            "you must call are:",
+            "    - `mcp__massgen_checkpoint_standalone__init`",
+            "    - `mcp__massgen_checkpoint_standalone__checkpoint`",
+            "  Do **not** invent variants like "
+            "`mcp__massgen-checkpoint-mcp__init` (hyphens, package "
+            "name) — they don't exist on this backend. Use the "
+            "underscore-namespaced names exactly as written above.",
+            "2. **`workspace_dir` and `trajectory_path` are pre-wired.** "
+            "MassGen passed them to the server at startup, so your "
+            "`init(...)` call can omit both — pass only "
+            "`available_tools`, `original_task` (verbatim user request), "
+            "and `environment`. Explicit strings still win if you pass "
+            "them.",
+            "3. **`init` and `checkpoint` are direct, foreground, "
+            "blocking tool calls.** Call them as ordinary tools: "
+            "do NOT wrap them in `start_background_tool`, do NOT mark "
+            "them as background, and do NOT batch them as parallel "
+            "tool calls expecting one slot to hold the checkpoint. "
+            "`checkpoint` may take several minutes; that's expected — "
+            "wait for the result before doing anything else.",
+        ]
+        if self.mode == "verify":
+            overlay_lines.extend(
+                [
+                    "",
+                    "### Verify mode",
+                    "",
+                    "Pass `draft_plan` instead of `objective`+`action_goals`. "
+                    "The panel verifies your draft rather than generating a "
+                    "new plan. If the team rejects, revise and call again "
+                    "(re-checkpointing is allowed unless single-checkpoint "
+                    "mode is on).",
+                ],
+            )
+        if self.include_workspace_context:
+            overlay_lines.extend(
+                [
+                    "",
+                    "### Workspace context",
+                    "",
+                    "Reviewers can see your workspace read-only. They will " "ground their assessment in actual files, not just your " "summary.",
+                ],
+            )
+        lines = [base] + overlay_lines
+        return "\n".join(lines)
+
+
+@dataclass
 class MainAgentCheckpointSection(SystemPromptSection):
     """System prompt section for the main agent in checkpoint coordination mode.
 

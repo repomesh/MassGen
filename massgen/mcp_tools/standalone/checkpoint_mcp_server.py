@@ -2205,16 +2205,38 @@ def _create_mcp_server():
         ),
     )
     async def init(
-        workspace_dir: str,
-        trajectory_path: str,
         available_tools: list[dict[str, Any]],
         original_task: str,
         environment: dict[str, Any],
+        workspace_dir: str | None = None,
+        trajectory_path: str | None = None,
         safety_policy: list[Any] | None = None,
     ) -> str:
+        # When MassGen embeds this server in-session, the parent passes
+        # `--default-workspace-dir` and `--default-trajectory-path` at startup.
+        # An agent that omits (or passes empty) workspace_dir / trajectory_path
+        # then picks up the pre-wired values — it doesn't have to guess where
+        # its own trajectory file lives. External hosts that pass values
+        # explicitly still win.
+        ws = workspace_dir if (workspace_dir and workspace_dir.strip()) else _session.get("default_workspace_dir")
+        tp = trajectory_path if (trajectory_path and trajectory_path.strip()) else _session.get("default_trajectory_path")
+        if not ws:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": ("workspace_dir is required (caller must pass it, or the server must " "have been started with --default-workspace-dir)"),
+                },
+            )
+        if not tp:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": ("trajectory_path is required (caller must pass it, or the server must " "have been started with --default-trajectory-path)"),
+                },
+            )
         return await _init_impl(
-            workspace_dir,
-            trajectory_path,
+            ws,
+            tp,
             available_tools,
             original_task,
             environment,
@@ -2258,6 +2280,20 @@ def main():
         required=True,
         help="Path to MassGen config YAML defining the agent team",
     )
+    # Mode overrides — when MassGen embeds this server in-session
+    # (`coordination.standalone_checkpoint`), the parent run owns the mode
+    # flags and must pass them as CLI args so the prompt the agent sees and
+    # the affordances the server actually grants stay in sync.
+    parser.add_argument("--mode", type=str, choices=sorted(_VALID_MODES), default=None)
+    parser.add_argument("--single-checkpoint", action="store_true", default=None)
+    parser.add_argument("--include-workspace-context", action="store_true", default=None)
+    # Pre-wired session paths — when MassGen embeds this server in-session it
+    # already knows the executor's workspace and trajectory file. Passing them
+    # here lets `init(...)` omit those args (or pass empty strings) and use
+    # the pre-wired defaults, so the agent doesn't have to guess where its own
+    # logs land.
+    parser.add_argument("--default-workspace-dir", type=str, default=None)
+    parser.add_argument("--default-trajectory-path", type=str, default=None)
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -2267,7 +2303,18 @@ def main():
     with open(config_path) as f:
         config_dict = yaml.safe_load(f)
 
+    if args.mode is not None:
+        config_dict["mode"] = args.mode
+    if args.single_checkpoint is not None:
+        config_dict["single_checkpoint"] = bool(args.single_checkpoint)
+    if args.include_workspace_context is not None:
+        config_dict["include_workspace_context"] = bool(args.include_workspace_context)
+
     _session["config_dict"] = config_dict
+    if args.default_workspace_dir:
+        _session["default_workspace_dir"] = args.default_workspace_dir
+    if args.default_trajectory_path:
+        _session["default_trajectory_path"] = args.default_trajectory_path
     _apply_server_mode_from_config()
 
     mcp = _create_mcp_server()

@@ -1,0 +1,121 @@
+agents:
+- id: agent_a
+  backend:
+    type: codex
+    # model: gpt-5.4
+    model: gpt-5.3-codex-spark
+    reasoning:
+      effort: medium
+    # type: claude_code
+    # model: claude-sonnet-4-6
+    cwd: workspace
+    enable_code_based_tools: true
+    exclude_file_operation_mcps: true
+    enable_mcp_command_line: true
+    command_line_execution_mode: docker
+    # command_line_docker_image: ghcr.io/massgen/mcp-runtime-sudo:latest
+    command_line_docker_image: massgen/mcp-runtime-sudo:latest
+    command_line_docker_network_mode: bridge
+    command_line_docker_enable_sudo: true
+    command_line_docker_credentials:
+      env_file: .env
+      env_vars_from_file:
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+      - GOOGLE_API_KEY
+      - GEMINI_API_KEY
+    shared_tools_directory: shared_tools
+    enable_web_search: false
+- id: agent_b
+  backend:
+    type: codex
+    # model: gpt-5.4
+    model: gpt-5.3-codex-spark
+    reasoning:
+      effort: medium
+    cwd: workspace
+    enable_code_based_tools: true
+    exclude_file_operation_mcps: true
+    enable_mcp_command_line: true
+    command_line_execution_mode: docker
+    # command_line_docker_image: ghcr.io/massgen/mcp-runtime-sudo:latest
+    command_line_docker_image: massgen/mcp-runtime-sudo:latest
+    command_line_docker_network_mode: bridge
+    command_line_docker_enable_sudo: true
+    command_line_docker_credentials:
+      env_file: .env
+      env_vars_from_file:
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+      - GOOGLE_API_KEY
+      - GEMINI_API_KEY
+    shared_tools_directory: shared_tools
+    enable_web_search: false
+- id: agent_c
+  backend:
+    type: codex
+    # model: gpt-5.4
+    model: gpt-5.3-codex-spark
+    reasoning:
+      effort: medium
+    cwd: workspace
+    enable_code_based_tools: true
+    exclude_file_operation_mcps: true
+    enable_mcp_command_line: true
+    command_line_execution_mode: docker
+    # command_line_docker_image: ghcr.io/massgen/mcp-runtime-sudo:latest
+    command_line_docker_image: massgen/mcp-runtime-sudo:latest
+    command_line_docker_network_mode: bridge
+    command_line_docker_enable_sudo: true
+    command_line_docker_credentials:
+      env_file: .env
+      env_vars_from_file:
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+      - GOOGLE_API_KEY
+      - GEMINI_API_KEY
+    shared_tools_directory: shared_tools
+    enable_web_search: false
+orchestrator:
+  snapshot_storage: snapshots
+  agent_temporary_workspace: temp_workspaces
+  voting_sensitivity: checklist_gated
+  voting_threshold: 3
+  max_new_answers_per_agent: 1
+  fairness_enabled: true
+  fairness_lead_cap_answers: 2
+  max_midstream_injections_per_round: 2
+  defer_peer_updates_until_restart: true
+  allow_midstream_peer_updates_before_checklist_submit: true
+  # Lockstep rounds: voting only starts after every agent has submitted an
+  # answer in the current round. Combined with max_new_answers_per_agent: 1
+  # this gives "everyone produces one answer per round, then we vote" — no
+  # faster agent gets ahead. orchestrator.py:11647-11649 enforces this.
+  defer_voting_until_all_answered: true
+  enable_multimodal_tools: true
+  image_generation_backend: openai
+  video_generation_backend: openai
+  audio_generation_backend: openai
+  # Pure answer->vote flow (max_new_answers_per_agent: 1, no refinement rounds):
+  # the presenter can only drift from the voted plan, so return the winner's
+  # checkpoint_result.json directly via winner_reuse instead of re-running Codex.
+  skip_final_presentation: true
+  coordination:
+    max_orchestration_restarts: 0
+    learning_capture_mode: verification_and_final_only
+    fast_iteration_mode: true
+    use_skills: true
+    skills_directory: .agent/skills
+    enable_agent_task_planning: true
+    task_planning_filesystem_mode: true
+    enable_memory_filesystem_mode: true
+    write_mode: auto
+  context_paths: []
+timeout_settings:
+  orchestrator_timeout_seconds: 3600
+  initial_round_timeout_seconds: 1200
+  subsequent_round_timeout_seconds: 900
+  round_timeout_grace_seconds: 300
+ui:
+  display_type: textual_terminal
+  logging_enabled: true

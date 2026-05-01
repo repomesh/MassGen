@@ -396,6 +396,11 @@ class LLMBackend(ABC):
             "checkpoint_mode",
             "checkpoint_guidance",
             "checkpoint_gated_patterns",
+            "standalone_checkpoint_enabled",
+            "standalone_checkpoint_team_config",
+            "standalone_checkpoint_mode",
+            "standalone_checkpoint_single",
+            "standalone_checkpoint_include_workspace_context",
         }
 
     @abstractmethod
