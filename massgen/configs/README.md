@@ -227,7 +227,23 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.82 - Latest
+### v0.1.83 - Latest
+**New Features:** In-Session Standalone Checkpoint MCP Integration
+
+**Key Features:**
+- **In-Session Standalone Checkpoint**: Standalone checkpoint MCP server can now run inside a normal MassGen single-agent session, exposing richer `init` + `checkpoint` tools backed by its own reviewer team
+- **`coordination.standalone_checkpoint` Config Block**: New YAML block with `enabled`, `team_config`, `mode` (`generate` | `verify`), `single_checkpoint`, `include_workspace_context`; invalid `mode` falls back to `generate` with a warning
+- **Single-Agent-Only Affordance Gating**: Multi-agent parents skip the standalone server with a warning
+- **Enhanced Checkpoint Tool Card**: TUI tool card distinguishes primary checkpoint operations from system tasks
+- **Example Configs**: `massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml` and `reviewers.yaml`
+
+**Try It:**
+```bash
+pip install massgen==0.1.83
+uv run massgen --config massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml "Create an SVG of an AI agent coding. Call the checkpoint tool first to get a structured plan from the reviewer panel, then produce the SVG following that plan."
+```
+
+### v0.1.82
 **New Features:** TUI Copy Mode & Checkpoint Quality Improvements
 
 **Key Features:**
@@ -235,12 +251,6 @@ Most configurations use environment variables for API keys:so
 - **Checkpoint Workspace Context**: New `include_workspace_context` config option for the standalone checkpoint MCP server (default `false`)
 - **Checkpoint Plan Quality Criteria**: Mode-aware quality criteria score selective branch depth and fallback handling in generated plans
 - **Single-Checkpoint Agent Recovery**: Recovery workflow in `checkpoint_instructions.md` for when a plan branch resolves to `terminate`
-
-**Try It:**
-```bash
-pip install massgen==0.1.82
-uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
-```
 
 ### v0.1.81
 **New Features:** Multi-Region Circuit Breaker Failover (Phase 6)

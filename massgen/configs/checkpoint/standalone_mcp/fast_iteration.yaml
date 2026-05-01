@@ -1,0 +1,98 @@
+# Fast-iteration single-agent run with the standalone checkpoint MCP turned on.
+#
+# The standalone checkpoint MCP is single-agent only — when enabled in a
+# multi-agent parent, the orchestrator strips the registration and the prompt
+# section disappears at render time. So this config drops fast_iteration.yaml's
+# second agent (`agent_b`) and keeps just `agent_a`.
+#
+# How to run — self-contained creative task that motivates calling `checkpoint`:
+#
+#   uv run massgen --config massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml "Create an SVG of an AI agent coding. Call the checkpoint tool first to get a structured plan from the reviewer panel, then produce the SVG following that plan."
+#
+# What you should see: the agent calls `init` once at session start, then
+# `checkpoint(objective="design SVG of AI agent coding")` which spawns a
+# 3-codex sub-MassGen panel; that panel votes and returns a structured plan;
+# the parent agent then renders the SVG following the plan.
+#
+# What you'll see:
+#   - The agent's tool list now includes `mcp__massgen_checkpoint_standalone__init`
+#     and `mcp__massgen_checkpoint_standalone__checkpoint`. It calls `init` once
+#     at session start and `checkpoint(...)` whenever it wants to consult a
+#     multi-agent reviewer panel for a high-stakes step.
+#   - Each `checkpoint` call spawns a sub-MassGen subprocess driven by the
+#     team config below (see `team_config`) and returns a structured plan.
+#   - The system prompt gains a `<standalone_checkpoint>` section explaining
+#     the affordance. With multi-agent, that section is suppressed at the
+#     source per the affordance-stripping rule.
+
+agents:
+- id: agent_a
+  backend:
+    type: gemini
+    model: gemini-3.1-pro-preview
+    # model: gemini-3-flash-preview
+    cwd: workspace
+    enable_code_based_tools: false
+    exclude_file_operation_mcps: true
+    enable_mcp_command_line: true
+    command_line_execution_mode: docker
+    # command_line_docker_image: ghcr.io/massgen/mcp-runtime-sudo:latest
+    command_line_docker_image: massgen/mcp-runtime-sudo:latest
+    command_line_docker_network_mode: bridge
+    command_line_docker_enable_sudo: true
+    command_line_docker_credentials:
+      env_file: .env
+      env_vars_from_file:
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+      - GOOGLE_API_KEY
+      - GEMINI_API_KEY
+    shared_tools_directory: shared_tools
+    auto_discover_custom_tools: false
+    enable_web_search: false
+orchestrator:
+  snapshot_storage: snapshots
+  agent_temporary_workspace: temp_workspaces
+  voting_sensitivity: checklist_gated
+  voting_threshold: 3
+  max_new_answers_per_agent: 5
+  fairness_enabled: true
+  fairness_lead_cap_answers: 2
+  max_midstream_injections_per_round: 2
+  defer_peer_updates_until_restart: true
+  allow_midstream_peer_updates_before_checklist_submit: true
+  enable_multimodal_tools: true
+  image_generation_backend: openai
+  video_generation_backend: openai
+  audio_generation_backend: openai
+  coordination:
+    fast_iteration_mode: true
+    max_verifications_per_round: 1
+    max_internal_fix_loops: 0
+    skip_redundant_scaffolding: true
+    max_orchestration_restarts: 0
+    learning_capture_mode: verification_and_final_only
+    use_skills: true
+    skills_directory: .agent/skills
+    enable_agent_task_planning: true
+    task_planning_filesystem_mode: true
+    enable_memory_filesystem_mode: true
+    write_mode: auto
+    # Standalone checkpoint MCP — single-agent only. Exposes the richer
+    # init + checkpoint lifecycle inside this run; each checkpoint call spawns
+    # a sub-MassGen panel using `team_config`.
+    standalone_checkpoint:
+      enabled: true
+      team_config: massgen/configs/checkpoint/standalone_mcp/reviewers.yaml
+      mode: generate                   # generate | verify
+      single_checkpoint: false         # one-shot per session if true
+      include_workspace_context: false # mount parent workspace read-only
+  context_paths: []
+timeout_settings:
+  orchestrator_timeout_seconds: 3600
+  initial_round_timeout_seconds: 1200
+  subsequent_round_timeout_seconds: 900
+  round_timeout_grace_seconds: 300
+ui:
+  display_type: textual_terminal
+  logging_enabled: true

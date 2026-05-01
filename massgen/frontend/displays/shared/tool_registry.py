@@ -245,6 +245,26 @@ def get_tool_category(tool_name: str) -> dict:
     return {"color": "#858585", "category": "tool"}
 
 
+def is_terminal_tool(tool_name: str) -> bool:
+    """Whether a tool deserves the "hero" card treatment.
+
+    Terminal tools like `new_answer`, `vote`, and `checkpoint` are the
+    culmination of an agent's work and render as a prominent expanded
+    card rather than a one-line collapsed entry. Used by both
+    `ToolCallCard._detect_terminal_tool` (for individual rendering) and
+    `ToolBatchTracker.process_tool` (to keep a hero tool from being
+    silently nested inside a batch card).
+
+    The standalone checkpoint server exposes both `init` (housekeeping,
+    one-time session setup) and `checkpoint` (the heavy delegation). Only
+    `checkpoint` deserves the hero card.
+    """
+    name_lower = tool_name.lower()
+    if name_lower.endswith("__init") and "checkpoint" in name_lower:
+        return False
+    return any(t in name_lower for t in ("new_answer", "vote", "checkpoint"))
+
+
 def format_tool_display_name(tool_name: str) -> str:
     """Format tool name for display.
 

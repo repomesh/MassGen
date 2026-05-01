@@ -3545,6 +3545,37 @@ def _build_cli_overrides_dict(args: argparse.Namespace) -> dict[str, Any]:
     return overrides
 
 
+_STANDALONE_CHECKPOINT_VALID_MODES = ("generate", "verify")
+
+
+def _parse_standalone_checkpoint(raw: dict[str, Any]) -> dict[str, Any]:
+    """Parse the `coordination.standalone_checkpoint` block into kwargs.
+
+    Returns kwargs suitable for passing to CoordinationConfig(...). Unknown
+    `mode` values fall back to "generate" but log a warning — a silent
+    coercion would let a typo (e.g. "verfy") run the wrong mode without any
+    surfacing to the user. The fallback (rather than raising) keeps malformed
+    configs forgiving at parse time.
+    """
+    if not isinstance(raw, dict):
+        raw = {}
+    mode = raw.get("mode", "generate")
+    if mode not in _STANDALONE_CHECKPOINT_VALID_MODES:
+        logger.warning(
+            f"[StandaloneCheckpoint] coordination.standalone_checkpoint.mode={mode!r} " f"is not in {_STANDALONE_CHECKPOINT_VALID_MODES}; falling back to 'generate'",
+        )
+        mode = "generate"
+    return {
+        "standalone_checkpoint_enabled": bool(raw.get("enabled", False)),
+        "standalone_checkpoint_team_config": raw.get("team_config"),
+        "standalone_checkpoint_mode": mode,
+        "standalone_checkpoint_single": bool(raw.get("single_checkpoint", False)),
+        "standalone_checkpoint_include_workspace_context": bool(
+            raw.get("include_workspace_context", False),
+        ),
+    }
+
+
 def _parse_coordination_config(coord_cfg: dict[str, Any]) -> "CoordinationConfig":
     """Parse a coordination config dict into a CoordinationConfig object.
 
@@ -3675,6 +3706,7 @@ def _parse_coordination_config(coord_cfg: dict[str, Any]) -> "CoordinationConfig
         checkpoint_mode=coord_cfg.get("checkpoint_mode", "conversation"),
         checkpoint_guidance=coord_cfg.get("checkpoint_guidance", ""),
         checkpoint_gated_patterns=coord_cfg.get("checkpoint_gated_patterns", []),
+        **_parse_standalone_checkpoint(coord_cfg.get("standalone_checkpoint", {})),
         web_review=coord_cfg.get("web_review", False),
         fast_iteration_mode=coord_cfg.get("fast_iteration_mode", False),
         max_verifications_per_round=coord_cfg.get("max_verifications_per_round"),

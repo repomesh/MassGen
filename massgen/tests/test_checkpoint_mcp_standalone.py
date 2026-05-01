@@ -1169,6 +1169,90 @@ class TestBuildObjectivePrompt:
 
 
 # ---------------------------------------------------------------------------
+# Test: args-provenance taxonomy in the reviewer prompt
+# ---------------------------------------------------------------------------
+
+
+class TestArgsProvenanceTaxonomy:
+    """Reviewer prompt formalizes who supplies each `args` value.
+
+    Regression: a prior run had the reviewer panel embedding the entire
+    deliverable (a full SVG XML payload) inside `approved_action.args.content`
+    instead of producing a structural plan. The prompt now teaches a three-way
+    provenance vocabulary (`<planner-fixed>` / `<executor-fills: ...>` /
+    `<from:step:N>`) so reviewers label every arg by who supplies it. These
+    tests lock that vocabulary into the prompt — generalizing the fix beyond
+    the SVG case (cf. feedback_no_overfit_prompts).
+    """
+
+    def _build(self) -> str:
+        from massgen.mcp_tools.standalone.checkpoint_mcp_server import (
+            build_objective_prompt,
+        )
+
+        return build_objective_prompt(
+            objective="Build a static landing page",
+            available_tools=[{"name": "Write", "description": "Write a file"}],
+            workspace_dir="/tmp/test-workspace",
+            original_task="Build it",
+            environment={},
+        )
+
+    def test_introduces_provenance_concept(self):
+        """The prompt must explicitly tell reviewers that every args value
+        has a provenance — not just describe one good and one bad shape."""
+        prompt = self._build()
+        assert "provenance" in prompt.lower()
+
+    def test_includes_all_three_placeholder_forms(self):
+        """All three placeholders must be documented so reviewers have the
+        full vocabulary, not just the executor-fills case that motivated
+        the bug fix."""
+        prompt = self._build()
+        assert "<planner-fixed>" in prompt
+        assert "<executor-fills:" in prompt
+        assert "<from:step:" in prompt
+
+    def test_worked_example_for_executor_fills(self):
+        """A self-contained worked example must show a payload field
+        delegated to the executor."""
+        prompt = self._build()
+        assert "<executor-fills: single inline SVG" in prompt
+
+    def test_worked_example_for_cross_step_chaining(self):
+        """A worked example must show data-flow chaining across steps —
+        `<from:step:N>` is meaningless unless the reviewer sees it in use."""
+        prompt = self._build()
+        assert "<from:step:2>" in prompt
+
+    def test_provenance_extends_to_rollback_and_compensate(self):
+        """Same action-spec shape, same provenance discipline — the prompt
+        must say so explicitly so the labels propagate to nested actions."""
+        prompt = self._build()
+        assert "approved_action.rollback.args" in prompt
+        assert "recovery.compensate.args" in prompt
+
+    def test_invalid_payload_guard_present(self):
+        """The 'do not paste the deliverable inline' rule must remain — it's
+        the negative half of the discipline."""
+        prompt = self._build()
+        assert "INVALID" in prompt
+        # Generalize the bad shape beyond just SVGs.
+        assert "full SVG" in prompt and "full essay" in prompt
+
+    def test_schema_example_uses_executor_fills_placeholder(self):
+        """The JSON schema example block (the canonical shape reviewers
+        copy from) must use the new placeholder, not the old `"..."`. If
+        the example still says `"content": "..."` the convention is
+        contradicted at the most-imitated spot in the prompt."""
+        prompt = self._build()
+        assert '"content": "<executor-fills:' in prompt
+        # Specifically: the legacy bare-ellipsis content placeholder
+        # must not survive as `"content": "..."` in the schema example.
+        assert '"content": "..."' not in prompt
+
+
+# ---------------------------------------------------------------------------
 # Test: aligned-autonomy framing in the reviewer prompt
 # ---------------------------------------------------------------------------
 

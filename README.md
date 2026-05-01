@@ -122,15 +122,15 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🗺️ Roadmap</h3></summary>
 
-- [Recent Achievements (v0.1.82)](#recent-achievements-v0182)
-- [Previous Achievements (v0.0.3 - v0.1.81)](#previous-achievements-v003---v0181)
+- [Recent Achievements (v0.1.83)](#recent-achievements-v0183)
+- [Previous Achievements (v0.0.3 - v0.1.82)](#previous-achievements-v003---v0182)
 - [Key Future Enhancements](#key-future-enhancements)
   - Bug Fixes & Backend Improvements
   - Advanced Agent Collaboration
   - Expanded Model, Tool & Agent Integrations
   - Improved Performance & Scalability
   - Enhanced Developer Experience
-- [v0.1.83 Roadmap](#v0183-roadmap)
+- [v0.1.84 Roadmap](#v0184-roadmap)
 </details>
 
 <details open>
@@ -155,18 +155,18 @@ This project started with the "threads of thought" and "iterative refinement" id
 
 ---
 
-## 🆕 Latest Features (v0.1.82)
+## 🆕 Latest Features (v0.1.83)
 
-**🎉 Released: April 29, 2026**
+**🎉 Released: May 1, 2026**
 
-**What's New in v0.1.82:**
-- **📋 TUI Copy Mode** - New `Ctrl+Shift+S` toggle releases terminal mouse tracking so you can drag-select and copy text natively; press again to restore Textual's mouse behavior.
-- **🔒 Checkpoint Quality Improvements** - Enhanced checkpoint plan quality criteria with selective branch depth scoring, optional workspace context for reviewer agents, and single-checkpoint agent recovery guidance.
+**What's New in v0.1.83:**
+- **🔌 In-Session Standalone Checkpoint MCP** - The standalone checkpoint MCP server can now be exposed *inside* a normal MassGen run via a new `coordination.standalone_checkpoint` config block, giving single-agent sessions access to richer `init` + `checkpoint` tools backed by their own reviewer team.
+- **🎴 Enhanced Checkpoint Tool Card** - Tool card visualization in the TUI distinguishes primary checkpoint operations from system tasks with improved context and result display.
 
-**Try v0.1.82 Features:**
+**Try v0.1.83 Features:**
 ```bash
-pip install massgen==0.1.82
-uv run massgen --config @examples/features/fast_iteration.yaml "Create an svg of an AI agent coding."
+pip install massgen==0.1.83
+uv run massgen --config massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml "Create an SVG of an AI agent coding. Call the checkpoint tool first to get a structured plan from the reviewer panel, then produce the SVG following that plan."
 ```
 
 → [See full release history and examples](massgen/configs/README.md#release-history--examples)
@@ -1238,18 +1238,20 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 ⚠️ **Early Stage Notice:** As MassGen is in active development, please expect upcoming breaking architecture changes as we continue to refine and improve the system.
 
-### Recent Achievements (v0.1.82)
+### Recent Achievements (v0.1.83)
 
-**🎉 Released: April 29, 2026**
+**🎉 Released: May 1, 2026**
 
-#### TUI Copy Mode & Checkpoint Quality Improvements
-- **TUI Copy Mode** ([#1076](https://github.com/massgen/MassGen/pull/1076)): New `Ctrl+Shift+S` toggle releases terminal mouse tracking so users can drag-select text natively and copy with the terminal's built-in shortcut; auto-restores on exit
-- **Checkpoint Workspace Context** ([#1076](https://github.com/massgen/MassGen/pull/1076)): New `include_workspace_context` config option for the standalone checkpoint MCP server — optionally mounts the executor's workspace as read-only context for reviewer agents
-- **Checkpoint Plan Quality Criteria** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Mode-aware quality criteria score selective branch depth and fallback handling in generated plans
-- **Single-Checkpoint Agent Recovery** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Detailed recovery workflow in `checkpoint_instructions.md` for when a plan branch resolves to `terminate` — agents find safe alternates before giving up
-- **TUI Visual Polish** ([#1076](https://github.com/massgen/MassGen/pull/1076)): Ribbon dividers changed from `│` to `·` for a cleaner, lighter look
+#### In-Session Standalone Checkpoint MCP Integration
+- **In-Session Standalone Checkpoint** ([#1079](https://github.com/massgen/MassGen/pull/1079)): The standalone checkpoint MCP server (originally for external hosts like Claude Code) can now be exposed *inside* a normal MassGen run, so a single-agent session can call its richer `init` + `checkpoint` tools and have its own reviewer team evaluate plans
+- **`coordination.standalone_checkpoint` Config Block** ([#1079](https://github.com/massgen/MassGen/pull/1079)): New YAML block with `enabled`, `team_config`, `mode` (`generate` | `verify`), `single_checkpoint`, and `include_workspace_context` fields; invalid `mode` values fall back to `generate` with a warning
+- **Single-Agent-Only Affordance Gating** ([#1079](https://github.com/massgen/MassGen/pull/1079)): Multi-agent parents skip the standalone server with a warning — the standalone server runs its own reviewer panel
+- **Enhanced Checkpoint Tool Card** ([#1079](https://github.com/massgen/MassGen/pull/1079)): TUI tool card visualization distinguishes primary checkpoint operations from system tasks with improved context and result display
+- **Example Configs** ([#1079](https://github.com/massgen/MassGen/pull/1079)): `massgen/configs/checkpoint/standalone_mcp/{fast_iteration,reviewers}.yaml` for runnable in-session standalone checkpoint setups
 
-### Previous Achievements (v0.0.3 - v0.1.81)
+### Previous Achievements (v0.0.3 - v0.1.82)
+
+✅ **TUI Copy Mode & Checkpoint Quality Improvements (v0.1.82)**: `Ctrl+Shift+S` copy mode toggle for native text selection. Checkpoint quality criteria with selective branch depth scoring, optional workspace context for reviewer agents, and single-checkpoint agent recovery guidance.
 
 ✅ **Multi-Region Circuit Breaker Failover (v0.1.81)**: LLM circuit breaker fails over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy. Completes the circuit breaker series (Phase 1-6).
 
@@ -1558,13 +1560,12 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 We welcome community contributions to achieve these goals.
 
-### v0.1.83 Roadmap
+### v0.1.84 Roadmap
 
-Version 0.1.83 focuses on checkpoint safety hardening and round evaluator quality:
+Version 0.1.84 focuses on image/video edit capabilities:
 
 #### Planned Features
-- **Checkpoint Safety Mode for Irreversible Actions** ([#1026](https://github.com/massgen/MassGen/issues/1026)): Dedicated safety mode that gates irreversible actions (deletes, deploys, external writes) behind checkpoint approval before execution
-- **Fix: Round Evaluator Over-indexes on Incremental Fixes** ([#994](https://github.com/massgen/MassGen/issues/994)): Managed round evaluator incorrectly prioritizes incremental fixes despite high spend and strong strategic critique
+- **Image/Video Edit Capabilities** ([#959](https://github.com/massgen/MassGen/issues/959)): Investigate and support image and video editing capabilities across providers, with multi-turn editing workflows via continuation IDs
 
 ---
 

@@ -293,7 +293,7 @@ present on every step; the validator rejects plans missing them.
       "approved_action": {{
         "goal_id": "edit_welcome",
         "tool": "Write",
-        "args": {{"file_path": "/abs/path", "content": "..."}},
+        "args": {{"file_path": "/abs/path", "content": "<executor-fills: edited welcome message body>"}},
         "rollback": null
       }},
       "recovery": {{
@@ -302,7 +302,7 @@ present on every step; the validator rejects plans missing them.
         "else": {{
           "compensate": {{
             "tool": "Write",
-            "args": {{"file_path": "/abs/path", "content": "<previous content>"}}
+            "args": {{"file_path": "/abs/path", "content": "<executor-fills: original content snapshotted before step 2 ran>"}}
           }},
           "then": "terminate",
           "reason": "Restore the original file before stopping"
@@ -345,6 +345,56 @@ On `kind: action` steps, `approved_action.rollback` is REQUIRED — \
 either a non-null action spec dict (`{{tool, args}}`) or explicit \
 `null` for truly irreversible actions. On other kinds, `rollback` \
 is forbidden.
+
+  **Every `args` value has a provenance — label it.** The executor \
+agent is the one producing artifacts, documents, code, designs — \
+you are NOT. So when you write `args`, mark every value by who \
+supplies it. Use these three placeholder forms for any value the \
+panel does not literally know at planning time:
+
+  - `<planner-fixed>` — you, the panel, decide this value now and \
+the executor must use it verbatim. Paths, namespaces, scopes, \
+identifiers, dry-run flags, version pins. The fixity is the point: \
+the executor is not free to change it. (Often you will just inline \
+the literal value, e.g. `"namespace": "prod"`; use the placeholder \
+when the literal would be generic or when you want to flag the \
+fixity explicitly.)
+  - `<executor-fills: short directive>` — the executor writes the \
+value at runtime, guided by the step's `description` and \
+`constraints`. Use this for any payload the executor was supposed \
+to author: drafted prose, code bodies, SVG/HTML content, message \
+text, generated configuration. The directive inside the placeholder \
+is a one-line steer, not the payload.
+  - `<from:step:N>` — the value is the output of step N (which must \
+be an earlier step). Use this whenever step M's correct input \
+cannot be known until step N has run — created IDs, returned \
+tokens, observed counts, resolved paths.
+
+  Exception: tiny exact strings the executor genuinely cannot \
+derive (a 5-line patch, a one-line config flip, a specific \
+hash/identifier the panel verified) MAY appear inline as the \
+literal value — that *is* the planner-fixed value. Anything over a \
+couple hundred characters of inline content is a smell; if you are \
+tempted to inline a payload, use `<executor-fills: ...>` instead.
+
+  Worked examples:
+
+  - `{{"path": "/abs/path/agent.svg", "content": "<executor-fills: \
+single inline SVG, viewBox follows the description's spec>"}}` — \
+path is panel-decided; content is delegated.
+  - `{{"namespace": "prod", "pod": "api-7"}}` — both identifiers \
+ARE the action; the panel pinned them inline.
+  - `{{"job_id": "<from:step:2>", "status": "cancelled"}}` — step 2 \
+created or fetched the job; step 4 cancels it by ID.
+
+  Apply the same labels in `approved_action.rollback.args` and in \
+any `recovery.compensate.args` — same action-spec shape, same \
+provenance discipline.
+
+  INVALID: any `args` value that is a giant verbatim payload (full \
+SVG, full essay, full source file) the executor was supposed to \
+author. If you find yourself pasting the deliverable inline, swap \
+it for `<executor-fills: ...>`.
 
 RECOVERY NODE TYPES (the `recovery` field and any nested `then`/`else`):
 1. Terminal string: one of these exact bare strings — no extra text, \
@@ -2205,16 +2255,38 @@ def _create_mcp_server():
         ),
     )
     async def init(
-        workspace_dir: str,
-        trajectory_path: str,
         available_tools: list[dict[str, Any]],
         original_task: str,
         environment: dict[str, Any],
+        workspace_dir: str | None = None,
+        trajectory_path: str | None = None,
         safety_policy: list[Any] | None = None,
     ) -> str:
+        # When MassGen embeds this server in-session, the parent passes
+        # `--default-workspace-dir` and `--default-trajectory-path` at startup.
+        # An agent that omits (or passes empty) workspace_dir / trajectory_path
+        # then picks up the pre-wired values — it doesn't have to guess where
+        # its own trajectory file lives. External hosts that pass values
+        # explicitly still win.
+        ws = workspace_dir if (workspace_dir and workspace_dir.strip()) else _session.get("default_workspace_dir")
+        tp = trajectory_path if (trajectory_path and trajectory_path.strip()) else _session.get("default_trajectory_path")
+        if not ws:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": ("workspace_dir is required (caller must pass it, or the server must " "have been started with --default-workspace-dir)"),
+                },
+            )
+        if not tp:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": ("trajectory_path is required (caller must pass it, or the server must " "have been started with --default-trajectory-path)"),
+                },
+            )
         return await _init_impl(
-            workspace_dir,
-            trajectory_path,
+            ws,
+            tp,
             available_tools,
             original_task,
             environment,
@@ -2258,6 +2330,20 @@ def main():
         required=True,
         help="Path to MassGen config YAML defining the agent team",
     )
+    # Mode overrides — when MassGen embeds this server in-session
+    # (`coordination.standalone_checkpoint`), the parent run owns the mode
+    # flags and must pass them as CLI args so the prompt the agent sees and
+    # the affordances the server actually grants stay in sync.
+    parser.add_argument("--mode", type=str, choices=sorted(_VALID_MODES), default=None)
+    parser.add_argument("--single-checkpoint", action="store_true", default=None)
+    parser.add_argument("--include-workspace-context", action="store_true", default=None)
+    # Pre-wired session paths — when MassGen embeds this server in-session it
+    # already knows the executor's workspace and trajectory file. Passing them
+    # here lets `init(...)` omit those args (or pass empty strings) and use
+    # the pre-wired defaults, so the agent doesn't have to guess where its own
+    # logs land.
+    parser.add_argument("--default-workspace-dir", type=str, default=None)
+    parser.add_argument("--default-trajectory-path", type=str, default=None)
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -2267,7 +2353,18 @@ def main():
     with open(config_path) as f:
         config_dict = yaml.safe_load(f)
 
+    if args.mode is not None:
+        config_dict["mode"] = args.mode
+    if args.single_checkpoint is not None:
+        config_dict["single_checkpoint"] = bool(args.single_checkpoint)
+    if args.include_workspace_context is not None:
+        config_dict["include_workspace_context"] = bool(args.include_workspace_context)
+
     _session["config_dict"] = config_dict
+    if args.default_workspace_dir:
+        _session["default_workspace_dir"] = args.default_workspace_dir
+    if args.default_trajectory_path:
+        _session["default_trajectory_path"] = args.default_trajectory_path
     _apply_server_mode_from_config()
 
     mcp = _create_mcp_server()

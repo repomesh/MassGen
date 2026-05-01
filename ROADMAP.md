@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.82
+**Current Version:** v0.1.83
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** April 29, 2026
+**Last Updated:** May 1, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,12 +42,25 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.83** | 05/01/26 | Checkpoint Safety Mode for Irreversible Actions | @ncrispino | Dedicated safety mode that gates irreversible actions behind checkpoint approval ([#1026](https://github.com/massgen/MassGen/issues/1026)) |
-| | | Fix: Round Evaluator Over-indexes on Incremental Fixes | @ncrispino | Managed round evaluator prioritizes incremental fixes despite high spend and strong strategic critique ([#994](https://github.com/massgen/MassGen/issues/994)) |
-| **v0.1.84** | 05/04/26 | Dispatch Discoverability Description | @ncrispino | Add description to improve Dispatch discoverability ([#1034](https://github.com/massgen/MassGen/issues/1034)) |
-| | | GNAP: Git-Native Multi-Agent Coordination | @ncrispino | Git-native coordination for MassGen's collaborative multi-agent scaling system ([#1001](https://github.com/massgen/MassGen/issues/1001)) |
+| **v0.1.84** | 05/04/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.83 - In-Session Standalone Checkpoint MCP Integration (Completed)
+
+**Released:** May 1, 2026 | PRs: [#1079](https://github.com/massgen/MassGen/pull/1079)
+
+### Features
+- **In-Session Standalone Checkpoint**: Standalone checkpoint MCP server (originally for external hosts like Claude Code) can now run *inside* a normal MassGen single-agent session, exposing the richer `init` + `checkpoint` tools backed by its own reviewer team
+- **`coordination.standalone_checkpoint` Config Block**: New YAML block with `enabled`, `team_config`, `mode` (`generate` | `verify`), `single_checkpoint`, `include_workspace_context`; invalid `mode` falls back to `generate` with a warning
+- **Single-Agent-Only Affordance Gating**: Multi-agent parents skip the standalone server with a warning — the standalone server runs its own reviewer panel
+- **Enhanced Checkpoint Tool Card**: TUI tool card visualization distinguishes primary checkpoint operations from system tasks
+- **Example Configs**: `massgen/configs/checkpoint/standalone_mcp/{fast_iteration,reviewers}.yaml`
+
+### Notes
+- Originally-planned Checkpoint Safety Mode ([#1026](https://github.com/massgen/MassGen/issues/1026)) and Round Evaluator over-indexing fix ([#994](https://github.com/massgen/MassGen/issues/994)) deferred to a future release.
 
 ---
 
@@ -153,22 +166,6 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 - **Checkpoint WebUI Auto-Launch**: Checkpoint workflows auto-launch WebUI with configurable host/port for visual monitoring
 - **Standalone MCP Server Docs**: Guide for `massgen-checkpoint-mcp` with safety policy integration
 - **Safety Policy Update**: Updated safety policy for checkpoint based on Claude Code safe mode
-
----
-
-## 📋 v0.1.83 - OpenAI Audio API & Cloud Modal MVP
-
-### Features
-
-**1. Support OpenAI Audio API for Audio Understanding** (@ncrispino)
-- Issue: [#960](https://github.com/massgen/MassGen/issues/960)
-- OpenAI audio API integration for audio understanding tasks
-- Integration with existing `read_media` tool for audio input
-- **Use Case**: Enable audio understanding via OpenAI's native audio API
-
-### Success Criteria
-- ✅ OpenAI audio API working via `read_media`
-- ✅ Audio understanding integrated into multi-agent workflows
 
 ---
 

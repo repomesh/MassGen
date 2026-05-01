@@ -12,8 +12,13 @@ export function ToolCallMessageView({ message }: ToolCallMessageViewProps) {
   const detailsRef = useRef<HTMLDivElement>(null);
 
   const isPending = message.result === undefined;
+  // Both the in-orchestrator checkpoint MCP and the standalone checkpoint MCP
+  // get the delegation card; the standalone server's `init` housekeeping tool
+  // does not (it's a one-time session-start setup call).
   const isCheckpoint = message.toolName === 'mcp__massgen_checkpoint__checkpoint'
+    || message.toolName === 'mcp__massgen_checkpoint_standalone__checkpoint'
     || message.toolName === 'checkpoint';
+  const isStandaloneCheckpoint = message.toolName === 'mcp__massgen_checkpoint_standalone__checkpoint';
 
   const elapsedStr = message.elapsed
     ? message.elapsed > 1000
@@ -25,8 +30,18 @@ export function ToolCallMessageView({ message }: ToolCallMessageViewProps) {
 
   // Special rendering for checkpoint delegation
   if (isCheckpoint) {
-    const task = (message.args.task as string) || '';
+    // Internal checkpoint uses `task`; standalone uses `objective`. Action_goals
+    // is standalone-only (objective-mode action intents).
+    const primary = (message.args.task as string)
+      || (message.args.objective as string)
+      || '';
     const evalCriteria = (message.args.eval_criteria as string[]) || [];
+    const actionGoals = Array.isArray(message.args.action_goals)
+      ? (message.args.action_goals as unknown[])
+      : [];
+    const headerLabel = isStandaloneCheckpoint
+      ? 'Standalone Checkpoint'
+      : 'Checkpoint Delegation';
     return (
       <div className="v2-step-group">
         <div className="v2-step-node" />
@@ -34,7 +49,7 @@ export function ToolCallMessageView({ message }: ToolCallMessageViewProps) {
           <div className="flex items-center gap-2 px-3 py-2">
             <span className="text-base">📋</span>
             <span className="text-sm font-semibold text-blue-400 uppercase tracking-wide">
-              Checkpoint Delegation
+              {headerLabel}
             </span>
             {isPending && (
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0" />
@@ -49,7 +64,7 @@ export function ToolCallMessageView({ message }: ToolCallMessageViewProps) {
           </div>
           <div className="px-3 pb-2">
             <p className="text-sm text-v2-text-primary leading-relaxed">
-              {task.length > 200 ? task.slice(0, 200) + '...' : task}
+              {primary.length > 200 ? primary.slice(0, 200) + '...' : primary}
             </p>
             {evalCriteria.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1">
@@ -58,6 +73,13 @@ export function ToolCallMessageView({ message }: ToolCallMessageViewProps) {
                     {typeof c === 'string' && c.length > 60 ? c.slice(0, 60) + '...' : c}
                   </span>
                 ))}
+              </div>
+            )}
+            {evalCriteria.length === 0 && actionGoals.length > 0 && (
+              <div className="mt-2">
+                <span className="text-[11px] px-1.5 py-0.5 rounded bg-v2-surface border border-v2-border-subtle text-v2-text-muted">
+                  {actionGoals.length} action goal{actionGoals.length === 1 ? '' : 's'}
+                </span>
               </div>
             )}
           </div>

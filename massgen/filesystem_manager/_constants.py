@@ -315,6 +315,7 @@ FRAMEWORK_MCPS = frozenset(
         "massgen_workflow_tools",  # Standalone workflow tools MCP (massgen-refinery plugin)
         "massgen_media_tools",  # Standalone media tools MCP (massgen-refinery plugin)
         "massgen_checkpoint",  # Checkpoint coordination tool (main agent delegates to team)
+        "massgen_checkpoint_standalone",  # Standalone checkpoint MCP exposed in-session (init+checkpoint)
     },
 )
 

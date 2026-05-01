@@ -798,6 +798,9 @@ class Orchestrator(ChatAgent):
         # Initialize checkpoint MCP tool if main agent is set
         self._init_checkpoint_tool()
 
+        # Inject standalone checkpoint MCP into a single agent if enabled.
+        self._init_standalone_checkpoint_tool()
+
         self._seed_plan_execution_workspaces(context="orchestrator_init")
 
     def _seed_plan_execution_workspaces(self, context: str) -> None:
@@ -1793,6 +1796,147 @@ class Orchestrator(ChatAgent):
             f"[Checkpoint] Checkpoint tool active for main agent " f"'{self._main_agent_id}' (via workflow toolkit + interception)",
         )
 
+    _STANDALONE_CHECKPOINT_SERVER_NAME = "massgen_checkpoint_standalone"
+
+    def _strip_standalone_checkpoint_from_all_agents(self) -> None:
+        """Remove the standalone checkpoint MCP from every agent's backend.
+
+        Used to maintain the single-agent invariant when agents are added/removed
+        post-init: if the parent is no longer single-agent, the affordance must
+        leave every backend (and the prompt section is gated separately at
+        render time).
+
+        Mutates both `backend.config["mcp_servers"]` and `backend.mcp_servers`
+        because the backend binds the latter at its own __init__ (separate list
+        reference when mcp_servers isn't in the source YAML).
+        """
+        name = self._STANDALONE_CHECKPOINT_SERVER_NAME
+        for agent in self.agents.values():
+            backend = getattr(agent, "backend", None)
+            if backend is None or not hasattr(backend, "config") or not isinstance(backend.config, dict):
+                continue
+            servers = backend.config.get("mcp_servers")
+            if isinstance(servers, list):
+                backend.config["mcp_servers"] = [s for s in servers if not (isinstance(s, dict) and s.get("name") == name)]
+            elif isinstance(servers, dict):
+                servers.pop(name, None)
+            # Mirror to the runtime list the backend actually consumes.
+            if hasattr(backend, "mcp_servers"):
+                runtime = backend.mcp_servers
+                if isinstance(runtime, list):
+                    backend.mcp_servers = [s for s in runtime if not (isinstance(s, dict) and s.get("name") == name)]
+                elif isinstance(runtime, dict):
+                    runtime.pop(name, None)
+
+    def _init_standalone_checkpoint_tool(self) -> None:
+        """Inject the standalone checkpoint MCP into a single agent's backend.
+
+        Gated by `coordination.standalone_checkpoint.enabled`. Single-agent only —
+        the standalone server itself spawns a sub-MassGen for evaluation, so a
+        multi-agent parent would be ambiguous and is skipped with a warning.
+
+        Re-entrant: safe to call from `__init__`, `set_main_agent`, `add_agent`,
+        `remove_agent`. On re-call:
+          - single-agent → registers (idempotent on server name)
+          - multi-agent → strips the server from every backend (keeps the
+            invariant when an agent is added post-init)
+        """
+        # CoordinationConfig lives at self.config.coordination_config, NOT
+        # self.coordination_config. Reading the wrong attribute returns None
+        # which makes the gate silently bail and the prompt then promises a
+        # tool that was never registered.
+        config = getattr(self, "config", None)
+        coord = getattr(config, "coordination_config", None) if config is not None else None
+        if coord is None or not getattr(coord, "standalone_checkpoint_enabled", False):
+            return
+        if len(self.agents) != 1:
+            self._strip_standalone_checkpoint_from_all_agents()
+            logger.warning(
+                "[StandaloneCheckpoint] enabled but parent has %d agents; this mode is " "single-agent only — skipping injection (any prior registration stripped)",
+                len(self.agents),
+            )
+            return
+        team_config = getattr(coord, "standalone_checkpoint_team_config", None)
+        if not team_config:
+            logger.warning(
+                "[StandaloneCheckpoint] enabled but no team_config provided; skipping injection",
+            )
+            return
+
+        from .mcp_tools.subrun_utils import build_standalone_checkpoint_mcp_config
+
+        # Pre-wire the executor's workspace + trajectory so the agent's `init`
+        # call doesn't have to guess paths it can't easily derive. Both are
+        # known to MassGen at session start (workspace from filesystem_manager,
+        # trajectory from the logger session dir). Best-effort: if either
+        # can't be resolved here we fall through and let the agent supply
+        # them at init time.
+        agent = next(iter(self.agents.values()))
+        default_workspace_dir: str | None = None
+        default_trajectory_path: str | None = None
+        try:
+            fs = getattr(agent.backend, "filesystem_manager", None)
+            if fs is not None and hasattr(fs, "get_current_workspace"):
+                ws = fs.get_current_workspace()
+                if ws:
+                    default_workspace_dir = str(ws)
+        except Exception as e:
+            logger.debug(f"[StandaloneCheckpoint] could not resolve workspace_dir: {e}")
+        try:
+            from .logger_config import get_log_session_dir
+
+            log_dir = get_log_session_dir()
+            if log_dir:
+                default_trajectory_path = str(Path(log_dir) / "events.jsonl")
+        except Exception as e:
+            logger.debug(f"[StandaloneCheckpoint] could not resolve trajectory_path: {e}")
+
+        server_cfg = build_standalone_checkpoint_mcp_config(
+            team_config_path=str(team_config),
+            mode=getattr(coord, "standalone_checkpoint_mode", "generate"),
+            single_checkpoint=getattr(coord, "standalone_checkpoint_single", False),
+            include_workspace_context=getattr(coord, "standalone_checkpoint_include_workspace_context", False),
+            default_workspace_dir=default_workspace_dir,
+            default_trajectory_path=default_trajectory_path,
+        )
+        backend = getattr(agent, "backend", None)
+        if backend is None or not hasattr(backend, "config") or not isinstance(backend.config, dict):
+            logger.warning(
+                "[StandaloneCheckpoint] agent backend has no dict config; skipping injection",
+            )
+            return
+        servers = backend.config.setdefault("mcp_servers", [])
+        if isinstance(servers, list):
+            if any(isinstance(s, dict) and s.get("name") == server_cfg["name"] for s in servers):
+                return  # already registered
+            servers.append(server_cfg)
+        elif isinstance(servers, dict):
+            if server_cfg["name"] in servers:
+                return
+            servers[server_cfg["name"]] = server_cfg
+        else:
+            logger.warning(
+                "[StandaloneCheckpoint] unexpected mcp_servers type %s; skipping injection",
+                type(servers).__name__,
+            )
+            return
+        # Mirror to backend.mcp_servers — it's bound at backend __init__ to a
+        # separate list when mcp_servers is absent in the source YAML, so
+        # mutating only backend.config["mcp_servers"] never reaches the
+        # runtime tool list and the agent ends up with the prompt promising a
+        # tool that was never registered.
+        if hasattr(backend, "mcp_servers"):
+            runtime = backend.mcp_servers
+            if isinstance(runtime, list):
+                if not any(isinstance(s, dict) and s.get("name") == server_cfg["name"] for s in runtime):
+                    runtime.append(server_cfg)
+            elif isinstance(runtime, dict):
+                runtime.setdefault(server_cfg["name"], server_cfg)
+        logger.info(
+            "[StandaloneCheckpoint] Registered massgen_checkpoint_standalone for sole agent (team_config=%s)",
+            team_config,
+        )
+
     def _detect_convergence(self, agent_id: str) -> tuple:
         """Detect whether an agent is converging (total score plateaued).
 
@@ -2091,6 +2235,10 @@ class Orchestrator(ChatAgent):
 
         # Inject checkpoint MCP tool now that main agent is known
         self._init_checkpoint_tool()
+        # Re-evaluate standalone checkpoint registration too — main-agent
+        # designation can shift the single-agent gate for runs that build up
+        # the agent set incrementally.
+        self._init_standalone_checkpoint_tool()
 
     @property
     def is_checkpoint_mode(self) -> bool:
@@ -16245,8 +16393,8 @@ Your answer:"""
                                 external_tool_calls.append(tool_call)
                                 continue
 
-                            # Intercept checkpoint tool (both MCP and workflow name)
-                            # Add to tool_calls for post-stream workflow processing
+                            # Exact-equality only: `mcp__massgen_checkpoint_standalone__checkpoint`
+                            # must fall through (its server owns its own subprocess lifecycle).
                             if tool_name in ("checkpoint", "mcp__massgen_checkpoint__checkpoint"):
                                 logger.info(
                                     f"[Orchestrator] Agent {agent_id} called checkpoint tool '{tool_name}'",
@@ -16817,6 +16965,7 @@ Your answer:"""
                             yield ("done", None)
                             return
 
+                        # Exact-equality only — standalone server's checkpoint tool must fall through.
                         elif tool_name == "checkpoint" or tool_name == "mcp__massgen_checkpoint__checkpoint":
                             # Reject recursive checkpoint calls during active checkpoint
                             if self._checkpoint_active:
@@ -19924,6 +20073,9 @@ Then call either submit(confirmed=True) if the answer is satisfactory, or restar
         """Add a new sub-agent to the orchestrator."""
         self.agents[agent_id] = agent
         self.agent_states[agent_id] = AgentState()
+        # Standalone checkpoint is single-agent only; adding a second agent
+        # invalidates that invariant and the registration must be stripped.
+        self._init_standalone_checkpoint_tool()
 
     def remove_agent(self, agent_id: str) -> None:
         """Remove a sub-agent from the orchestrator."""
@@ -19931,6 +20083,8 @@ Then call either submit(confirmed=True) if the answer is satisfactory, or restar
             del self.agents[agent_id]
         if agent_id in self.agent_states:
             del self.agent_states[agent_id]
+        # Removing back down to a single agent may now satisfy the gate.
+        self._init_standalone_checkpoint_tool()
 
     def get_final_result(self) -> dict[str, Any] | None:
         """

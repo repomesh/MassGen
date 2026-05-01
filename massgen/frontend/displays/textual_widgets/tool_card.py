@@ -17,6 +17,7 @@ from textual.message import Message
 from textual.widgets import Static
 
 from massgen.frontend.displays.shared import format_tool_display_name, get_tool_category
+from massgen.frontend.displays.shared.tool_registry import is_terminal_tool
 
 if TYPE_CHECKING:
     pass
@@ -184,19 +185,13 @@ class ToolCallCard(Static):
             self.add_class("collapsed")
 
     def _detect_terminal_tool(self, tool_name: str) -> bool:
-        """Check if this is a terminal coordination tool (hero tool).
+        """Whether to render this card as a "hero" tool.
 
-        Terminal tools like new_answer and vote are the culmination of an
-        agent's work and deserve prominent visual treatment.
-
-        Args:
-            tool_name: The tool name to check.
-
-        Returns:
-            True if this is a terminal tool, False otherwise.
+        Delegates to the shared helper so the batch tracker can apply the
+        same predicate (a hero tool must not be silently nested inside a
+        batch card).
         """
-        name_lower = tool_name.lower()
-        return any(t in name_lower for t in ("new_answer", "vote", "checkpoint"))
+        return is_terminal_tool(tool_name)
 
     def on_mount(self) -> None:
         """Start the elapsed time timer and complete appearance animation."""
@@ -430,28 +425,34 @@ class ToolCallCard(Static):
                 text.append(args_display, style="dim")
 
         elif "checkpoint" in tool_lower:
-            # Checkpoint hero card: task + eval criteria as inline tags
-            task = None
+            # Checkpoint hero card. Two schemas share this rendering path:
+            #   internal `mcp__massgen_checkpoint__checkpoint` → task / eval_criteria / context
+            #   standalone `mcp__massgen_checkpoint_standalone__checkpoint`
+            #     → objective / eval_criteria / action_goals
+            # Result also differs (internal: {message: ...}; standalone: {plan: [...], logs_dir: ...}).
+            primary = None  # task or objective
             eval_criteria = None
             context = None
+            action_goals = None
 
             if params_str:
                 try:
                     params = json.loads(params_str)
                     if isinstance(params, dict):
-                        task = params.get("task")
+                        primary = params.get("task") or params.get("objective")
                         eval_criteria = params.get("eval_criteria")
                         context = params.get("context")
+                        action_goals = params.get("action_goals")
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-            # Show task prominently
-            if task:
+            # Show task/objective prominently
+            if primary:
                 text.append("\n  ")
-                task_text = str(task).replace("\n", " ")
-                if len(task_text) > 140:
-                    task_text = task_text[:137] + "..."
-                text.append(task_text, style="#c9d1d9")
+                primary_text = str(primary).replace("\n", " ")
+                if len(primary_text) > 140:
+                    primary_text = primary_text[:137] + "..."
+                text.append(primary_text, style="#c9d1d9")
 
             # Show eval criteria as inline tag boxes
             if eval_criteria and isinstance(eval_criteria, list):
@@ -466,8 +467,16 @@ class ToolCallCard(Static):
                     if i < len(eval_criteria) - 1:
                         text.append(" ")
 
-            # Show context summary if present (and no task to avoid redundancy)
-            if context and not task:
+            # Standalone-only: action_goals tag count (objective mode)
+            if action_goals and isinstance(action_goals, list) and not eval_criteria:
+                text.append("\n  ")
+                text.append(
+                    f" {len(action_goals)} action goal{'s' if len(action_goals) != 1 else ''} ",
+                    style="on #2d2d3d #a0a0c0",
+                )
+
+            # Show context summary if present (and no task/objective to avoid redundancy)
+            if context and not primary:
                 text.append("\n  ")
                 ctx_text = str(context).replace("\n", " ")
                 if len(ctx_text) > 100:
@@ -480,7 +489,14 @@ class ToolCallCard(Static):
                 try:
                     result_data = json.loads(self._result)
                     if isinstance(result_data, dict):
+                        # Internal: {"message": "..."}; standalone: {"plan": [...], "logs_dir": "..."}.
                         result_msg = result_data.get("message")
+                        if not result_msg:
+                            plan = result_data.get("plan")
+                            if isinstance(plan, list) and plan:
+                                result_msg = f"Plan returned ({len(plan)} step{'s' if len(plan) != 1 else ''})"
+                            elif result_data.get("status") == "ok":
+                                result_msg = "checkpoint completed"
                 except (json.JSONDecodeError, TypeError):
                     pass
                 if result_msg:
