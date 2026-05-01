@@ -7,7 +7,7 @@ scene-based extraction with PySceneDetect, and config passthrough from read_medi
 
 import base64
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -318,9 +318,9 @@ class TestSceneExtraction:
 
         # Mock scenedetect to return 3 scenes
         mock_scene_list = [
-            (MagicMock(get_frames=lambda: 0), MagicMock(get_frames=lambda: 83)),
-            (MagicMock(get_frames=lambda: 83), MagicMock(get_frames=lambda: 166)),
-            (MagicMock(get_frames=lambda: 166), MagicMock(get_frames=lambda: 250)),
+            (Mock(get_frames=lambda: 0), Mock(get_frames=lambda: 83)),
+            (Mock(get_frames=lambda: 83), Mock(get_frames=lambda: 166)),
+            (Mock(get_frames=lambda: 166), Mock(get_frames=lambda: 250)),
         ]
 
         with patch(
@@ -354,7 +354,7 @@ class TestSceneExtraction:
             start = i * 25
             end = (i + 1) * 25
             mock_scenes.append(
-                (MagicMock(get_frames=lambda s=start: s), MagicMock(get_frames=lambda e=end: e)),
+                (Mock(get_frames=lambda s=start: s), Mock(get_frames=lambda e=end: e)),
             )
 
         with patch(

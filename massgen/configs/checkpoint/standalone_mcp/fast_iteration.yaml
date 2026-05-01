@@ -7,7 +7,6 @@
 #
 # How to run — self-contained creative task that motivates calling `checkpoint`:
 #
-#   # One-shot (automation mode, runs the prompt and exits):
 #   uv run massgen --config massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml "Create an SVG of an AI agent coding. Call the checkpoint tool first to get a structured plan from the reviewer panel, then produce the SVG following that plan."
 #
 # What you should see: the agent calls `init` once at session start, then

@@ -17,6 +17,7 @@ import os
 import time
 import uuid
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -873,10 +874,47 @@ def create_app(
     if config_path:
         set_default_config(config_path)
 
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI):
+        # Auto-start coordination immediately in automation mode so the
+        # browser can connect later and receive the current state via
+        # state_snapshot — no need to wait for a WebSocket connection.
+        if app.state.automation_mode and app.state.pending_question:
+            session_id = f"auto-{uuid.uuid4().hex[:12]}"
+            cfg_path = get_default_config()
+            if cfg_path:
+                q = app.state.pending_question
+                app.state.pending_question = None  # consume
+                app.state.auto_session_id = session_id
+
+                logger.info(f"[AutoStart] Starting coordination immediately: session={session_id}")
+                task = asyncio.create_task(
+                    run_coordination(
+                        session_id,
+                        q,
+                        cfg_path,
+                        cli_overrides=getattr(app.state, "cli_overrides", None),
+                    ),
+                )
+                manager.tasks[session_id] = task
+
+                # In automation mode, shut down the server when coordination finishes
+                def _shutdown_on_complete(fut):
+                    server = getattr(app.state, "uvicorn_server", None)
+                    if server is not None:
+                        logger.info("[AutoStart] Coordination finished — shutting down server")
+                        server.should_exit = True
+
+                task.add_done_callback(_shutdown_on_complete)
+            else:
+                logger.warning("[AutoStart] No config path available, skipping auto-start")
+        yield
+
     app = FastAPI(
         title="MassGen Web UI",
         description="Real-time multi-agent coordination visualization",
         version="0.1.0",
+        lifespan=_lifespan,
     )
 
     # Store automation_mode in app state for server-side behavior (log
@@ -919,55 +957,6 @@ def create_app(
         )
     except Exception:
         logger.warning("Failed to load persisted sessions", exc_info=True)
-
-    # =========================================================================
-    # Automation: auto-start coordination immediately (don't wait for browser)
-    # =========================================================================
-
-    if automation_mode and pending_question:
-
-        @app.on_event("startup")
-        async def _auto_start_coordination():
-            """Start coordination immediately in automation mode.
-
-            The browser can connect later and receive the current state via
-            state_snapshot — no need to wait for a WebSocket connection.
-            """
-            import uuid
-
-            session_id = f"auto-{uuid.uuid4().hex[:12]}"
-            cfg_path = get_default_config()
-            if not cfg_path:
-                logger.warning("[AutoStart] No config path available, skipping auto-start")
-                return
-
-            q = app.state.pending_question
-            if not q:
-                return
-            app.state.pending_question = None  # consume
-
-            # Store the auto-started session ID so the frontend can find it
-            app.state.auto_session_id = session_id
-
-            logger.info(f"[AutoStart] Starting coordination immediately: session={session_id}")
-            task = asyncio.create_task(
-                run_coordination(
-                    session_id,
-                    q,
-                    cfg_path,
-                    cli_overrides=getattr(app.state, "cli_overrides", None),
-                ),
-            )
-            manager.tasks[session_id] = task
-
-            # In automation mode, shut down the server when coordination finishes
-            def _shutdown_on_complete(fut):
-                server = getattr(app.state, "uvicorn_server", None)
-                if server is not None:
-                    logger.info("[AutoStart] Coordination finished — shutting down server")
-                    server.should_exit = True
-
-            task.add_done_callback(_shutdown_on_complete)
 
     # =========================================================================
     # API Routes
