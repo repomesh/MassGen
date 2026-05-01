@@ -1,51 +1,54 @@
-# MassGen v0.1.83 Roadmap
+# MassGen v0.1.84 Roadmap
 
-**Target Release:** May 1, 2026
+**Target Release:** May 4, 2026
 
 ## Overview
 
-Version 0.1.83 focuses on checkpoint safety hardening and a round evaluator bug fix.
+Version 0.1.84 focuses on Dispatch discoverability and git-native multi-agent coordination.
 
 ---
 
-## Feature: Checkpoint Safety Mode for Irreversible Actions
+## Feature: Dispatch Discoverability Description
 
-**Issue:** [#1026](https://github.com/massgen/MassGen/issues/1026)
+**Issue:** [#1034](https://github.com/massgen/MassGen/issues/1034)
 **Owner:** @ncrispino
 
 ### Goals
 
-- **Safety Gate**: Dedicated safety mode that gates irreversible actions (deletes, deploys, writes to external systems) behind checkpoint approval before execution
-- Complements the existing checkpoint coordination mode with explicit irreversibility detection
+- **Discoverability**: Add description to improve Dispatch discoverability so users can quickly understand what Dispatch is and when to use it
+- Surface clearer entry points in CLI help, README, and Sphinx docs
 
 ### Success Criteria
 
-- [ ] Irreversible action detection working in checkpoint safety mode
-- [ ] Checkpoint approval flow blocks execution until reviewer agents sign off
+- [ ] Dispatch description present in CLI `--help`
+- [ ] README and Sphinx docs include a clear positioning statement for Dispatch
+- [ ] Search/navigation cues (titles, anchors) make Dispatch findable
 
 ---
 
-## Bug Fix: Round Evaluator Over-indexes on Incremental Fixes
+## Feature: GNAP — Git-Native Multi-Agent Coordination
 
-**Issue:** [#994](https://github.com/massgen/MassGen/issues/994)
+**Issue:** [#1001](https://github.com/massgen/MassGen/issues/1001)
 **Owner:** @ncrispino
 
-### Problem
+### Goals
 
-Managed round evaluator prioritizes incremental fixes despite high spend and strong strategic critique — agents keep polishing surface details instead of making the bold improvements the evaluator flagged.
+- **Git-native coordination**: A coordination protocol for MassGen's collaborative multi-agent scaling that uses git as the durable substrate (branches/worktrees/commits) for sharing intermediate state, votes, and final answers
+- Make agent collaboration auditable and forkable through standard git tooling
 
 ### Success Criteria
 
-- [ ] Round evaluator correctly weights strategic critique vs. incremental suggestions
-- [ ] High-spend rounds trigger more decisive directional changes
+- [ ] Agents can publish intermediate states/answers as commits on coordination branches
+- [ ] Voting and convergence can be reconstructed from git history
+- [ ] At least one end-to-end run uses GNAP for coordination
 
 ---
 
 ## Related Tracks
 
-- **v0.1.82**: TUI Copy Mode & Checkpoint Quality Improvements ([#1076](https://github.com/massgen/MassGen/pull/1076))
-- **v0.1.84**: Dispatch Discoverability ([#1034](https://github.com/massgen/MassGen/issues/1034)), GNAP git-native coordination ([#1001](https://github.com/massgen/MassGen/issues/1001))
+- **v0.1.83**: In-Session Standalone Checkpoint MCP Integration ([#1079](https://github.com/massgen/MassGen/pull/1079))
+- **v0.1.85**: Checkpoint Safety Mode ([#1026](https://github.com/massgen/MassGen/issues/1026)) and Round Evaluator over-indexing fix ([#994](https://github.com/massgen/MassGen/issues/994)) — deferred from v0.1.83
 
 ## What's Next
 
-- **v0.1.84**: Dispatch discoverability description + GNAP git-native coordination for multi-agent scaling
+- **v0.1.85**: Checkpoint Safety Mode for Irreversible Actions + Round Evaluator over-indexing fix

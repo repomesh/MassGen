@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.82
+**Current Version:** v0.1.83
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** April 29, 2026
+**Last Updated:** May 1, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,12 +42,28 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.83** | 05/01/26 | Checkpoint Safety Mode for Irreversible Actions | @ncrispino | Dedicated safety mode that gates irreversible actions behind checkpoint approval ([#1026](https://github.com/massgen/MassGen/issues/1026)) |
-| | | Fix: Round Evaluator Over-indexes on Incremental Fixes | @ncrispino | Managed round evaluator prioritizes incremental fixes despite high spend and strong strategic critique ([#994](https://github.com/massgen/MassGen/issues/994)) |
 | **v0.1.84** | 05/04/26 | Dispatch Discoverability Description | @ncrispino | Add description to improve Dispatch discoverability ([#1034](https://github.com/massgen/MassGen/issues/1034)) |
 | | | GNAP: Git-Native Multi-Agent Coordination | @ncrispino | Git-native coordination for MassGen's collaborative multi-agent scaling system ([#1001](https://github.com/massgen/MassGen/issues/1001)) |
+| **v0.1.85** | 05/06/26 | Checkpoint Safety Mode for Irreversible Actions | @ncrispino | Dedicated safety mode that gates irreversible actions behind checkpoint approval — deferred from v0.1.83 ([#1026](https://github.com/massgen/MassGen/issues/1026)) |
+| | | Fix: Round Evaluator Over-indexes on Incremental Fixes | @ncrispino | Round evaluator prioritizes incremental fixes despite high spend and strong strategic critique — deferred from v0.1.83 ([#994](https://github.com/massgen/MassGen/issues/994)) |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.83 - In-Session Standalone Checkpoint MCP Integration (Completed)
+
+**Released:** May 1, 2026 | PRs: [#1079](https://github.com/massgen/MassGen/pull/1079)
+
+### Features
+- **In-Session Standalone Checkpoint**: Standalone checkpoint MCP server (originally for external hosts like Claude Code) can now run *inside* a normal MassGen single-agent session, exposing the richer `init` + `checkpoint` tools backed by its own reviewer team
+- **`coordination.standalone_checkpoint` Config Block**: New YAML block with `enabled`, `team_config`, `mode` (`generate` | `verify`), `single_checkpoint`, `include_workspace_context`; invalid `mode` falls back to `generate` with a warning
+- **Single-Agent-Only Affordance Gating**: Multi-agent parents skip the standalone server with a warning — the standalone server runs its own reviewer panel
+- **Enhanced Checkpoint Tool Card**: TUI tool card visualization distinguishes primary checkpoint operations from system tasks
+- **Example Configs**: `massgen/configs/checkpoint/standalone_mcp/{fast_iteration,reviewers}.yaml`
+
+### Notes
+- Originally-planned Checkpoint Safety Mode ([#1026](https://github.com/massgen/MassGen/issues/1026)) and Round Evaluator over-indexing fix ([#994](https://github.com/massgen/MassGen/issues/994)) deferred to v0.1.85.
 
 ---
 
@@ -156,35 +172,45 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.83 - OpenAI Audio API & Cloud Modal MVP
+## 📋 v0.1.84 - Dispatch Discoverability & GNAP
 
 ### Features
 
-**1. Support OpenAI Audio API for Audio Understanding** (@ncrispino)
-- Issue: [#960](https://github.com/massgen/MassGen/issues/960)
-- OpenAI audio API integration for audio understanding tasks
-- Integration with existing `read_media` tool for audio input
-- **Use Case**: Enable audio understanding via OpenAI's native audio API
+**1. Dispatch Discoverability Description** (@ncrispino)
+- Issue: [#1034](https://github.com/massgen/MassGen/issues/1034)
+- Add description to improve Dispatch discoverability so users can quickly understand what it is and when to use it
+- Surface clearer entry points in CLI help, README, and Sphinx docs
+- **Use Case**: Make Dispatch findable and self-explanatory for new users
+
+**2. GNAP — Git-Native Multi-Agent Coordination** (@ncrispino)
+- Issue: [#1001](https://github.com/massgen/MassGen/issues/1001)
+- Coordination protocol that uses git as the durable substrate (branches/worktrees/commits) for sharing intermediate state, votes, and final answers
+- **Use Case**: Auditable, forkable agent collaboration through standard git tooling
 
 ### Success Criteria
-- ✅ OpenAI audio API working via `read_media`
-- ✅ Audio understanding integrated into multi-agent workflows
+- ✅ Dispatch description in CLI `--help` and docs
+- ✅ Agents publish intermediate states/answers as commits on coordination branches
+- ✅ Voting and convergence reconstructable from git history
 
 ---
 
-## 📋 v0.1.84 - Image/Video Edit Capabilities
+## 📋 v0.1.85 - Checkpoint Safety Mode & Round Evaluator Fix (Deferred from v0.1.83)
 
 ### Features
 
-**1. Check Image/Video Edit Capabilities** (@ncrispino)
-- Issue: [#959](https://github.com/massgen/MassGen/issues/959)
-- Investigate and support image and video editing capabilities across providers
-- Multi-turn editing workflows with continuation IDs
-- **Use Case**: Enable iterative media editing within multi-agent workflows
+**1. Checkpoint Safety Mode for Irreversible Actions** (@ncrispino)
+- Issue: [#1026](https://github.com/massgen/MassGen/issues/1026)
+- Dedicated safety mode that gates irreversible actions (deletes, deploys, external writes) behind checkpoint approval before execution
+- **Use Case**: Hard-stop unsafe operations until reviewer agents sign off
+
+**2. Fix: Round Evaluator Over-indexes on Incremental Fixes** (@ncrispino)
+- Issue: [#994](https://github.com/massgen/MassGen/issues/994)
+- Round evaluator currently prioritizes incremental fixes despite high spend and strong strategic critique
+- **Use Case**: High-spend rounds should trigger decisive directional changes, not surface polishing
 
 ### Success Criteria
-- ✅ Image editing capabilities documented and tested
-- ✅ Video editing capabilities documented and tested
+- ✅ Irreversible action detection working in checkpoint safety mode
+- ✅ Round evaluator correctly weights strategic critique vs. incremental suggestions
 
 ---
 
