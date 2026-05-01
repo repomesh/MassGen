@@ -38,6 +38,7 @@ from massgen.system_prompt_sections import (
     PostEvaluationSection,
     ProjectInstructionsSection,
     SkillsSection,
+    StandaloneCheckpointSection,
     SubagentSection,
     SystemPromptBuilder,
     TaskContextSection,
@@ -668,6 +669,30 @@ class SystemMessageBuilder:
                     checkpoint_guidance=getattr(_coord, "checkpoint_guidance", ""),
                     gated_patterns=getattr(_coord, "checkpoint_gated_patterns", []) or [],
                     checkpoint_mode=getattr(_coord, "checkpoint_mode", "conversation"),
+                ),
+            )
+
+        # PRIORITY 5 (HIGH): Standalone Checkpoint MCP (single-agent in-session use).
+        # Affordance is stripped at the source when disabled OR when the parent
+        # is multi-agent (the orchestrator skips MCP injection in that case;
+        # rendering the prompt section anyway would promise an unregistered tool).
+        _standalone_ckpt_enabled = (
+            hasattr(self.config, "coordination_config")
+            and self.config.coordination_config
+            and getattr(self.config.coordination_config, "standalone_checkpoint_enabled", False)
+            and len(self.agents) == 1
+        )
+        if _standalone_ckpt_enabled:
+            _coord_sc = self.config.coordination_config
+            builder.add_section(
+                StandaloneCheckpointSection(
+                    mode=getattr(_coord_sc, "standalone_checkpoint_mode", "generate"),
+                    single_checkpoint=getattr(_coord_sc, "standalone_checkpoint_single", False),
+                    include_workspace_context=getattr(
+                        _coord_sc,
+                        "standalone_checkpoint_include_workspace_context",
+                        False,
+                    ),
                 ),
             )
 

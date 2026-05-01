@@ -264,6 +264,14 @@ class CoordinationConfig:
     checkpoint_mode: str = "conversation"  # "conversation" | "task"
     checkpoint_guidance: str = ""  # Appended to main agent system prompt
     checkpoint_gated_patterns: list[str] = field(default_factory=list)  # fnmatch patterns for gated tools
+    # Standalone checkpoint MCP — exposes massgen_checkpoint_standalone (init+checkpoint)
+    # to a single-agent session. The standalone server reads its team YAML and spawns
+    # its own sub-MassGen for evaluation, so this is only meaningful with one main agent.
+    standalone_checkpoint_enabled: bool = False
+    standalone_checkpoint_team_config: str | None = None  # path to team YAML the standalone server runs
+    standalone_checkpoint_mode: str = "generate"  # "generate" | "verify"
+    standalone_checkpoint_single: bool = False  # one-shot checkpoint per session
+    standalone_checkpoint_include_workspace_context: bool = False  # mount parent workspace read-only for reviewers
     web_review: bool = False  # Enable change review modal in WebUI (requires --web)
     fast_iteration_mode: bool = False  # Streamline post-candidate phases to submit faster and iterate across rounds
     # Orthogonal speed knobs — set individually or together via `--fast` preset.
@@ -1233,6 +1241,11 @@ class AgentConfig:
             "checkpoint_mode": self.coordination_config.checkpoint_mode,
             "checkpoint_guidance": self.coordination_config.checkpoint_guidance,
             "checkpoint_gated_patterns": self.coordination_config.checkpoint_gated_patterns,
+            "standalone_checkpoint_enabled": self.coordination_config.standalone_checkpoint_enabled,
+            "standalone_checkpoint_team_config": self.coordination_config.standalone_checkpoint_team_config,
+            "standalone_checkpoint_mode": self.coordination_config.standalone_checkpoint_mode,
+            "standalone_checkpoint_single": self.coordination_config.standalone_checkpoint_single,
+            "standalone_checkpoint_include_workspace_context": self.coordination_config.standalone_checkpoint_include_workspace_context,
             "web_review": self.coordination_config.web_review,
             "fast_iteration_mode": self.coordination_config.fast_iteration_mode,
             "max_verifications_per_round": self.coordination_config.max_verifications_per_round,

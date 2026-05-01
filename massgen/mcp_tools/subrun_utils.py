@@ -471,13 +471,71 @@ def build_checkpoint_mcp_config(
 
     return {
         "name": "massgen_checkpoint",
-        "transport": "stdio",
+        "type": "stdio",
         "command": "python",
         "args": [
             "-m",
             "massgen.mcp_tools.checkpoint._checkpoint_mcp_server",
         ]
         + args,
+    }
+
+
+def build_standalone_checkpoint_mcp_config(
+    team_config_path: str,
+    mode: str | None = None,
+    single_checkpoint: bool | None = None,
+    include_workspace_context: bool | None = None,
+    default_workspace_dir: str | None = None,
+    default_trajectory_path: str | None = None,
+) -> dict[str, Any]:
+    """Build an MCP server config that exposes the standalone checkpoint tools.
+
+    The standalone server (`massgen.mcp_tools.standalone.checkpoint_mcp_server`)
+    reads a team YAML via `--config` and itself spawns sub-MassGen subprocesses
+    to evaluate each checkpoint.
+
+    Mode flags (`mode`, `single_checkpoint`, `include_workspace_context`) live
+    in two places: the team YAML the server loads, AND the parent MassGen run's
+    `coordination.standalone_checkpoint` block. To keep the two from drifting
+    (which would let the agent's prompt promise an affordance the server
+    doesn't actually grant), the parent passes its values as CLI args here and
+    the server lets them override the YAML at startup.
+
+    Args:
+        team_config_path: Path to the team YAML the standalone server runs.
+        mode: When set, override the team YAML's `mode` ("generate"/"verify").
+        single_checkpoint: When set, override the team YAML's `single_checkpoint`.
+        include_workspace_context: When set, override the team YAML's flag.
+
+    Returns:
+        MCP server config dict suitable for inclusion in backend.mcp_servers.
+    """
+    if not team_config_path:
+        raise ValueError(
+            "build_standalone_checkpoint_mcp_config requires a non-empty team_config_path",
+        )
+    args = [
+        "-m",
+        "massgen.mcp_tools.standalone.checkpoint_mcp_server",
+        "--config",
+        str(team_config_path),
+    ]
+    if mode is not None:
+        args.extend(["--mode", str(mode)])
+    if single_checkpoint:
+        args.append("--single-checkpoint")
+    if include_workspace_context:
+        args.append("--include-workspace-context")
+    if default_workspace_dir:
+        args.extend(["--default-workspace-dir", str(default_workspace_dir)])
+    if default_trajectory_path:
+        args.extend(["--default-trajectory-path", str(default_trajectory_path)])
+    return {
+        "name": "massgen_checkpoint_standalone",
+        "type": "stdio",
+        "command": "python",
+        "args": args,
     }
 
 
