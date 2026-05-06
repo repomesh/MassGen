@@ -122,6 +122,8 @@ class ConsensusMapState:
         agent = self._agents.get(agent_id)
 
         if event_type == EventType.ANSWER_SUBMITTED and agent is not None:
+            self._clear_votes()
+            self._winner_id = None
             answer_label = _answer_label(data.get("answer_label"))
             if answer_label:
                 agent.answer_label = answer_label
@@ -202,6 +204,13 @@ class ConsensusMapState:
                 counts[agent.voted_for] = counts.get(agent.voted_for, 0) + 1
         return counts
 
+    def _clear_votes(self) -> None:
+        for agent in self._agents.values():
+            agent.voted_for = None
+            agent.voted_for_label = ""
+            if agent.status == "voted":
+                agent.status = "idle"
+
     @staticmethod
     def _leader_id(vote_counts: dict[str, int]) -> str | None:
         if not vote_counts:
@@ -271,7 +280,11 @@ class ConsensusMap(Widget):
             leader = snap.agents.get(snap.leader_id)
             votes = snap.vote_counts.get(snap.leader_id, 0)
             if leader:
-                text.append(f"{leader.label} leads {votes}", style="bold yellow")
+                plural = "" if votes == 1 else "s"
+                text.append(
+                    f"{leader.label} has {votes} vote{plural}",
+                    style="bold yellow",
+                )
         else:
             answered_count = self._answered_count(snap)
             if answered_count:

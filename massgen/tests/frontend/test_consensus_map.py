@@ -135,6 +135,75 @@ def test_consensus_map_widget_promotes_answer_progress_to_first_line() -> None:
     assert "A A1.1" in first_line
 
 
+def test_consensus_map_state_clears_stale_votes_when_new_answer_arrives() -> None:
+    state = ConsensusMapState(
+        ["agent_a", "agent_b"],
+        {"agent_a": "claude", "agent_b": "gpt"},
+    )
+    state.apply_event(
+        MassGenEvent.create(
+            EventType.ANSWER_SUBMITTED,
+            agent_id="agent_b",
+            answer_label="agent2.1",
+            answer_number=1,
+            content="first answer",
+        ),
+    )
+    state.apply_event(
+        MassGenEvent.create(
+            EventType.VOTE,
+            agent_id="agent_b",
+            target_id="agent_b",
+            reason="best so far",
+            voted_for_label="agent2.1",
+        ),
+    )
+
+    voted_snapshot = state.snapshot()
+    assert voted_snapshot.leader_id == "agent_b"
+    assert voted_snapshot.vote_counts == {"agent_b": 1}
+
+    state.apply_event(
+        MassGenEvent.create(
+            EventType.ANSWER_SUBMITTED,
+            agent_id="agent_a",
+            answer_label="agent1.2",
+            answer_number=2,
+            content="new contender",
+        ),
+    )
+
+    snapshot = state.snapshot()
+
+    assert snapshot.leader_id is None
+    assert snapshot.vote_counts == {}
+    assert snapshot.vote_summary == ""
+    assert snapshot.agents["agent_a"].answer_label == "A1.2"
+    assert snapshot.agents["agent_b"].voted_for is None
+
+
+def test_consensus_map_widget_describes_votes_without_claiming_lead() -> None:
+    state = ConsensusMapState(
+        ["agent_a", "agent_b"],
+        {"agent_a": "claude", "agent_b": "gpt"},
+    )
+    state.apply_event(
+        MassGenEvent.create(
+            EventType.VOTE,
+            agent_id="agent_b",
+            target_id="agent_b",
+            reason="best so far",
+        ),
+    )
+    widget = ConsensusMap(id="consensus_map")
+    widget.set_state(state.snapshot())
+
+    first_line = widget.render().plain.splitlines()[0]
+
+    assert "leads" not in first_line
+    assert "B has 1 vote" in first_line
+
+
 class _ConsensusMapApp(App):
     def compose(self) -> ComposeResult:
         self.state = ConsensusMapState(
