@@ -1,4 +1,4 @@
-# MassGen v0.1.83 Release Announcement
+# MassGen v0.1.84 Release Announcement
 
 <!--
 This is the current release announcement. Copy this + feature-highlights.md to LinkedIn/X.
@@ -7,17 +7,17 @@ After posting, update the social links below.
 
 ## Release Summary
 
-We're excited to release MassGen v0.1.83 — In-Session Standalone Checkpoint MCP Integration! 🚀 The standalone checkpoint MCP server can now run *inside* a normal MassGen single-agent session, exposing the richer `init` + `checkpoint` tools backed by its own reviewer team.
+We're excited to release MassGen v0.1.84 — TUI Consensus Map! 🚀 A new compact visual map below the agent status ribbon makes the physical shape of multi-agent collaboration visible at a glance — agent nodes, latest answers, vote arrows, leader, and winner — without replacing the timeline.
 
 ## Install
 
 ```bash
-pip install massgen==0.1.83
+pip install massgen==0.1.84
 ```
 
 ## Links
 
-- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.83
+- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.84
 - **X post:** [TO BE ADDED AFTER POSTING]
 - **LinkedIn post:** [TO BE ADDED AFTER POSTING]
 
@@ -29,30 +29,30 @@ Copy everything below this line, then append content from `feature-highlights.md
 
 ---
 
-We're excited to release MassGen v0.1.83 — In-Session Standalone Checkpoint MCP Integration! 🚀 The standalone checkpoint MCP server can now run *inside* a normal MassGen single-agent session, exposing the richer `init` + `checkpoint` tools backed by its own reviewer team.
+We're excited to release MassGen v0.1.84 — TUI Consensus Map! 🚀 A new compact visual map below the agent status ribbon makes the physical shape of multi-agent collaboration visible at a glance — agent nodes, latest answers, vote arrows, leader, and winner — without replacing the timeline.
 
 **Key Improvements:**
 
-🔌 **In-Session Standalone Checkpoint MCP** — The richer planning affordance, now in-session:
-- Single-agent sessions can call the standalone server's `init` + `checkpoint` tools backed by their own reviewer team
-- New `coordination.standalone_checkpoint` config block: `enabled`, `team_config`, `mode` (`generate` | `verify`), `single_checkpoint`, `include_workspace_context`
-- Invalid `mode` values fall back to `generate` with a warning — typos surface instead of silently running the wrong mode
-- Multi-agent parents skip the standalone server with a warning (the standalone server runs its own reviewer panel)
+🗺️ **TUI Consensus Map** — See coordination state at a glance:
+- Compact map mounted below the agent status ribbon during multi-agent runs
+- One node per agent with latest answer label, vote direction arrows, and current vote leader
+- Winner state and waiting/working indicators surfaced visually
+- Hidden on welcome screen and single-agent runs
 
-🎴 **Enhanced Checkpoint Tool Card** — TUI tool card visualization distinguishes primary checkpoint operations from system tasks with improved context and result display
+⚡ **Event-Driven Updates** — Zero backend schema changes:
+- Map state subscribes to existing structured coordination events (`answer_submitted`, `vote`, `agent_stopped`, `winner_selected`, `final_presentation_start`, `agent_restart`, `phase_change`, `context_received`)
+- Direct-callback fallback path keeps the map accurate even when status/votes are pushed outside the unified event pipeline
 
-📦 **Example Configs** — Runnable in-session standalone checkpoint setups:
-- `massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml`
-- `massgen/configs/checkpoint/standalone_mcp/reviewers.yaml`
+📋 **OpenSpec-driven** — Full change proposal, scenarios, tasks, and validation under `openspec/changes/add-tui-consensus-map/`.
 
 **Getting Started:**
 
 ```bash
-pip install massgen==0.1.83
-uv run massgen --config massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml "Create an SVG of an AI agent coding. Call the checkpoint tool first to get a structured plan from the reviewer panel, then produce the SVG following that plan."
+pip install massgen==0.1.84
+uv run massgen --config massgen/configs/basic/multi/gemini_gpt5_claude.yaml "Create an SVG of an AI agent coding."
 ```
 
-Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.83
+Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.84
 
 Feature highlights:
 

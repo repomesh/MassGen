@@ -1,10 +1,10 @@
-# MassGen v0.1.84 Roadmap
+# MassGen v0.1.85 Roadmap
 
-**Target Release:** May 4, 2026
+**Target Release:** May 11, 2026
 
 ## Overview
 
-Version 0.1.84 focuses on image/video edit capabilities across providers.
+Version 0.1.85 picks up image/video edit capabilities (deferred from v0.1.84, which shipped TUI Consensus Map instead).
 
 ---
 
@@ -28,7 +28,7 @@ Version 0.1.84 focuses on image/video edit capabilities across providers.
 
 ## Related Tracks
 
-- **v0.1.83**: In-Session Standalone Checkpoint MCP Integration ([#1079](https://github.com/massgen/MassGen/pull/1079))
+- **v0.1.84**: TUI Consensus Map ([#1085](https://github.com/massgen/MassGen/pull/1085))
 
 ## What's Next
 
