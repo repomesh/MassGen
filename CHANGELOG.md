@@ -9,14 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.84 (May 8, 2026)** - TUI Consensus Map
+A compact visual map below the agent status ribbon during multi-agent runs. Shows agent nodes with latest answer labels, vote arrows, current vote leader, winner state, and waiting/working indicators — driven by existing coordination events without backend schema changes. Hidden on welcome and single-agent runs.
+
 **v0.1.83 (May 1, 2026)** - In-Session Standalone Checkpoint MCP Integration
 The standalone checkpoint MCP server can now be exposed *inside* a normal MassGen run via a new `coordination.standalone_checkpoint` config block, giving single-agent sessions access to the richer `init` + `checkpoint` tools backed by their own reviewer team. Enhanced checkpoint tool card visualization separates primary operations from system tasks.
 
 **v0.1.82 (April 29, 2026)** - TUI Copy Mode & Checkpoint Quality Improvements
 New `Ctrl+Shift+S` copy mode toggle releases terminal mouse tracking so users can drag-select text natively. Checkpoint standalone improvements: workspace context option, enhanced plan quality criteria, and single-checkpoint agent recovery guidance.
 
-**v0.1.81 (April 27, 2026)** - Multi-Region Circuit Breaker Failover (Phase 6)
-LLM circuit breaker can now fail over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy. Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds).
+---
+
+## [0.1.84] - 2026-05-08
+
+### Added
+- **TUI Consensus Map** ([#1085](https://github.com/massgen/MassGen/pull/1085)): Compact visual map mounted below the agent status ribbon during multi-agent runs that summarizes coordination state without replacing the timeline. Shows one node per agent with latest answer labels, vote direction arrows, current vote leader, winner state, and waiting/working indicators. Hidden on welcome screen and single-agent runs
+  - `massgen/frontend/displays/textual_widgets/consensus_map.py` — new `ConsensusMapState`, `ConsensusAgentState`, `ConsensusMapSnapshot`, and `ConsensusMap` widget
+  - `massgen/frontend/displays/textual_widgets/__init__.py` — widget export
+  - `massgen/frontend/displays/textual_terminal_display.py` — mounting below status ribbon, event/status wiring, visibility logic
+  - `massgen/frontend/displays/tui_event_pipeline.py` — event routing for the map
+  - `massgen/frontend/displays/textual_themes/base.tcss` — consensus map theme styling
+- **Event-Driven State Updates** ([#1085](https://github.com/massgen/MassGen/pull/1085)): The Consensus Map subscribes to existing structured coordination events (`answer_submitted`, `vote`, `agent_stopped`, `winner_selected`, `final_presentation_start`, `agent_restart`, `phase_change`, `context_received`) — no backend schema changes required
+- **Direct-Callback Fallback** ([#1085](https://github.com/massgen/MassGen/pull/1085)): When direct TUI callbacks update agent status or votes (without the unified event pipeline), the map remains accurate for the same visible state
+
+### Documentations, Configurations and Resources
+- **OpenSpec Change Proposal**: `openspec/changes/add-tui-consensus-map/{proposal,tasks}.md` and `specs/textual-tui/spec.md` — full design proposal, scenario coverage, and validation tasks
+
+### Tests
+- `massgen/tests/frontend/test_consensus_map.py` — unit tests for state transitions and Textual widget compact rendering / visibility (244 lines)
+- `massgen/tests/frontend/test_timeline_snapshot_scaffold.py` — runtime TUI snapshot coverage for answer/vote/winner state (+68 lines)
+- `massgen/tests/frontend/__snapshots__/test_timeline_snapshot_scaffold/test_timeline_snapshot_real_tui_consensus_map.svg` — golden TUI snapshot
+
+### Notes
+- Originally-planned Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) deferred to v0.1.85.
+
+### Technical Details
+- **Major Focus**: Make the physical shape of multi-agent collaboration visible at a glance — convergence, votes, and leader without scanning timelines and toasts
+- **PRs Merged**: [#1085](https://github.com/massgen/MassGen/pull/1085)
+- **Contributors**: @ncrispino, @HenryQi and the MassGen team
 
 ---
 

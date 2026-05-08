@@ -200,6 +200,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.84 (May 8, 2026)** - TUI Consensus Map
+
+A compact visual map below the agent status ribbon during multi-agent runs. Shows agent nodes with latest answer labels, vote arrows, current vote leader, winner state, and waiting/working indicators — driven by existing coordination events without backend schema changes. Hidden on welcome and single-agent runs.
+
 **v0.1.83 (May 1, 2026)** - In-Session Standalone Checkpoint MCP Integration
 
 The standalone checkpoint MCP server can now be exposed *inside* a normal MassGen run via a new ``coordination.standalone_checkpoint`` config block, giving single-agent sessions access to the richer ``init`` + ``checkpoint`` tools backed by their own reviewer team. Enhanced checkpoint tool card visualization separates primary operations from system tasks.
@@ -207,10 +211,6 @@ The standalone checkpoint MCP server can now be exposed *inside* a normal MassGe
 **v0.1.82 (April 29, 2026)** - TUI Copy Mode & Checkpoint Quality Improvements
 
 New ``Ctrl+Shift+S`` copy mode toggle releases terminal mouse tracking so users can drag-select text natively. Checkpoint standalone improvements: optional workspace context for reviewer agents, enhanced plan quality criteria with selective branch depth scoring, and single-checkpoint agent recovery guidance.
-
-**v0.1.81 (April 27, 2026)** - Multi-Region Circuit Breaker Failover (Phase 6)
-
-LLM circuit breaker can now fail over to backup regions when the primary trips OPEN, with automatic recovery when the primary returns to healthy. Builds on Phase 4 (distributed store) and Phase 5 (adaptive thresholds).
 
 :doc:`Full changelog → <changelog>`
 

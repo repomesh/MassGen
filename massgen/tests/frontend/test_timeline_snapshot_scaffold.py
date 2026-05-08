@@ -454,6 +454,74 @@ def test_timeline_snapshot_real_tui_runtime_injection_queue_and_delivery(
     )
 
 
+async def _seed_real_tui_consensus_map_snapshot(pilot) -> None:  # noqa: ANN001 - fixture-provided type
+    app = pilot.app
+    app.agent_widgets["agent_a"]._hide_loading()
+    app.agent_widgets["agent_b"]._hide_loading()
+    _stop_round_timers_if_running(app)
+
+    from massgen.events import EventType, MassGenEvent
+
+    app._apply_consensus_event(
+        MassGenEvent.create(
+            EventType.ANSWER_SUBMITTED,
+            agent_id="agent_a",
+            answer_label="agent1.1",
+            answer_number=1,
+            content="Agent A answer",
+        ),
+    )
+    app._apply_consensus_event(
+        MassGenEvent.create(
+            EventType.ANSWER_SUBMITTED,
+            agent_id="agent_b",
+            answer_label="agent2.1",
+            answer_number=1,
+            content="Agent B answer",
+        ),
+    )
+    app._apply_consensus_event(
+        MassGenEvent.create(
+            EventType.VOTE,
+            agent_id="agent_b",
+            target_id="agent_a",
+            reason="Clearer result",
+            voted_for_label="agent1.1",
+        ),
+    )
+    app._apply_consensus_event(
+        MassGenEvent.create(
+            EventType.WINNER_SELECTED,
+            agent_id="agent_a",
+            vote_results={"winner": "agent_a"},
+        ),
+    )
+    app.query_one("#timeout_display", Label).update("⏱ 1:02 / 10:00")
+    app.query_one("#status_cwd", Static).update("[dim]📁[/] /workspace")
+    app.set_focus(None)
+    _stop_all_tui_timers(app)
+    await pilot.pause()
+
+
+def test_timeline_snapshot_real_tui_consensus_map(
+    snap_compare,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Snapshot of the compact Consensus Map inside the runtime TUI shell."""
+    _configure_real_tui_snapshot_environment(monkeypatch)
+    assert snap_compare(
+        _build_real_tui_multi_agent_snapshot_app(tmp_path),
+        terminal_size=(150, 44),
+        run_before=_seed_real_tui_consensus_map_snapshot,
+    )
+    consensus_map = Path(__file__).parent / "__snapshots__" / "test_timeline_snapshot_scaffold" / "test_timeline_snapshot_real_tui_consensus_map.svg"
+    if consensus_map.exists():
+        snapshot_text = consensus_map.read_text(encoding="utf-8")
+        assert "Consensus" in snapshot_text
+        assert "A&#160;wins" in snapshot_text
+
+
 async def _seed_real_tui_subagent_input_bar_snapshot(pilot) -> None:  # noqa: ANN001 - fixture-provided type
     app = pilot.app
     panel = app.agent_widgets["agent_a"]

@@ -418,6 +418,13 @@ class TimelineEventAdapter:
 
                 tool_name_lower = tool_data.tool_name.lower()
                 if "new_answer" in tool_name_lower or "vote" in tool_name_lower:
+                    app = getattr(self._panel, "app", None)
+                    record_consensus_tool = getattr(app, "_record_consensus_tool_complete", None)
+                    if callable(record_consensus_tool):
+                        try:
+                            record_consensus_tool(self._agent_id or getattr(self._panel, "agent_id", ""), tool_data, round_number)
+                        except Exception as e:
+                            tui_log(f"[TimelineEventAdapter] {e}")
                     if hasattr(self._panel, "mark_terminal_tool_complete"):
                         try:
                             self._panel.mark_terminal_tool_complete()

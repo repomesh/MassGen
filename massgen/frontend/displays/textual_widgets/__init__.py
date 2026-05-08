@@ -19,6 +19,7 @@ from .agent_status_ribbon import (
     ViewSelected,
 )
 from .background_tasks_modal import BackgroundTasksModal
+from .consensus_map import ConsensusMap, ConsensusMapState
 from .content_sections import (
     CompletionFooter,
     FinalPresentationCard,
@@ -92,6 +93,8 @@ from .wizard_base import (
 
 __all__ = [
     # Mode bar
+    "ConsensusMap",
+    "ConsensusMapState",
     "ModeBar",
     "ModeToggle",
     "ModeChanged",

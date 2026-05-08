@@ -87,6 +87,8 @@ try:
         BackgroundTasksModal,
         BroadcastModeChanged,
         CompletionFooter,
+        ConsensusMap,
+        ConsensusMapState,
         ContextPathsClicked,
         CopyModeBanner,
         ExecuteAutoContinueChanged,
@@ -3707,6 +3709,11 @@ if TEXTUAL_AVAILABLE:
             self.safe_indicator = None
             self._tab_bar: AgentTabBar | None = None
             self._status_ribbon: AgentStatusRibbon | None = None
+            self._consensus_map: ConsensusMap | None = None
+            self._consensus_map_state = ConsensusMapState(
+                self.coordination_display.agent_ids,
+                getattr(self.coordination_display, "agent_models", {}),
+            )
             self._execution_status_line: ExecutionStatusLine | None = None
             # Side panel removed - using separate SubagentScreen
             # self._subagent_side_panel: Optional[Container] = None
@@ -3911,6 +3918,77 @@ if TEXTUAL_AVAILABLE:
 
             # Ensure status-bar tool indicators reset between turns.
             self._update_running_tools_count()
+
+            if hasattr(self, "_consensus_map_state"):
+                self._consensus_map_state.reset_turn(
+                    self.coordination_display.agent_ids,
+                    getattr(self.coordination_display, "agent_models", {}),
+                )
+                self._refresh_consensus_map()
+
+        def _refresh_consensus_map(self) -> None:
+            """Refresh the compact consensus map from current state."""
+            if not getattr(self, "_consensus_map", None):
+                return
+            try:
+                self._consensus_map.set_state(self._consensus_map_state.snapshot())
+                if self._showing_welcome:
+                    self._consensus_map.add_class("hidden")
+            except Exception as e:
+                tui_log(f"[TextualDisplay] consensus map refresh failed: {e}")
+
+        def _apply_consensus_event(self, event) -> None:
+            """Apply a structured event to the compact consensus map."""
+            if not hasattr(self, "_consensus_map_state"):
+                return
+            try:
+                self._consensus_map_state.apply_event(event)
+                self._refresh_consensus_map()
+            except Exception as e:
+                tui_log(f"[TextualDisplay] consensus map event failed: {e}")
+
+        def _record_consensus_tool_complete(self, agent_id: str, tool_data: Any, round_number: int = 1) -> None:
+            """Fallback: update consensus state from completed workflow tool cards."""
+            tool_name = str(getattr(tool_data, "tool_name", "") or "").lower()
+            if "new_answer" not in tool_name and "vote" not in tool_name:
+                return
+
+            from massgen.events import EventType, MassGenEvent
+
+            if "new_answer" in tool_name:
+                self._apply_consensus_event(
+                    MassGenEvent.create(
+                        EventType.ANSWER_SUBMITTED,
+                        agent_id=agent_id,
+                        round_number=round_number,
+                        answer_number=1,
+                    ),
+                )
+                return
+
+            target_id = ""
+            args_full = getattr(tool_data, "args_full", None)
+            if isinstance(args_full, str) and args_full.strip():
+                import ast
+                import json
+
+                for parser in (json.loads, ast.literal_eval):
+                    try:
+                        parsed = parser(args_full)
+                    except Exception:
+                        continue
+                    if isinstance(parsed, dict):
+                        target_id = str(parsed.get("agent_id") or parsed.get("target_id") or "")
+                        break
+            if target_id:
+                self._apply_consensus_event(
+                    MassGenEvent.create(
+                        EventType.VOTE,
+                        agent_id=agent_id,
+                        round_number=round_number,
+                        target_id=target_id,
+                    ),
+                )
 
         _BACKEND_PROVIDER_SLUGS: dict[str, str] = {
             "openai": "openai",
@@ -4162,6 +4240,12 @@ if TEXTUAL_AVAILABLE:
             if self._showing_welcome:
                 self._status_ribbon.add_class("hidden")
             yield self._status_ribbon
+
+            self._consensus_map = ConsensusMap(id="consensus_map")
+            self._refresh_consensus_map()
+            if self._showing_welcome:
+                self._consensus_map.add_class("hidden")
+            yield self._consensus_map
 
             # Set initial active agent
             self._active_agent_id = agent_ids[0] if agent_ids else None
@@ -4635,6 +4719,7 @@ if TEXTUAL_AVAILABLE:
                 self._tab_bar.remove_class("hidden")
             if self._status_ribbon:
                 self._status_ribbon.remove_class("hidden")
+            self._refresh_consensus_map()
             if self._execution_status_line:
                 self._execution_status_line.remove_class("hidden")
             if self._status_bar:
@@ -4777,6 +4862,7 @@ if TEXTUAL_AVAILABLE:
                 "evaluation_criteria_evolved",
                 "subtasks_set",
                 "orchestrator_timeout",
+                "phase_change",
             },
         )
 
@@ -4873,6 +4959,8 @@ if TEXTUAL_AVAILABLE:
             (notify_vote, notify_new_answer, highlight_winner_quick).
             """
             import time
+
+            self._apply_consensus_event(event)
 
             if event.event_type == "answer_submitted":
                 agent_id = event.agent_id or ""
@@ -6223,6 +6311,9 @@ Type your question and press Enter to ask the agents.
 
         def update_agent_status(self, agent_id: str, status: str):
             """Update agent status."""
+            if hasattr(self, "_consensus_map_state"):
+                self._consensus_map_state.set_agent_status(agent_id, status)
+                self._refresh_consensus_map()
             if agent_id in self.agent_widgets:
                 self.agent_widgets[agent_id].update_status(status)
                 # Only jump to latest if this is the active agent
@@ -7666,6 +7757,16 @@ Type your question and press Enter to ask the agents.
                 return  # Final presentation banner already added
             self._winner_quick_highlighted = True
 
+            from massgen.events import EventType, MassGenEvent
+
+            self._apply_consensus_event(
+                MassGenEvent.create(
+                    EventType.WINNER_SELECTED,
+                    agent_id=winner_id,
+                    vote_results=vote_results,
+                ),
+            )
+
             # 1. Auto-switch to winner's tab and mark with trophy
             if self._tab_bar:
                 self._tab_bar.set_active(winner_id)
@@ -8203,6 +8304,16 @@ Type your question and press Enter to ask the agents.
                 vote_counts: Optional dict of {agent_id: vote_count} for vote summary display
                 answer_labels: Optional dict of {agent_id: label} for display (e.g., {"agent1": "A1.1"})
             """
+            from massgen.events import EventType, MassGenEvent
+
+            self._apply_consensus_event(
+                MassGenEvent.create(
+                    EventType.FINAL_PRESENTATION_START,
+                    agent_id=agent_id,
+                    vote_counts=vote_counts or {},
+                    answer_labels=answer_labels or {},
+                ),
+            )
             panel = self.agent_widgets.get(agent_id)
             if panel:
                 # Use start_final_presentation which shows distinct green banner
@@ -11301,7 +11412,19 @@ Type your question and press Enter to ask the agents.
             import time
             from datetime import datetime
 
+            from massgen.events import EventType, MassGenEvent
+
             from .content_handlers import ToolDisplayData
+
+            self._apply_consensus_event(
+                MassGenEvent.create(
+                    EventType.VOTE,
+                    agent_id=voter,
+                    round_number=submission_round,
+                    target_id=voted_for,
+                    reason=reason,
+                ),
+            )
 
             # Get model names for richer display
             voter_model = self.coordination_display.agent_models.get(voter, "")
@@ -11436,6 +11559,20 @@ Type your question and press Enter to ask the agents.
                     even if panel._current_round has advanced due to restart.
             """
             import time
+
+            from massgen.events import EventType, MassGenEvent
+
+            self._apply_consensus_event(
+                MassGenEvent.create(
+                    EventType.ANSWER_SUBMITTED,
+                    agent_id=agent_id,
+                    round_number=submission_round,
+                    answer_label=answer_label or f"{agent_id}.{answer_number}",
+                    answer_number=answer_number,
+                    content=content,
+                    workspace_path=workspace_path,
+                ),
+            )
 
             # Get model name for richer display
             model_name = self.coordination_display.agent_models.get(agent_id, "")

@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.83
+**Current Version:** v0.1.84
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** May 1, 2026
+**Last Updated:** May 8, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,9 +42,25 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.84** | 05/04/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) |
+| **v0.1.85** | 05/11/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.84 ([#959](https://github.com/massgen/MassGen/issues/959)) |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.84 - TUI Consensus Map (Completed)
+
+**Released:** May 8, 2026 | PRs: [#1085](https://github.com/massgen/MassGen/pull/1085)
+
+### Features
+- **TUI Consensus Map**: Compact visual map below the agent status ribbon during multi-agent runs that summarizes coordination state without replacing the timeline
+- **Visibility Logic**: Hidden on welcome screen and single-agent runs; only shown when more than one active agent is coordinating
+- **Event-Driven State**: Map state updates from existing coordination events (`answer_submitted`, `vote`, `agent_stopped`, `winner_selected`, `final_presentation_start`, `agent_restart`, `phase_change`, `context_received`) without backend schema changes
+- **Direct-Callback Fallback**: Map remains accurate even when direct TUI callbacks update agent status or votes outside the unified event pipeline
+- **OpenSpec Coverage**: Full change proposal, scenarios, and tasks under `openspec/changes/add-tui-consensus-map/`
+
+### Notes
+- Originally-planned Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) deferred to v0.1.85.
 
 ---
 
@@ -169,7 +185,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.84 - Image/Video Edit Capabilities
+## 📋 v0.1.85 - Image/Video Edit Capabilities (Deferred from v0.1.84)
 
 ### Features
 
