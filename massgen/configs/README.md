@@ -227,7 +227,22 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.83 - Latest
+### v0.1.84 - Latest
+**New Features:** TUI Consensus Map
+
+**Key Features:**
+- **TUI Consensus Map**: Compact visual map below the agent status ribbon during multi-agent runs that summarizes coordination state without replacing the timeline. Shows one node per agent with latest answer labels, vote arrows, current vote leader, winner state, and waiting/working indicators
+- **Visibility Logic**: Hidden on welcome screen and single-agent runs — only shown when more than one active agent is coordinating
+- **Event-Driven State Updates**: Driven by existing coordination events (`answer_submitted`, `vote`, `agent_stopped`, `winner_selected`, `final_presentation_start`, `agent_restart`, `phase_change`, `context_received`) — no backend schema changes required
+- **Direct-Callback Fallback**: Map remains accurate when direct TUI callbacks update agent status or votes
+
+**Try It:**
+```bash
+pip install massgen==0.1.84
+uv run massgen --config massgen/configs/basic/multi/gemini_gpt5_claude.yaml "Create an SVG of an AI agent coding."
+```
+
+### v0.1.83
 **New Features:** In-Session Standalone Checkpoint MCP Integration
 
 **Key Features:**
@@ -236,12 +251,6 @@ Most configurations use environment variables for API keys:so
 - **Single-Agent-Only Affordance Gating**: Multi-agent parents skip the standalone server with a warning
 - **Enhanced Checkpoint Tool Card**: TUI tool card distinguishes primary checkpoint operations from system tasks
 - **Example Configs**: `massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml` and `reviewers.yaml`
-
-**Try It:**
-```bash
-pip install massgen==0.1.83
-uv run massgen --config massgen/configs/checkpoint/standalone_mcp/fast_iteration.yaml "Create an SVG of an AI agent coding. Call the checkpoint tool first to get a structured plan from the reviewer panel, then produce the SVG following that plan."
-```
 
 ### v0.1.82
 **New Features:** TUI Copy Mode & Checkpoint Quality Improvements
