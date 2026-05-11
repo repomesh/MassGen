@@ -17,17 +17,17 @@ Update this when major new features ship.
 
 📋Task planning & execution — Structured plans with chunked execution, progress checkpoints, iterative review, and verification. Spec mode for formal requirements before execution. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/task_planning.html
 
-🛠️Work with files, apps, and projects — MCP tools and agent skills for file read/write (with worktree isolation), project editing, and more — all with a robust permission system. Use MassGen as a skill from AI coding agents. Standalone MCP server for checkpoint safety installable directly into Claude Code, Codex, and other MCP hosts. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/tools/index.html
+🛠️Work with files, apps, and projects — MCP tools and agent skills for file read/write, project editing, and worktree isolation, all gated by a robust permission system. Use MassGen as a skill from AI coding agents. Standalone MCP server for checkpoint planning — usable in-session inside MassGen or from external MCP hosts (Claude Code, Codex). 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/tools/index.html
 
 💾Session continuity — Multi-turn conversations with context compression, session resumption, and evolving skills that persist and improve across sessions. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/tools/skills.html#evolving-skills-code-mode
 
-🖼️Multi-modal support — Agents can understand and generate images, videos, and audio collaboratively. Multiple providers (OpenAI, Google, ElevenLabs, Grok) with multi-turn editing and reusable media generation skills. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/advanced/multimodal.html
+🖼️Multi-modal support — Agents understand and generate images, videos, and audio across multiple providers (OpenAI, Google, ElevenLabs, Grok), with multi-turn editing and reusable media generation skills. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/advanced/multimodal.html
 
 🐳Code execution — Run commands with Docker isolation and a filesystem-based code mode for efficient tool execution. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/tools/code_execution.html
 
-🖥️Interactive TUI & Web UI — Real-time Terminal UI with mode cycling, log analysis, tool batching, keyboard shortcuts, Copy Mode (Ctrl+Shift+S) for native text selection, and a compact Consensus Map that visualizes multi-agent coordination state at a glance. Session viewer for observing automation runs. Modernized Web UI with inline final answers, automation auto-start, skill integration, and checkpoint monitoring. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/webui.html
+🖥️Interactive TUI & Web UI — Real-time Terminal UI with a Consensus Map for multi-agent coordination at a glance, Copy Mode for native text selection, mode cycling, and log analysis. Session viewer for automation runs. Modernized Web UI with inline final answers, skill integration, and checkpoint monitoring. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/webui.html
 
-🪪Trace workflows — Orchestration logs, execution traces with background trace analysis that feeds insights into memory, workspace snapshots, cost tracking, and Logfire integration. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/logging.html#logging-directory-structure
+🪪Trace workflows — Orchestration logs, execution traces, workspace snapshots, cost tracking, and Logfire integration. Background trace analysis feeds insights into agent memory. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/logging.html#logging-directory-structure
 
 📤Session sharing — Export sessions to GitHub Gist and view in the MassGen Viewer web app with artifact previews. 👉 More Info: https://docs.massgen.ai/en/latest/user_guide/logging.html#sharing-sessions
 
@@ -39,16 +39,16 @@ Update this when major new features ship.
 
 📋Task planning & execution — Structured plans with chunked execution, progress checkpoints, iterative review, and verification. Spec mode for formal requirements before execution. 👉 More Info: https://lnkd.in/gy5qtbau
 
-🛠️Work with files, apps, and projects — MCP tools and agent skills for file read/write (with worktree isolation), project editing, and more — all with a robust permission system. Use MassGen as a skill from AI coding agents. Standalone MCP server for checkpoint safety installable directly into Claude Code, Codex, and other MCP hosts. 👉 More Info: https://lnkd.in/gXaCJfkq
+🛠️Work with files, apps, and projects — MCP tools and agent skills for file read/write, project editing, and worktree isolation, all gated by a robust permission system. Use MassGen as a skill from AI coding agents. Standalone MCP server for checkpoint planning — usable in-session inside MassGen or from external MCP hosts (Claude Code, Codex). 👉 More Info: https://lnkd.in/gXaCJfkq
 
 💾Session continuity — Multi-turn conversations with context compression, session resumption, and evolving skills that persist and improve across sessions. 👉 More Info: https://lnkd.in/gQuhFtuh
 
-🖼️Multi-modal support — Agents can understand and generate images, videos, and audio collaboratively. Multiple providers (OpenAI, Google, ElevenLabs, Grok) with multi-turn editing and reusable media generation skills. 👉 More Info: https://lnkd.in/gHNVdTKa
+🖼️Multi-modal support — Agents understand and generate images, videos, and audio across multiple providers (OpenAI, Google, ElevenLabs, Grok), with multi-turn editing and reusable media generation skills. 👉 More Info: https://lnkd.in/gHNVdTKa
 
 🐳Code execution — Run commands with Docker isolation and a filesystem-based code mode for efficient tool execution. 👉 More Info: https://lnkd.in/gDy5imFE
 
-🖥️Interactive TUI & Web UI — Real-time Terminal UI with mode cycling, log analysis, tool batching, keyboard shortcuts, Copy Mode (Ctrl+Shift+S) for native text selection, and a compact Consensus Map that visualizes multi-agent coordination state at a glance. Session viewer for observing automation runs. Modernized Web UI with inline final answers, automation auto-start, skill integration, and checkpoint monitoring. 👉 More Info: https://lnkd.in/gxWNKCB6
+🖥️Interactive TUI & Web UI — Real-time Terminal UI with a Consensus Map for multi-agent coordination at a glance, Copy Mode for native text selection, mode cycling, and log analysis. Session viewer for automation runs. Modernized Web UI with inline final answers, skill integration, and checkpoint monitoring. 👉 More Info: https://lnkd.in/gxWNKCB6
 
-🪪Trace workflows — Orchestration logs, execution traces with background trace analysis that feeds insights into memory, workspace snapshots, cost tracking, and Logfire integration. 👉 More Info: https://lnkd.in/gecFJE2z
+🪪Trace workflows — Orchestration logs, execution traces, workspace snapshots, cost tracking, and Logfire integration. Background trace analysis feeds insights into agent memory. 👉 More Info: https://lnkd.in/gecFJE2z
 
 📤Session sharing — Export sessions to GitHub Gist and view in the MassGen Viewer web app with artifact previews. 👉 More Info: https://lnkd.in/gsBjn7Zt
