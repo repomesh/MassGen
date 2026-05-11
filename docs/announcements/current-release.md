@@ -9,7 +9,7 @@ After posting, update the social links below.
 
 We're excited to release MassGen v0.1.85 — Discriminative Criteria Emergence (`criteria_mode`)! 🚀 Evaluation criteria can now emerge from observed gaps across rounds instead of being pre-authored — agents propose what a stronger answer would satisfy, the accumulator dedupes and caps, and the next round's checklist is augmented automatically. Anti-Goodhart by construction.
 
-> ⚠️ **First-stage release — work in progress.** This is the initial drop of `criteria_mode`. The `bootstrap_inline` variant is fully wired and the accumulator/propagation path is end-to-end tested, but the feature is still maturing — expect further finalization and more thorough end-to-end testing (especially around `bootstrap_subagent`'s LLM discriminator) in v0.1.86.
+> ⚠️ **First-stage release — still maturing.** Expect further finalization and more thorough end-to-end testing in v0.1.86.
 
 ## Install
 
@@ -33,7 +33,7 @@ Copy everything below this line, then append content from `feature-highlights.md
 
 We're excited to release MassGen v0.1.85 — Discriminative Criteria Emergence (`criteria_mode`)! 🚀 Evaluation criteria can now emerge from observed gaps across rounds instead of being pre-authored — agents propose what a stronger answer would satisfy, the accumulator dedupes and caps, and the next round's checklist is augmented automatically.
 
-> ⚠️ **First-stage release — work in progress.** `bootstrap_inline` is fully wired across SDK and stdio backends and the accumulator is end-to-end tested, but the feature is still maturing. Expect finalization and more thorough end-to-end testing in v0.1.86, where the `bootstrap_subagent` LLM discriminator also lands.
+> ⚠️ **First-stage release — still maturing.** Expect further finalization and more thorough end-to-end testing in v0.1.86.
 
 **Key Improvements:**
 

@@ -1,6 +1,6 @@
 # 🚀 Release Highlights — v0.1.85 (2026-05-11)
 
-> ⚠️ **First-stage release — work in progress.** `bootstrap_inline` is wired and end-to-end tested across SDK and stdio backends, but `criteria_mode` is still maturing. v0.1.86 will finalize the feature with the `bootstrap_subagent` LLM discriminator and more thorough end-to-end testing.
+> ⚠️ **First-stage release — still maturing.** Expect further finalization and more thorough end-to-end testing in v0.1.86.
 
 ### 🧪 Discriminative Criteria Emergence (`criteria_mode`)
 - **`bootstrap_inline` variant (fully functional)**: New `orchestrator.coordination.criteria_mode: bootstrap_inline` makes each agent emit a short `proposed_criteria` list alongside its `submit_checklist` call — criteria a stronger answer would satisfy that the current answers do *not*. Proposals are deduped, FIFO-capped (`bootstrap_max_total`, default 30), persisted to `bootstrap_criteria_accumulator.json`, and merged into the next round's checklist via the existing `EvaluationSection`
