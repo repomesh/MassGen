@@ -391,6 +391,11 @@ class SystemMessageBuilder:
                         "fast_iteration_mode",
                         False,
                     ),
+                    criteria_mode=getattr(
+                        getattr(self.config, "coordination_config", None),
+                        "criteria_mode",
+                        "static",
+                    ),
                 ),
             )
 

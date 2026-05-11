@@ -355,6 +355,9 @@ class LLMBackend(ABC):
             "novelty_injection",  # Novelty pressure level (none/gentle/moderate/aggressive)
             "improvements",  # draft_approach gate settings (orchestrator/checklist only)
             "learning_capture_mode",  # Learning capture timing (round/verification_and_final_only/final_only)
+            "criteria_mode",  # Discriminative criteria emergence mode (static/bootstrap_inline/bootstrap_subagent)
+            "bootstrap_max_per_agent_per_round",  # Cap on per-round, per-agent criteria proposals
+            "bootstrap_max_total",  # Global FIFO cap on bootstrap accumulator
             "disable_final_only_round_capture_fallback",  # Coordination-only fallback control for final_only+skip_final_presentation
             # Multimodal tools configuration (handled by CustomToolAndMCPBackend)
             "enable_multimodal_tools",

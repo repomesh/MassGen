@@ -1,0 +1,86 @@
+# Discriminative criteria emergence — Variant B (subagent discriminator).
+#
+# Forked from massgen/configs/features/fast_iteration.yaml. Variant B configures
+# the same accumulator pipeline as Variant A, but the criteria emission step is
+# delegated to a dedicated between-rounds critic rather than the agents
+# themselves. The agents' EvaluationSection does NOT ask them to emit
+# proposed_criteria in this mode.
+#
+# NOTE (v0.1.85): the in-process LLM discriminator step is scaffolded but the
+# end-to-end LLM call is queued for v0.1.86. Today the accumulator still
+# accepts entries from tests / external tooling and propagates them via the
+# same machinery as Variant A. Use bootstrap_inline_criteria.yaml for the
+# fully-working inline path.
+#
+# Inspect emerging criteria at:
+#   .massgen/massgen_logs/<session>/bootstrap_criteria_accumulator.json
+#
+# Example:
+#   uv run massgen --automation --config massgen/configs/coordination/bootstrap_subagent_criteria.yaml \
+#     "Create an svg of an AI agent coding."
+
+agents:
+- id: agent_a
+  backend:
+    type: gemini
+    model: gemini-3-flash-preview
+    cwd: workspace
+    enable_code_based_tools: true
+    exclude_file_operation_mcps: true
+    enable_mcp_command_line: true
+    shared_tools_directory: shared_tools
+    auto_discover_custom_tools: false
+    enable_web_search: false
+- id: agent_b
+  backend:
+    type: codex
+    model: gpt-5.5
+    cwd: workspace
+    enable_code_based_tools: true
+    exclude_file_operation_mcps: true
+    enable_mcp_command_line: true
+    shared_tools_directory: shared_tools
+    auto_discover_custom_tools: false
+    enable_web_search: false
+orchestrator:
+  snapshot_storage: snapshots
+  agent_temporary_workspace: temp_workspaces
+  voting_sensitivity: checklist_gated
+  voting_threshold: 3
+  max_new_answers_per_agent: 5
+  fairness_enabled: true
+  fairness_lead_cap_answers: 2
+  max_midstream_injections_per_round: 2
+  defer_peer_updates_until_restart: true
+  allow_midstream_peer_updates_before_checklist_submit: true
+  enable_multimodal_tools: true
+  image_generation_backend: openai
+  video_generation_backend: openai
+  audio_generation_backend: openai
+  coordination:
+    fast_iteration_mode: true
+    max_verifications_per_round: 1
+    max_internal_fix_loops: 0
+    skip_redundant_scaffolding: true
+    max_orchestration_restarts: 0
+    learning_capture_mode: verification_and_final_only
+    use_skills: true
+    skills_directory: .agent/skills
+    enable_agent_task_planning: true
+    task_planning_filesystem_mode: true
+    enable_memory_filesystem_mode: true
+    write_mode: auto
+    # --- Discriminative criteria emergence (Variant B) -------------------
+    # Critic-driven path. Wired but full LLM discriminator queued for v0.1.86.
+    criteria_mode: bootstrap_subagent
+    bootstrap_max_per_agent_per_round: 3
+    bootstrap_max_total: 30
+  context_paths: []
+timeout_settings:
+  orchestrator_timeout_seconds: 3600
+  initial_round_timeout_seconds: 1200
+  subsequent_round_timeout_seconds: 900
+  round_timeout_grace_seconds: 300
+ui:
+  display_type: textual_terminal
+  logging_enabled: true

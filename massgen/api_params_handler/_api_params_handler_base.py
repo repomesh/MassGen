@@ -123,6 +123,9 @@ class APIParamsHandlerBase(ABC):
             "improvements",  # draft_approach gate settings (orchestrator/checklist only)
             "learning_capture_mode",  # Learning capture timing (round/verification_and_final_only/final_only)
             "disable_final_only_round_capture_fallback",  # Coordination-only fallback control for final_only+skip_final_presentation
+            "criteria_mode",  # Discriminative criteria emergence mode (static/bootstrap_inline/bootstrap_subagent)
+            "bootstrap_max_per_agent_per_round",  # Cap on per-round, per-agent criteria proposals
+            "bootstrap_max_total",  # Global FIFO cap on bootstrap accumulator
             # NLIP configuration belongs to MassGen routing, never provider APIs
             "enable_nlip",
             "nlip",

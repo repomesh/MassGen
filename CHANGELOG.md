@@ -9,14 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.85 (May 11, 2026)** - Discriminative Criteria Emergence (`criteria_mode`)
+New `orchestrator.coordination.criteria_mode` option lets evaluation criteria emerge from observed gaps across rounds instead of being pre-authored. `bootstrap_inline` variant is fully functional on all backends with checklist tool support — agents emit `proposed_criteria` alongside `submit_checklist`, the accumulator dedupes/caps, and the next round's checklist is augmented automatically.
+
 **v0.1.84 (May 8, 2026)** - TUI Consensus Map
 A compact visual map below the agent status ribbon during multi-agent runs. Shows agent nodes with latest answer labels, vote arrows, current vote leader, winner state, and waiting/working indicators — driven by existing coordination events without backend schema changes. Hidden on welcome and single-agent runs.
 
 **v0.1.83 (May 1, 2026)** - In-Session Standalone Checkpoint MCP Integration
 The standalone checkpoint MCP server can now be exposed *inside* a normal MassGen run via a new `coordination.standalone_checkpoint` config block, giving single-agent sessions access to the richer `init` + `checkpoint` tools backed by their own reviewer team. Enhanced checkpoint tool card visualization separates primary operations from system tasks.
 
-**v0.1.82 (April 29, 2026)** - TUI Copy Mode & Checkpoint Quality Improvements
-New `Ctrl+Shift+S` copy mode toggle releases terminal mouse tracking so users can drag-select text natively. Checkpoint standalone improvements: workspace context option, enhanced plan quality criteria, and single-checkpoint agent recovery guidance.
+---
+
+## [0.1.85] - 2026-05-11
+
+### Added
+- **Discriminative Criteria Emergence**: New `orchestrator.coordination.criteria_mode` option lets evaluation criteria emerge from observed gaps across rounds, instead of requiring them to be authored upfront via `--eval-criteria` or `--checklist-criteria-preset`. Two variants:
+  - **`bootstrap_inline`** (fully functional on **all backends with checklist tool support** — SDK *and* stdio): each agent emits a short `proposed_criteria` list alongside its `submit_checklist` call — criteria a stronger answer would satisfy that the current answers do *not*. Proposals are deduped by exact text, FIFO-capped (`bootstrap_max_total`, default 30), persisted to `bootstrap_criteria_accumulator.json` in the session log dir, and merged into the next round's effective checklist via the existing `EvaluationSection` machinery. SDK path (Claude Code) gets the field directly in the in-process tool schema; stdio backends (gemini, codex, response, chat_completions, claude, grok) get a JSONL emission channel — `proposed_criteria.jsonl` next to the checklist specs, drained by the orchestrator on each criteria resolution.
+  - **`bootstrap_subagent`** (wired, LLM step deferred): same accumulator pipeline but criteria are intended to come from a between-rounds critic rather than the agents. The accumulator still propagates seeded entries; the in-process LLM discriminator pass is queued for v0.1.86.
+- **`massgen/bootstrap_criteria.py`** (new module): houses `merge_proposals`, `augment_with_accumulator`, `is_bootstrap_mode`, and `validate_criteria_mode` — pure helpers shared between orchestrator and tests.
+- **Coordination Config Fields**: `CoordinationConfig.{criteria_mode, bootstrap_max_per_agent_per_round, bootstrap_max_total}` — parsed in `cli.py:_parse_coordination_config`, validated in `CoordinationConfig._validate_criteria_mode`, excluded from API params in `backend/base.py:get_base_excluded_config_params`.
+- **SDK Path Wiring** (`Orchestrator._init_checklist_tool_sdk`): the `submit_checklist` schema gains an optional `proposed_criteria` array in `bootstrap_inline` mode only; static-mode agents see the historical schema unchanged. Parsed proposals land on `AgentState.criteria_proposals` and are drained into the orchestrator's accumulator on each criteria resolution.
+- **Stdio Path Wiring** (`massgen/mcp_tools/checklist_tools_server.py`): the FastMCP `submit_checklist` tool conditionally adds `proposed_criteria` to its `inspect.Signature` when `state["criteria_mode"] == "bootstrap_inline"`. Emissions are appended to `proposed_criteria.jsonl` in the specs directory; `Orchestrator._drain_pending_criteria_proposals` reads and truncates the file each pass.
+
+### Why This Matters
+- Removes a cold-start friction: users no longer need to pre-author criteria for a new task. The first round produces both answers *and* the criteria the second round must rise to.
+- **Anti-Goodhart by construction** — criteria come from observed gaps, not priors that may not match the task.
+- Uses MassGen's multi-round/multi-agent shape directly; the cross-agent channel (workspace sharing) already existed, so no new transport was needed.
+
+### Documentations, Configurations and Resources
+- **New Configs**: `massgen/configs/coordination/bootstrap_inline_criteria.yaml` and `bootstrap_subagent_criteria.yaml` (forked from `features/fast_iteration.yaml`) — runnable examples for both variants
+- **Updated `docs/modules/coordination_workflow.md`**: new section documenting `criteria_mode`, accumulator semantics, and the two variants
+
+### Tests
+- `massgen/tests/test_bootstrap_criteria.py` — 30 new tests (476 lines) covering merge/dedup/cap, config validation, `AgentState.criteria_proposals` field, `_resolve_effective_checklist_criteria` augmentation across criteria sources, `EvaluationSection` rendering gating, `_drain_pending_criteria_proposals` behavior, and round-N → round-N+1 propagation end-to-end
+
+### Notes
+- Originally-planned Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) deferred to v0.1.86.
+- `bootstrap_subagent` LLM discriminator pass queued for v0.1.86.
+
+### Technical Details
+- **Major Focus**: Let evaluation criteria emerge from the run rather than be pre-authored — anti-Goodhart, anti-cold-start, and natively shaped by MassGen's multi-round refinement loop
+- **Contributors**: @ncrispino, @HenryQi and the MassGen team
 
 ---
 

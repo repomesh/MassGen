@@ -3962,6 +3962,7 @@ class EvaluationSection(SystemPromptSection):
         enable_evaluator_personas: bool = False,
         auto_trace_analysis: bool = False,
         fast_iteration_mode: bool = False,
+        criteria_mode: str = "static",
     ):
         super().__init__(
             title="MassGen Coordination",
@@ -3995,6 +3996,7 @@ class EvaluationSection(SystemPromptSection):
         self.enable_evaluator_personas = enable_evaluator_personas
         self.auto_trace_analysis = auto_trace_analysis
         self.fast_iteration_mode = fast_iteration_mode
+        self.criteria_mode = criteria_mode
 
     def build_content(self) -> str:
         # Vote-only mode: agent has exhausted their answer limit
@@ -4256,6 +4258,28 @@ A background execution trace analyzer is automatically analyzing your \
 previous round's execution trace. Its DO/DON'T guidance will be injected \
 into your context when ready. Apply those learnings to this round's \
 execution strategy when they appear."""
+
+        if self.criteria_mode == "bootstrap_inline":
+            evaluation_section += """
+
+**CRITERIA EMERGENCE (DISCRIMINATIVE):**
+Alongside your checklist submission, propose new evaluation criteria a stronger \
+answer would satisfy that the answers currently in view do not. The point is to \
+surface quality dimensions that have not yet been captured, so the next round \
+iterates against a tighter bar.
+
+When you submit your checklist, include a `proposed_criteria` field — a short \
+list of criterion objects. Each criterion must take a position on what \
+"good" means on a specific dimension (not a dimension label), and must \
+describe a quality the current answers do not yet fully achieve. Each \
+criterion object has:
+- `text`: the opinionated quality definition (required)
+- `category`: "primary" | "standard" | "stretch"
+- `anti_patterns`: concrete failure modes that should tank the score (optional)
+
+Keep the list short — at most 3 per submission. Skip if the current answers \
+already satisfy every dimension you can identify. Do not duplicate criteria \
+already shown to you."""
 
         if self.fast_iteration_mode:
             _iteration_guidance = (

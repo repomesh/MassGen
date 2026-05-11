@@ -200,6 +200,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.85 (May 11, 2026)** - Discriminative Criteria Emergence (``criteria_mode``)
+
+New ``orchestrator.coordination.criteria_mode`` option lets evaluation criteria emerge from observed gaps across rounds instead of being pre-authored. The ``bootstrap_inline`` variant is fully functional on all backends with checklist tool support — agents emit ``proposed_criteria`` alongside ``submit_checklist``, the accumulator dedupes/caps, and the next round's checklist is augmented automatically.
+
 **v0.1.84 (May 8, 2026)** - TUI Consensus Map
 
 A compact visual map below the agent status ribbon during multi-agent runs. Shows agent nodes with latest answer labels, vote arrows, current vote leader, winner state, and waiting/working indicators — driven by existing coordination events without backend schema changes. Hidden on welcome and single-agent runs.
@@ -207,10 +211,6 @@ A compact visual map below the agent status ribbon during multi-agent runs. Show
 **v0.1.83 (May 1, 2026)** - In-Session Standalone Checkpoint MCP Integration
 
 The standalone checkpoint MCP server can now be exposed *inside* a normal MassGen run via a new ``coordination.standalone_checkpoint`` config block, giving single-agent sessions access to the richer ``init`` + ``checkpoint`` tools backed by their own reviewer team. Enhanced checkpoint tool card visualization separates primary operations from system tasks.
-
-**v0.1.82 (April 29, 2026)** - TUI Copy Mode & Checkpoint Quality Improvements
-
-New ``Ctrl+Shift+S`` copy mode toggle releases terminal mouse tracking so users can drag-select text natively. Checkpoint standalone improvements: optional workspace context for reviewer agents, enhanced plan quality criteria with selective branch depth scoring, and single-checkpoint agent recovery guidance.
 
 :doc:`Full changelog → <changelog>`
 
