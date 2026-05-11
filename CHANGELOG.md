@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Discriminative Criteria Emergence** (v0.1.85): New `orchestrator.coordination.criteria_mode` option lets evaluation criteria emerge from observed gaps across rounds, instead of requiring them to be authored upfront via `--eval-criteria` or `--checklist-criteria-preset`. Two variants:
+  - **`bootstrap_inline`** (fully functional on **all backends with checklist tool support** — SDK *and* stdio): each agent emits a short `proposed_criteria` list alongside its `submit_checklist` call — criteria a stronger answer would satisfy that the current answers do *not*. Proposals are deduped by exact text, FIFO-capped (`bootstrap_max_total`, default 30), persisted to `bootstrap_criteria_accumulator.json` in the session log dir, and merged into the next round's effective checklist via the existing `EvaluationSection` machinery. SDK path (Claude Code) gets the field directly in the in-process tool schema; stdio backends (gemini, codex, response, chat_completions, claude, grok) get a JSONL emission channel — `proposed_criteria.jsonl` next to the checklist specs, drained by the orchestrator on each criteria resolution.
+  - **`bootstrap_subagent`** (wired, LLM step deferred): same accumulator pipeline but criteria are intended to come from a between-rounds critic rather than the agents. The accumulator still propagates seeded entries; the in-process LLM discriminator pass is queued for v0.1.86.
+  - New module `massgen/bootstrap_criteria.py` houses `merge_proposals`, `augment_with_accumulator`, `is_bootstrap_mode`, and `validate_criteria_mode` — pure helpers shared between orchestrator and tests.
+  - Wiring: `CoordinationConfig.{criteria_mode, bootstrap_max_per_agent_per_round, bootstrap_max_total}`, parsed in `cli.py:_parse_coordination_config`, validated in `CoordinationConfig._validate_criteria_mode`, excluded from API params in `backend/base.py:get_base_excluded_config_params`.
+  - SDK path (`Orchestrator._init_checklist_tool_sdk`): the `submit_checklist` schema gains an optional `proposed_criteria` array in `bootstrap_inline` mode only; static-mode agents see the historical schema unchanged. Parsed proposals land on `AgentState.criteria_proposals` and are drained into the orchestrator's accumulator on each criteria resolution.
+  - Stdio path (`massgen/mcp_tools/checklist_tools_server.py`): the FastMCP `submit_checklist` tool conditionally adds `proposed_criteria` to its `inspect.Signature` when `state["criteria_mode"] == "bootstrap_inline"`. Emissions are appended to `proposed_criteria.jsonl` in the specs directory; `Orchestrator._drain_pending_criteria_proposals` reads and truncates the file each pass.
+  - New configs: `massgen/configs/coordination/bootstrap_inline_criteria.yaml` and `bootstrap_subagent_criteria.yaml` (forked from `features/fast_iteration.yaml`).
+  - Tests: 30 new tests in `massgen/tests/test_bootstrap_criteria.py` cover merge/dedup/cap, config validation, `AgentState` field, `_resolve_effective_checklist_criteria` augmentation across criteria sources, `EvaluationSection` rendering gating, `_drain_pending_criteria_proposals` behavior, and a round-N → round-N+1 propagation end-to-end.
+
+### Why this matters
+- Removes a cold-start friction: users no longer need to pre-author criteria for a new task. The first round produces both answers *and* the criteria the second round must rise to.
+- Anti-Goodhart by construction — criteria come from observed gaps, not priors that may not match the task.
+- Uses MassGen's multi-round/multi-agent shape directly; the cross-agent channel (workspace sharing) already existed, so no new transport was needed.
+
 ## Recent Releases
 
 **v0.1.84 (May 8, 2026)** - TUI Consensus Map

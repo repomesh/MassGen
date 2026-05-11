@@ -3712,6 +3712,9 @@ def _parse_coordination_config(coord_cfg: dict[str, Any]) -> "CoordinationConfig
         max_verifications_per_round=coord_cfg.get("max_verifications_per_round"),
         max_internal_fix_loops=coord_cfg.get("max_internal_fix_loops"),
         skip_redundant_scaffolding=coord_cfg.get("skip_redundant_scaffolding", False),
+        criteria_mode=coord_cfg.get("criteria_mode", "static"),
+        bootstrap_max_per_agent_per_round=coord_cfg.get("bootstrap_max_per_agent_per_round", 3),
+        bootstrap_max_total=coord_cfg.get("bootstrap_max_total", 30),
     )
 
 

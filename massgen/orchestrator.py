@@ -144,6 +144,10 @@ class AgentState:
     # Decomposition mode fields
     stop_summary: str | None = None  # Summary from stop tool
     stop_status: str | None = None  # "complete" or "blocked"
+    # Discriminative criteria emergence (v0.1.85): proposals this agent has
+    # emitted in the current round that are pending merge into the orchestrator
+    # accumulator at round transition. Each entry: {text, category, anti_patterns?}.
+    criteria_proposals: list[dict[str, Any]] = field(default_factory=list)
 
 
 class Orchestrator(ChatAgent):
@@ -484,6 +488,13 @@ class Orchestrator(ChatAgent):
         # If criteria are passed in (from previous turn), use them and mark as already generated
         self._generated_evaluation_criteria: list | None = generated_evaluation_criteria
         self._evaluation_criteria_generated: bool = bool(generated_evaluation_criteria)
+
+        # Discriminative criteria emergence (v0.1.85): accumulator of criteria
+        # emitted by agents (Variant A) or a between-rounds critic (Variant B).
+        # Each entry: {text, category, anti_patterns?, verify_by?}. Merged across
+        # rounds; capped by coordination_config.bootstrap_max_total.
+        self._bootstrap_criteria_accumulator: list[dict[str, Any]] = []
+        self._bootstrap_round_index: int = 0
 
         # Prompt improvement guard
         self._prompt_improved: bool = False
@@ -931,6 +942,117 @@ class Orchestrator(ChatAgent):
 
         return None, None, None, None, None
 
+    def _drain_pending_criteria_proposals(self) -> None:
+        """Move all agents' pending criteria_proposals into the orchestrator accumulator.
+
+        Called from criteria resolution and checklist refresh paths so that
+        emissions from one round propagate to subsequent rounds (or to teammates
+        within the same round, once the resolve fires again). Dedup is exact-text
+        per ``merge_proposals``; FIFO eviction enforces ``bootstrap_max_total``.
+
+        On a successful merge the accumulator is also persisted as
+        ``bootstrap_criteria_accumulator.json`` in the session log directory for
+        offline inspection.
+
+        In ``bootstrap_subagent`` mode a one-time scaffolding notice is logged.
+        The actual LLM-driven discriminator path is queued for v0.1.86; the
+        accumulator still accepts seeded entries via tests and external tooling.
+        """
+        coord = getattr(self.config, "coordination_config", None)
+        if coord is None:
+            return
+        from massgen.bootstrap_criteria import is_bootstrap_mode, merge_proposals
+
+        criteria_mode = getattr(coord, "criteria_mode", "static")
+        if not is_bootstrap_mode(criteria_mode):
+            return
+        if criteria_mode == "bootstrap_subagent" and not getattr(self, "_bootstrap_subagent_notice_logged", False):
+            logger.info(
+                "[bootstrap_criteria] criteria_mode=bootstrap_subagent is wired; "
+                "the in-process LLM discriminator pass is queued for v0.1.86. "
+                "The accumulator still propagates any seeded entries.",
+            )
+            self._bootstrap_subagent_notice_logged = True
+        cap = int(getattr(coord, "bootstrap_max_total", 30) or 0)
+        agent_states = getattr(self, "agent_states", {}) or {}
+        merged_any = False
+        for state in agent_states.values():
+            pending = getattr(state, "criteria_proposals", None)
+            if not pending:
+                continue
+            before = len(self._bootstrap_criteria_accumulator)
+            self._bootstrap_criteria_accumulator = merge_proposals(
+                self._bootstrap_criteria_accumulator,
+                list(pending),
+                cap=cap,
+            )
+            if len(self._bootstrap_criteria_accumulator) != before:
+                merged_any = True
+            state.criteria_proposals = []
+        # Stdio path: agents on non-SDK backends emit by appending to
+        # proposed_criteria.jsonl next to their checklist specs. Harvest and
+        # truncate so the same entries aren't re-merged on subsequent drains.
+        agents = getattr(self, "agents", {}) or {}
+        for agent in agents.values():
+            backend = getattr(agent, "backend", None)
+            specs_path = getattr(backend, "_checklist_specs_path", None)
+            if not specs_path:
+                continue
+            jsonl_path = Path(specs_path).parent / "proposed_criteria.jsonl"
+            if not jsonl_path.exists():
+                continue
+            harvested: list[dict[str, Any]] = []
+            try:
+                with jsonl_path.open(encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            entry = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if isinstance(entry, dict) and (entry.get("text") or "").strip():
+                            harvested.append(entry)
+                jsonl_path.unlink()
+            except Exception as exc:
+                logger.debug("[bootstrap_criteria] failed to read stdio emissions at %s: %s", jsonl_path, exc)
+                continue
+            if not harvested:
+                continue
+            before = len(self._bootstrap_criteria_accumulator)
+            self._bootstrap_criteria_accumulator = merge_proposals(
+                self._bootstrap_criteria_accumulator,
+                harvested,
+                cap=cap,
+            )
+            if len(self._bootstrap_criteria_accumulator) != before:
+                merged_any = True
+        if merged_any:
+            self._persist_bootstrap_accumulator()
+
+    def _persist_bootstrap_accumulator(self) -> None:
+        """Write the current bootstrap accumulator snapshot to the session log dir.
+
+        Best-effort: silently skips if no session log directory is resolvable.
+        File path: ``<log_dir>/bootstrap_criteria_accumulator.json``.
+        """
+        try:
+            log_dir = get_log_session_dir()
+        except Exception:
+            log_dir = None
+        if not log_dir:
+            return
+        try:
+            out_path = Path(log_dir) / "bootstrap_criteria_accumulator.json"
+            payload = {
+                "count": len(self._bootstrap_criteria_accumulator),
+                "criteria": list(self._bootstrap_criteria_accumulator),
+            }
+            out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except Exception as exc:  # pragma: no cover — best-effort logging
+            logger.debug("[bootstrap_criteria] failed to persist accumulator: %s", exc)
+
     def _resolve_effective_checklist_criteria(
         self,
         agent_id: str | None = None,
@@ -940,6 +1062,11 @@ class Orchestrator(ChatAgent):
         Returns:
             (items, categories, verify_by, source, anti_patterns, score_anchors)
         """
+        self._drain_pending_criteria_proposals()
+        from massgen.bootstrap_criteria import (
+            augment_with_accumulator,
+            is_bootstrap_mode,
+        )
         from massgen.system_prompt_sections import (
             _CHECKLIST_ITEM_ANTI_PATTERNS,
             _CHECKLIST_ITEM_ANTI_PATTERNS_CHANGEDOC,
@@ -951,13 +1078,14 @@ class Orchestrator(ChatAgent):
             _CHECKLIST_ITEMS_CHANGEDOC,
         )
 
+        coord = getattr(self.config, "coordination_config", None)
+        criteria_mode = getattr(coord, "criteria_mode", "static")
+        accumulator = list(getattr(self, "_bootstrap_criteria_accumulator", []) or [])
+        use_accumulator = is_bootstrap_mode(criteria_mode) and bool(accumulator)
+
         custom_items, item_categories, item_verify_by, item_anti_patterns, item_score_anchors = self._get_active_criteria(agent_id)
         if custom_items is not None:
-            inline = getattr(
-                getattr(self.config, "coordination_config", None),
-                "checklist_criteria_inline",
-                None,
-            )
+            inline = getattr(coord, "checklist_criteria_inline", None)
             if inline:
                 source = "inline"
             elif agent_id and self._get_decomposition_criteria_for_agent(agent_id) is not None:
@@ -966,7 +1094,29 @@ class Orchestrator(ChatAgent):
                 source = "generated"
             else:
                 source = "preset"
+            if use_accumulator:
+                items, cats, vby, anti, anchors = augment_with_accumulator(
+                    custom_items,
+                    item_categories or {},
+                    item_verify_by,
+                    item_anti_patterns,
+                    item_score_anchors,
+                    accumulator,
+                )
+                return items, cats, vby, source, anti, anchors
             return custom_items, item_categories or {}, item_verify_by, source, item_anti_patterns, item_score_anchors
+
+        if use_accumulator:
+            # No base source — accumulator stands alone with source label "bootstrap".
+            items, cats, vby, anti, anchors = augment_with_accumulator(
+                [],
+                {},
+                None,
+                None,
+                None,
+                accumulator,
+            )
+            return items, cats, vby, "bootstrap", anti, anchors
 
         if self._is_changedoc_enabled():
             return (
@@ -1128,6 +1278,14 @@ class Orchestrator(ChatAgent):
                 "item_verify_by": item_verify_by or {},
                 "item_score_anchors": item_score_anchors or {},
                 "criteria_source": criteria_source,
+                # Discriminative criteria emergence (v0.1.85): exposes
+                # proposed_criteria to the stdio submit_checklist schema when
+                # bootstrap_inline is active. SDK path uses its own schema branch.
+                "criteria_mode": getattr(
+                    getattr(self.config, "coordination_config", None),
+                    "criteria_mode",
+                    "static",
+                ),
                 # Novelty subagent guidance only when novelty type is available
                 "novelty_subagent_enabled": "novelty" in _lowered_types,
                 # Critic subagent guidance only when critic type is available
@@ -1285,6 +1443,35 @@ class Orchestrator(ChatAgent):
             },
             "required": ["scores"],
         }
+        # Bootstrap criteria emergence (Variant A): expose proposed_criteria so
+        # the agent can emit criteria a stronger answer would satisfy. Schema
+        # only gains the field in bootstrap_inline mode; static-mode agents see
+        # the historical schema unchanged.
+        _criteria_mode = getattr(
+            getattr(self.config, "coordination_config", None),
+            "criteria_mode",
+            "static",
+        )
+        if _criteria_mode == "bootstrap_inline":
+            input_schema["properties"]["proposed_criteria"] = {
+                "type": "array",
+                "description": (
+                    "Optional list of new evaluation criteria a stronger answer would "
+                    "satisfy that the current answers do NOT yet satisfy. Each entry: "
+                    '{"text": str, "category": "primary"|"standard"|"stretch", '
+                    '"anti_patterns": [str, ...]}. Keep short (<=3). Skip when no gap '
+                    "is visible."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "category": {"type": "string"},
+                        "anti_patterns": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["text"],
+                },
+            }
 
         # draft_approach input schema
         propose_schema = {
@@ -1366,25 +1553,36 @@ class Orchestrator(ChatAgent):
             "diagnostic_report_artifact_paths": [],
         }
 
+        _base_description = (
+            (
+                "Submit your checklist evaluation for your current subtask output. "
+                'Use flat scores like {"E1": {"score": 8, "reasoning": "..."}, ...}. '
+                "Each score entry needs 'score' (0-10) and 'reasoning'. "
+                "Use 'report_path' to pass a markdown gap report when required."
+            )
+            if _is_decomposition
+            else (
+                "Submit your checklist evaluation. When multiple agents exist, "
+                "scores must use per-agent format: "
+                '{"agent1.1": {"E1": {"score": 8, "reasoning": "..."}, ...}, '
+                '"agent2.1": {...}}. '
+                "Each score entry needs 'score' (0-10) and 'reasoning'. "
+                "Use 'report_path' to pass a markdown gap report when required."
+            )
+        )
+        if _criteria_mode == "bootstrap_inline":
+            _base_description = _base_description + (
+                " ALSO emit 'proposed_criteria': a short list (<=3) of criterion "
+                'objects {"text": "...", "category": "primary|standard|stretch", '
+                '"anti_patterns": ["..."]} describing quality dimensions a stronger '
+                "answer would satisfy that the current answers do NOT. These flow "
+                "into subsequent rounds' checklist. Skip only when no genuine gap "
+                "is visible — at most one round in three should skip entirely."
+            )
+
         @tool(
             name="submit_checklist",
-            description=(
-                (
-                    "Submit your checklist evaluation for your current subtask output. "
-                    'Use flat scores like {"E1": {"score": 8, "reasoning": "..."}, ...}. '
-                    "Each score entry needs 'score' (0-10) and 'reasoning'. "
-                    "Use 'report_path' to pass a markdown gap report when required."
-                )
-                if _is_decomposition
-                else (
-                    "Submit your checklist evaluation. When multiple agents exist, "
-                    "scores must use per-agent format: "
-                    '{"agent1.1": {"E1": {"score": 8, "reasoning": "..."}, ...}, '
-                    '"agent2.1": {...}}. '
-                    "Each score entry needs 'score' (0-10) and 'reasoning'. "
-                    "Use 'report_path' to pass a markdown gap report when required."
-                )
-            ),
+            description=_base_description,
             input_schema=input_schema,
         )
         async def submit_checklist_handler(args, _state=state):
@@ -1490,6 +1688,35 @@ class Orchestrator(ChatAgent):
                     },
                 )
                 agent_state.checklist_calls_this_round += 1
+                # Bootstrap criteria (Variant A): capture proposed_criteria emitted with this
+                # checklist submission. They do not affect the current verdict; they accumulate
+                # for merge into subsequent rounds' effective criteria.
+                _proposed = args.get("proposed_criteria")
+                if isinstance(_proposed, list) and _proposed:
+                    _per_agent_cap = int(
+                        getattr(
+                            getattr(_orchestrator.config, "coordination_config", None),
+                            "bootstrap_max_per_agent_per_round",
+                            3,
+                        ),
+                    )
+                    _agent_round_proposals = list(agent_state.criteria_proposals)
+                    for _entry in _proposed:
+                        if not isinstance(_entry, dict):
+                            continue
+                        _text = (_entry.get("text") or "").strip()
+                        if not _text:
+                            continue
+                        _agent_round_proposals.append(
+                            {
+                                "text": _text,
+                                "category": str(_entry.get("category", "standard")).lower(),
+                                "anti_patterns": list(_entry.get("anti_patterns") or []) or None,
+                            },
+                        )
+                    if _per_agent_cap > 0 and len(_agent_round_proposals) > _per_agent_cap:
+                        _agent_round_proposals = _agent_round_proposals[-_per_agent_cap:]
+                    agent_state.criteria_proposals = _agent_round_proposals
                 if getattr(agent_state, "pending_checklist_recheck_labels", set()) and (
                     bool(_state.get("decomposition_mode", False)) or (submitted_agent_labels and getattr(agent_state, "pending_checklist_recheck_labels", set()).issubset(submitted_agent_labels))
                 ):

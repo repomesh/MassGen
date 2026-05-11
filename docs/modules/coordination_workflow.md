@@ -736,6 +736,65 @@ winner-biased prompt ("your answer was selected as the best — use it as the
 primary basis and incorporate strongest elements from others"). Without voting,
 the prompt is neutral ("synthesize the strongest parts across all answers").
 
+## Discriminative Criteria Emergence (v0.1.85)
+
+By default, evaluation criteria for `submit_checklist` are fixed at session
+start — provided via `--eval-criteria FILE`, `--checklist-criteria-preset`, or
+the LLM criteria generator. `coordination.criteria_mode` lets criteria
+*emerge* from observed gaps across rounds instead.
+
+```yaml
+orchestrator:
+  coordination:
+    criteria_mode: bootstrap_inline   # static | bootstrap_inline | bootstrap_subagent
+    bootstrap_max_per_agent_per_round: 3   # per-call cap on emissions
+    bootstrap_max_total: 30                # global FIFO cap on accumulator (0 = unlimited)
+```
+
+**`static`** (default): the historical behavior — criteria don't change during
+the run.
+
+**`bootstrap_inline`** (fully functional on all checklist-tool backends —
+SDK *and* stdio): each agent's `submit_checklist` schema gains an optional
+`proposed_criteria` array. Agents emit short lists describing criteria a
+stronger answer would satisfy that the current answers do *not*. Proposals
+are deduped by exact text, FIFO-capped, and merged into subsequent rounds'
+effective checklist via `EvaluationSection`. SDK path (Claude Code) parses
+the field directly in the handler; stdio backends (gemini, codex, response,
+chat_completions, claude, grok) use a JSONL emission channel
+(`proposed_criteria.jsonl` next to the checklist specs) which the orchestrator
+drains on each criteria resolution.
+
+**`bootstrap_subagent`** (wired, LLM step queued for v0.1.86): same accumulator
+pipeline, but criteria are intended to come from a between-rounds critic
+rather than the agents themselves. Today the accumulator still accepts seeded
+entries and propagates them — the in-process LLM discriminator call lands
+next release.
+
+### Inspecting emerged criteria
+
+When the accumulator changes, a snapshot is persisted to:
+
+```
+.massgen/massgen_logs/<session>/bootstrap_criteria_accumulator.json
+```
+
+### When to use it
+
+- New / unfamiliar task types where pre-authored criteria would be a guess.
+- Tasks where round 1 reveals quality dimensions you didn't anticipate.
+- Multi-round runs where iteration depth matters more than starting precision.
+
+Pre-authored criteria (`--eval-criteria` / presets) still work — bootstrap
+mode *augments* the configured base, it doesn't replace it. The priority
+waterfall is: inline > decomposition-agent > **bootstrap-accumulator
+(appended)** > generated > preset > generic fallback.
+
+Example configs:
+
+- `massgen/configs/coordination/bootstrap_inline_criteria.yaml`
+- `massgen/configs/coordination/bootstrap_subagent_criteria.yaml`
+
 ## Related Docs
 
 - `docs/modules/architecture.md` - core system architecture and backend hierarchy

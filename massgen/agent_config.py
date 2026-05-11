@@ -258,6 +258,15 @@ class CoordinationConfig:
     improvements: dict[str, Any] = field(default_factory=dict)  # Quality gate config for draft_approach
     checklist_criteria_preset: str | None = None  # "persona" | "decomposition" | "evaluation" | "prompt" | "analysis" | "planning" | "spec" | "round_evaluator"
     checklist_criteria_inline: list[dict[str, str]] | None = None  # [{text, category: primary|standard|stretch, anti_patterns?, verify_by?}]
+    # Discriminative criteria emergence (v0.1.85):
+    #   "static" (default, current behavior — criteria fixed at session start)
+    #   "bootstrap_inline" (agents emit criteria with each round's submission)
+    #   "bootstrap_subagent" (a between-rounds critic agent emits criteria)
+    # Emitted criteria accumulate across rounds and are merged into the
+    # effective checklist criteria for subsequent rounds.
+    criteria_mode: str = "static"
+    bootstrap_max_per_agent_per_round: int = 3  # Cap per agent per round
+    bootstrap_max_total: int = 30  # Global FIFO cap on accumulator size (0 = unlimited)
     resume_from_log: dict[str, Any] | None = None  # {log_path: str, round: int}
     # Checkpoint coordination fields
     checkpoint_enabled: bool = False  # Enable checkpoint coordination mode
@@ -292,6 +301,21 @@ class CoordinationConfig:
         self._validate_learning_capture_mode()
         self._validate_pre_collab_voting_threshold()
         self._validate_improvements()
+        self._validate_criteria_mode()
+
+    def _validate_criteria_mode(self):
+        """Validate criteria_mode and bootstrap caps."""
+        from .bootstrap_criteria import validate_criteria_mode
+
+        validate_criteria_mode(self.criteria_mode)
+        if isinstance(self.bootstrap_max_per_agent_per_round, bool) or not isinstance(self.bootstrap_max_per_agent_per_round, int) or self.bootstrap_max_per_agent_per_round < 0:
+            raise ValueError(
+                "bootstrap_max_per_agent_per_round must be a non-negative integer",
+            )
+        if isinstance(self.bootstrap_max_total, bool) or not isinstance(self.bootstrap_max_total, int) or self.bootstrap_max_total < 0:
+            raise ValueError(
+                "bootstrap_max_total must be a non-negative integer (0 = unlimited)",
+            )
 
     def _validate_timeout_config(self):
         """Validate subagent timeout configuration."""
@@ -1251,6 +1275,9 @@ class AgentConfig:
             "max_verifications_per_round": self.coordination_config.max_verifications_per_round,
             "max_internal_fix_loops": self.coordination_config.max_internal_fix_loops,
             "skip_redundant_scaffolding": self.coordination_config.skip_redundant_scaffolding,
+            "criteria_mode": self.coordination_config.criteria_mode,
+            "bootstrap_max_per_agent_per_round": self.coordination_config.bootstrap_max_per_agent_per_round,
+            "bootstrap_max_total": self.coordination_config.bootstrap_max_total,
         }
 
         # Handle debug fields

@@ -1376,10 +1376,43 @@ def _register_checklist_tool(mcp: fastmcp.FastMCP, specs_path: Path, injection_d
     async def submit_checklist(
         scores: dict,
         report_path: str = "",
+        proposed_criteria: list = None,
     ) -> str:
         current = _read_specs(specs_path)
         current_items = current.get("items", items)
         state = current.get("state", {})
+        # Bootstrap criteria emergence (Variant A) — accept proposed_criteria only
+        # when criteria_mode == "bootstrap_inline". Persisted to a sibling JSONL
+        # file the orchestrator drains in _drain_pending_criteria_proposals.
+        if proposed_criteria and state.get("criteria_mode") == "bootstrap_inline":
+            try:
+                if isinstance(proposed_criteria, str):
+                    try:
+                        proposed_criteria = json.loads(proposed_criteria)
+                    except (json.JSONDecodeError, TypeError):
+                        proposed_criteria = None
+                if isinstance(proposed_criteria, list):
+                    out_path = Path(specs_path).parent / "proposed_criteria.jsonl"
+                    with out_path.open("a", encoding="utf-8") as _f:
+                        for entry in proposed_criteria:
+                            if not isinstance(entry, dict):
+                                continue
+                            text = (entry.get("text") or "").strip()
+                            if not text:
+                                continue
+                            _f.write(
+                                json.dumps(
+                                    {
+                                        "text": text,
+                                        "category": str(entry.get("category", "standard")).lower(),
+                                        "anti_patterns": list(entry.get("anti_patterns") or []) or None,
+                                    },
+                                )
+                                + "\n",
+                            )
+            except Exception:
+                # Non-fatal: emission is a side-channel; don't block the checklist verdict.
+                pass
         redirect_message = build_round_evaluator_task_mode_redirect(state)
         if redirect_message:
             return json.dumps({"error": redirect_message})
@@ -1557,12 +1590,27 @@ def _register_checklist_tool(mcp: fastmcp.FastMCP, specs_path: Path, injection_d
         )
 
     # Set proper signature so FastMCP sees all parameters
-    sig = inspect.Signature(
-        [
-            inspect.Parameter("scores", inspect.Parameter.POSITIONAL_OR_KEYWORD),
-            inspect.Parameter("report_path", inspect.Parameter.POSITIONAL_OR_KEYWORD, default=""),
-        ],
-    )
+    _params = [
+        inspect.Parameter("scores", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        inspect.Parameter("report_path", inspect.Parameter.POSITIONAL_OR_KEYWORD, default=""),
+    ]
+    if schema_state.get("criteria_mode") == "bootstrap_inline":
+        _params.append(
+            inspect.Parameter("proposed_criteria", inspect.Parameter.POSITIONAL_OR_KEYWORD, default=None),
+        )
+        # Also surface the new field in the tool description so the model
+        # bridges "the prompt asks me to emit X" with "this tool has a
+        # parameter X". Without this hint, schemas alone aren't enough — the
+        # model often submits scores + report_path and skips the new field.
+        submit_checklist.__doc__ = (submit_checklist.__doc__ or "") + (
+            " ALSO emit 'proposed_criteria': a short list (<=3) of criterion "
+            'objects {"text": "...", "category": "primary|standard|stretch", '
+            '"anti_patterns": ["..."]} describing quality dimensions a stronger '
+            "answer would satisfy that the current answers do NOT. These flow "
+            "into subsequent rounds' checklist. Skip only when no genuine gap "
+            "is visible — at most one round in three should skip entirely."
+        )
+    sig = inspect.Signature(_params)
     submit_checklist.__signature__ = sig
 
     mcp.tool(
