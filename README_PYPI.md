@@ -121,15 +121,15 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🗺️ Roadmap</h3></summary>
 
-- [Recent Achievements (v0.1.84)](#recent-achievements-v0184)
-- [Previous Achievements (v0.0.3 - v0.1.83)](#previous-achievements-v003---v0183)
+- [Recent Achievements (v0.1.85)](#recent-achievements-v0185)
+- [Previous Achievements (v0.0.3 - v0.1.84)](#previous-achievements-v003---v0184)
 - [Key Future Enhancements](#key-future-enhancements)
   - Bug Fixes & Backend Improvements
   - Advanced Agent Collaboration
   - Expanded Model, Tool & Agent Integrations
   - Improved Performance & Scalability
   - Enhanced Developer Experience
-- [v0.1.85 Roadmap](#v0185-roadmap)
+- [v0.1.86 Roadmap](#v0186-roadmap)
 </details>
 
 <details open>
@@ -154,18 +154,18 @@ This project started with the "threads of thought" and "iterative refinement" id
 
 ---
 
-## 🆕 Latest Features (v0.1.84)
+## 🆕 Latest Features (v0.1.85)
 
-**🎉 Released: May 8, 2026**
+**🎉 Released: May 11, 2026**
 
-**What's New in v0.1.84:**
-- **🗺️ TUI Consensus Map** - New compact visual map below the agent status ribbon during multi-agent runs. Shows agent nodes with latest answer labels, vote arrows, current vote leader, winner state, and waiting/working indicators — without replacing the timeline.
-- **⚡ Event-Driven Updates** - Map state is driven entirely by existing coordination events (`answer_submitted`, `vote`, `winner_selected`, etc.) — no backend schema changes required, with a direct-callback fallback path.
+**What's New in v0.1.85:**
+- **🧪 Discriminative Criteria Emergence (`criteria_mode`)** - New `orchestrator.coordination.criteria_mode` lets evaluation criteria emerge from observed gaps across rounds instead of being pre-authored. The `bootstrap_inline` variant is fully functional on all backends with checklist tool support — agents emit `proposed_criteria` alongside `submit_checklist`, the accumulator dedupes/caps, and the next round's checklist is augmented automatically.
+- **🛡️ Anti-Goodhart by Construction** - Criteria come from observed gaps rather than priors that may not match the task; no cold-start friction for new tasks.
 
-**Try v0.1.84 Features:**
+**Try v0.1.85 Features:**
 ```bash
-pip install massgen==0.1.84
-uv run massgen --config massgen/configs/basic/multi/gemini_gpt5_claude.yaml "Create an SVG of an AI agent coding."
+pip install massgen==0.1.85
+uv run massgen --config massgen/configs/coordination/bootstrap_inline_criteria.yaml "Create an SVG of an AI agent coding."
 ```
 
 → [See full release history and examples](massgen/configs/README.md#release-history--examples)
@@ -1237,17 +1237,21 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 ⚠️ **Early Stage Notice:** As MassGen is in active development, please expect upcoming breaking architecture changes as we continue to refine and improve the system.
 
-### Recent Achievements (v0.1.84)
+### Recent Achievements (v0.1.85)
 
-**🎉 Released: May 8, 2026**
+**🎉 Released: May 11, 2026**
 
-#### TUI Consensus Map
-- **TUI Consensus Map** ([#1085](https://github.com/massgen/MassGen/pull/1085)): Compact visual map below the agent status ribbon during multi-agent runs that summarizes coordination state without replacing the timeline. Shows one node per agent with latest answer labels, vote direction arrows, current vote leader, winner state, and waiting/working indicators
-- **Visibility Logic** ([#1085](https://github.com/massgen/MassGen/pull/1085)): Hidden on welcome screen and single-agent runs — only shown when more than one active agent is coordinating
-- **Event-Driven State Updates** ([#1085](https://github.com/massgen/MassGen/pull/1085)): Driven by existing coordination events (`answer_submitted`, `vote`, `agent_stopped`, `winner_selected`, `final_presentation_start`, `agent_restart`, `phase_change`, `context_received`) — no backend schema changes required
-- **Direct-Callback Fallback** ([#1085](https://github.com/massgen/MassGen/pull/1085)): Map remains accurate even when direct TUI callbacks update agent status or votes outside the unified event pipeline
+#### Discriminative Criteria Emergence (`criteria_mode`)
+- **`bootstrap_inline` Variant**: Fully functional on all backends with checklist tool support — agents emit a small `proposed_criteria` list alongside each `submit_checklist` call describing criteria a stronger answer would satisfy that the current answers do *not*. Proposals are deduped, FIFO-capped (`bootstrap_max_total`, default 30), persisted to `bootstrap_criteria_accumulator.json` in the session log dir, and merged into the next round's effective checklist via `EvaluationSection`
+- **`bootstrap_subagent` Variant (wired, LLM step deferred)**: Same accumulator pipeline but criteria are intended to come from a between-rounds critic; the in-process LLM discriminator pass is queued for v0.1.86
+- **`CoordinationConfig.criteria_mode`** + `bootstrap_max_per_agent_per_round` + `bootstrap_max_total` config fields, parsed in `cli.py:_parse_coordination_config`, validated in `CoordinationConfig._validate_criteria_mode`
+- **Cross-backend coverage**: SDK path (Claude Code) gets the field directly in the in-process tool schema; stdio backends (gemini, codex, response, chat_completions, claude, grok) get a JSONL emission channel — `proposed_criteria.jsonl` next to checklist specs, drained by the orchestrator on each criteria resolution
+- **Anti-Goodhart by construction**: Criteria come from observed gaps, not priors that may not match the task
+- **Example Configs**: `massgen/configs/coordination/bootstrap_inline_criteria.yaml` and `bootstrap_subagent_criteria.yaml`
 
-### Previous Achievements (v0.0.3 - v0.1.83)
+### Previous Achievements (v0.0.3 - v0.1.84)
+
+✅ **TUI Consensus Map (v0.1.84)**: Compact visual map below the agent status ribbon during multi-agent runs that summarizes coordination state — agent nodes with latest answer labels, vote arrows, current leader, winner state — driven by existing coordination events without backend schema changes.
 
 ✅ **In-Session Standalone Checkpoint MCP Integration (v0.1.83)**: The standalone checkpoint MCP server can now run inside a normal MassGen single-agent session via `coordination.standalone_checkpoint` config block. Enhanced TUI tool card visualization distinguishes primary checkpoint operations from system tasks.
 
@@ -1560,12 +1564,13 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 We welcome community contributions to achieve these goals.
 
-### v0.1.85 Roadmap
+### v0.1.86 Roadmap
 
-Version 0.1.85 focuses on image/video edit capabilities (deferred from v0.1.84):
+Version 0.1.86 focuses on completing the discriminative criteria emergence story and picking up deferred multimodal work:
 
 #### Planned Features
-- **Image/Video Edit Capabilities** ([#959](https://github.com/massgen/MassGen/issues/959)): Investigate and support image and video editing capabilities across providers, with multi-turn editing workflows via continuation IDs
+- **`bootstrap_subagent` LLM Discriminator**: In-process LLM pass that turns the wired-but-pending `bootstrap_subagent` mode into a fully functional between-rounds critic — pairs with the v0.1.85 accumulator infrastructure
+- **Image/Video Edit Capabilities** ([#959](https://github.com/massgen/MassGen/issues/959)): Image and video editing across providers with multi-turn editing workflows via continuation IDs — deferred from v0.1.84/v0.1.85
 
 ---
 

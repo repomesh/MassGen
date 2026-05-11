@@ -227,20 +227,30 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.84 - Latest
+### v0.1.85 - Latest
+**New Features:** Discriminative Criteria Emergence (`criteria_mode`)
+
+**Key Features:**
+- **`bootstrap_inline` Variant**: Fully functional on all backends with checklist tool support — agents emit `proposed_criteria` alongside `submit_checklist`, the accumulator dedupes/caps, and the next round's checklist is augmented automatically
+- **`bootstrap_subagent` Variant**: Same accumulator pipeline, LLM discriminator pass queued for v0.1.86
+- **Anti-Goodhart by Construction**: Criteria come from observed gaps, not priors — and no cold-start friction for new tasks
+- **Cross-Backend Coverage**: SDK path (Claude Code) wires the field into the in-process tool schema; stdio backends emit through a JSONL channel drained by the orchestrator
+- **Example Configs**: `massgen/configs/coordination/bootstrap_inline_criteria.yaml` and `bootstrap_subagent_criteria.yaml`
+
+**Try It:**
+```bash
+pip install massgen==0.1.85
+uv run massgen --config massgen/configs/coordination/bootstrap_inline_criteria.yaml "Create an SVG of an AI agent coding."
+```
+
+### v0.1.84
 **New Features:** TUI Consensus Map
 
 **Key Features:**
 - **TUI Consensus Map**: Compact visual map below the agent status ribbon during multi-agent runs that summarizes coordination state without replacing the timeline. Shows one node per agent with latest answer labels, vote arrows, current vote leader, winner state, and waiting/working indicators
 - **Visibility Logic**: Hidden on welcome screen and single-agent runs — only shown when more than one active agent is coordinating
-- **Event-Driven State Updates**: Driven by existing coordination events (`answer_submitted`, `vote`, `agent_stopped`, `winner_selected`, `final_presentation_start`, `agent_restart`, `phase_change`, `context_received`) — no backend schema changes required
+- **Event-Driven State Updates**: Driven by existing coordination events without backend schema changes
 - **Direct-Callback Fallback**: Map remains accurate when direct TUI callbacks update agent status or votes
-
-**Try It:**
-```bash
-pip install massgen==0.1.84
-uv run massgen --config massgen/configs/basic/multi/gemini_gpt5_claude.yaml "Create an SVG of an AI agent coding."
-```
 
 ### v0.1.83
 **New Features:** In-Session Standalone Checkpoint MCP Integration

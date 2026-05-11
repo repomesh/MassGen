@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.84
+**Current Version:** v0.1.85
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** May 8, 2026
+**Last Updated:** May 11, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,9 +42,28 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.85** | 05/11/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.84 ([#959](https://github.com/massgen/MassGen/issues/959)) |
+| **v0.1.86** | 05/13/26 | `bootstrap_subagent` LLM Discriminator | @ncrispino | Complete the discriminative criteria story — between-rounds LLM critic that proposes criteria for the accumulator wired in v0.1.85 |
+| | | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.84/v0.1.85 ([#959](https://github.com/massgen/MassGen/issues/959)) |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.85 - Discriminative Criteria Emergence (`criteria_mode`) (Completed)
+
+**Released:** May 11, 2026
+
+### Features
+- **`bootstrap_inline` Variant (fully functional)**: Agents emit `proposed_criteria` alongside `submit_checklist`; proposals are deduped, FIFO-capped, persisted to `bootstrap_criteria_accumulator.json`, and merged into the next round's checklist via `EvaluationSection`. Works on all backends with checklist tool support — SDK (Claude Code) via in-process schema, stdio backends via a JSONL emission channel
+- **`bootstrap_subagent` Variant (wired, LLM step deferred)**: Same accumulator pipeline; in-process LLM discriminator pass queued for v0.1.86
+- **New Module**: `massgen/bootstrap_criteria.py` with `merge_proposals`, `augment_with_accumulator`, `is_bootstrap_mode`, `validate_criteria_mode`
+- **Config Fields**: `CoordinationConfig.{criteria_mode, bootstrap_max_per_agent_per_round, bootstrap_max_total}`
+- **Anti-Goodhart by construction**: Criteria come from observed gaps, not priors
+- **Example Configs**: `massgen/configs/coordination/{bootstrap_inline_criteria,bootstrap_subagent_criteria}.yaml`
+- **Tests**: 30 new tests in `massgen/tests/test_bootstrap_criteria.py` (476 lines) covering merge/dedup/cap, config validation, augmentation, rendering gating, and round-N → round-N+1 propagation
+
+### Notes
+- Originally-planned Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) deferred to v0.1.86.
 
 ---
 
@@ -185,17 +204,22 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.85 - Image/Video Edit Capabilities (Deferred from v0.1.84)
+## 📋 v0.1.86 - `bootstrap_subagent` LLM Discriminator & Image/Video Edit
 
 ### Features
 
-**1. Check Image/Video Edit Capabilities** (@ncrispino)
+**1. `bootstrap_subagent` LLM Discriminator** (@ncrispino)
+- In-process LLM pass that turns the wired-but-pending `bootstrap_subagent` mode into a fully functional between-rounds critic — pairs with the v0.1.85 accumulator infrastructure
+- **Use Case**: Get the same discriminative-criteria-emergence behavior as `bootstrap_inline`, but driven by a dedicated critic instead of by the answering agents themselves
+
+**2. Image/Video Edit Capabilities (Deferred from v0.1.84/v0.1.85)** (@ncrispino)
 - Issue: [#959](https://github.com/massgen/MassGen/issues/959)
 - Investigate and support image and video editing capabilities across providers
 - Multi-turn editing workflows with continuation IDs
 - **Use Case**: Enable iterative media editing within multi-agent workflows
 
 ### Success Criteria
+- ✅ `bootstrap_subagent` runs an LLM critic between rounds and seeds the accumulator
 - ✅ Image editing capabilities documented and tested
 - ✅ Video editing capabilities documented and tested
 
