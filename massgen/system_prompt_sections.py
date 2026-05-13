@@ -4263,23 +4263,21 @@ execution strategy when they appear."""
             evaluation_section += """
 
 **CRITERIA EMERGENCE (DISCRIMINATIVE):**
-Alongside your checklist submission, propose new evaluation criteria a stronger \
-answer would satisfy that the answers currently in view do not. The point is to \
-surface quality dimensions that have not yet been captured, so the next round \
-iterates against a tighter bar.
+When you submit your checklist evaluation, the submission supports proposing \
+new evaluation criteria alongside your scores. Use this affordance to surface \
+quality dimensions that have not yet been captured, so the next round iterates \
+against a tighter bar.
 
-When you submit your checklist, include a `proposed_criteria` field — a short \
-list of criterion objects. Each criterion must take a position on what \
-"good" means on a specific dimension (not a dimension label), and must \
-describe a quality the current answers do not yet fully achieve. Each \
-criterion object has:
-- `text`: the opinionated quality definition (required)
-- `category`: "primary" | "standard" | "stretch"
-- `anti_patterns`: concrete failure modes that should tank the score (optional)
+A proposed criterion must take a position on what "good" means on a specific \
+dimension (not a dimension label), and must describe a quality the current \
+answers do not yet fully achieve. Each takes an opinionated quality \
+definition, a category of primary / standard / stretch, and optional concrete \
+anti-patterns that should tank the score.
 
-Keep the list short — at most 3 per submission. Skip if the current answers \
-already satisfy every dimension you can identify. Do not duplicate criteria \
-already shown to you."""
+Keep the proposal list short — at most 3 per submission. Skip if the current \
+answers already satisfy every dimension you can identify. Do not duplicate \
+criteria already shown to you. The tool's schema documents the exact \
+parameter shape; follow it."""
 
         if self.fast_iteration_mode:
             _iteration_guidance = (

@@ -954,9 +954,10 @@ class Orchestrator(ChatAgent):
         ``bootstrap_criteria_accumulator.json`` in the session log directory for
         offline inspection.
 
-        In ``bootstrap_subagent`` mode a one-time scaffolding notice is logged.
-        The actual LLM-driven discriminator path is queued for v0.1.86; the
-        accumulator still accepts seeded entries via tests and external tooling.
+        In ``bootstrap_subagent`` mode this method only harvests buffered/jsonl
+        emissions — the LLM-driven critic runs separately in
+        ``_run_bootstrap_discriminator_step`` and writes directly to the
+        accumulator.
         """
         coord = getattr(self.config, "coordination_config", None)
         if coord is None:
@@ -985,6 +986,11 @@ class Orchestrator(ChatAgent):
         # Stdio path: agents on non-SDK backends emit by appending to
         # proposed_criteria.jsonl next to their checklist specs. Harvest and
         # truncate so the same entries aren't re-merged on subsequent drains.
+        # Use rename-then-read so concurrent appends from the MCP server
+        # (separate process) don't get silently lost in the read/unlink window
+        # — POSIX rename atomically transfers ownership, subsequent appender
+        # opens a fresh file at the original path.
+        per_agent_cap = int(getattr(coord, "bootstrap_max_per_agent_per_round", 0) or 0)
         agents = getattr(self, "agents", {}) or {}
         for agent in agents.values():
             backend = getattr(agent, "backend", None)
@@ -994,9 +1000,26 @@ class Orchestrator(ChatAgent):
             jsonl_path = Path(specs_path).parent / "proposed_criteria.jsonl"
             if not jsonl_path.exists():
                 continue
-            harvested: list[dict[str, Any]] = []
             try:
-                with jsonl_path.open(encoding="utf-8") as fh:
+                # UUID rather than time.time()*1000 to avoid same-ms collisions
+                # when two drain passes overlap (e.g., resolve+session-end at
+                # session shutdown). Random suffix makes the rename target
+                # unique under all races.
+                import uuid as _uuid
+
+                drain_path = jsonl_path.with_suffix(
+                    jsonl_path.suffix + f".draining.{os.getpid()}.{_uuid.uuid4().hex[:8]}",
+                )
+                jsonl_path.rename(drain_path)
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                logger.debug("[bootstrap_criteria] could not rename %s for drain: %s", jsonl_path, exc)
+                continue
+            harvested: list[dict[str, Any]] = []
+            truncated_by_cap = False
+            try:
+                with drain_path.open(encoding="utf-8") as fh:
                     for line in fh:
                         line = line.strip()
                         if not line:
@@ -1005,12 +1028,27 @@ class Orchestrator(ChatAgent):
                             entry = json.loads(line)
                         except json.JSONDecodeError:
                             continue
-                        if isinstance(entry, dict) and (entry.get("text") or "").strip():
-                            harvested.append(entry)
-                jsonl_path.unlink()
-            except Exception as exc:
-                logger.debug("[bootstrap_criteria] failed to read stdio emissions at %s: %s", jsonl_path, exc)
-                continue
+                        if not isinstance(entry, dict):
+                            continue
+                        if not (entry.get("text") or "").strip():
+                            continue
+                        if per_agent_cap > 0 and len(harvested) >= per_agent_cap:
+                            truncated_by_cap = True
+                            break
+                        harvested.append(entry)
+            except OSError as exc:
+                logger.debug("[bootstrap_criteria] failed to read drained file %s: %s", drain_path, exc)
+            finally:
+                try:
+                    drain_path.unlink()
+                except OSError:
+                    pass
+            if truncated_by_cap:
+                logger.info(
+                    "[bootstrap_criteria] per-agent cap (%d) reached for %s; remaining JSONL entries dropped",
+                    per_agent_cap,
+                    jsonl_path.parent.name,
+                )
             if not harvested:
                 continue
             before = len(self._bootstrap_criteria_accumulator)
@@ -1028,11 +1066,12 @@ class Orchestrator(ChatAgent):
         """Between-rounds gate for the Variant B discriminator.
 
         Runs `_run_bootstrap_discriminator_step` at most once per unique
-        answer-label set (so we don't re-critique unchanged rounds). Returns
-        0 when:
+        (agent_id, answer-content) snapshot — so each meaningful round-transition
+        (new answers from one or more agents) triggers a fresh critique, but
+        no-op re-entries during the same round do not. Returns 0 when:
         - criteria_mode != "bootstrap_subagent"
         - no answers yet
-        - this label set has already been critiqued
+        - this exact answer snapshot has already been critiqued
         - the underlying spawn fails
         """
         coord = getattr(self.config, "coordination_config", None)
@@ -1040,14 +1079,22 @@ class Orchestrator(ChatAgent):
             return 0
         if not current_answers:
             return 0
-        label_signature = tuple(sorted(current_answers.keys()))
+        # Signature is content-aware via a short SHA hash of each answer so the
+        # gate fires on every round where any agent's answer changes. (Keying
+        # only on `current_answers.keys()` would fire once per session, since
+        # the agent ID set is stable across rounds.)
+        import hashlib
+
+        content_signature = tuple(
+            sorted((aid, hashlib.sha1(str(content).encode("utf-8")).hexdigest()[:16]) for aid, content in current_answers.items()),
+        )
         seen = getattr(self, "_bootstrap_discriminator_completed_signatures", None)
         if seen is None:
             seen = set()
             self._bootstrap_discriminator_completed_signatures = seen
-        if label_signature in seen:
+        if content_signature in seen:
             return 0
-        seen.add(label_signature)
+        seen.add(content_signature)
         return await self._run_bootstrap_discriminator_step()
 
     async def _run_bootstrap_discriminator_step(self) -> int:
@@ -1191,6 +1238,13 @@ class Orchestrator(ChatAgent):
             logger.warning("[bootstrap_criteria] discriminator spawn failed: %s", exc, exc_info=True)
             return 0
 
+        # Require explicit success — a failed result may carry partial/error
+        # text that the parser would happily accept and pollute the accumulator.
+        if not getattr(result, "success", False):
+            logger.info(
+                "[bootstrap_criteria] discriminator subagent returned success=False; skipping merge",
+            )
+            return 0
         answer_text = getattr(result, "answer", "") or ""
         if not answer_text:
             return 0
@@ -1382,6 +1436,23 @@ class Orchestrator(ChatAgent):
         """
         sensitivity = getattr(self.config, "voting_sensitivity", "")
         if sensitivity != "checklist_gated":
+            # bootstrap_inline + non-checklist_gated voting is a misconfiguration:
+            # the submit_checklist tool that carries proposed_criteria is never
+            # registered, so the emission channel doesn't exist and the feature
+            # silently produces zero criteria for the entire session. Refuse to
+            # start so the user sees the problem at config-load time, not after
+            # a long no-emission run.
+            coord = getattr(self.config, "coordination_config", None)
+            if coord is not None and getattr(coord, "criteria_mode", "static") == "bootstrap_inline":
+                raise ValueError(
+                    "criteria_mode='bootstrap_inline' requires "
+                    f"voting_sensitivity='checklist_gated', got {sensitivity!r}. "
+                    "The submit_checklist tool that carries proposed_criteria is "
+                    "only registered under checklist_gated voting. "
+                    "Either set voting_sensitivity to 'checklist_gated' or switch "
+                    "criteria_mode to 'bootstrap_subagent' (which uses a "
+                    "between-rounds critic instead and does not need the tool).",
+                )
             return
 
         from massgen.system_prompt_sections import (

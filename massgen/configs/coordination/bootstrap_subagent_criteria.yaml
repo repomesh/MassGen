@@ -3,14 +3,14 @@
 # Forked from massgen/configs/features/fast_iteration.yaml. Variant B configures
 # the same accumulator pipeline as Variant A, but the criteria emission step is
 # delegated to a dedicated between-rounds critic rather than the agents
-# themselves. The agents' EvaluationSection does NOT ask them to emit
-# proposed_criteria in this mode.
+# themselves. The agents' EvaluationSection does NOT ask them to surface new
+# criteria in this mode.
 #
-# NOTE (v0.1.85): the in-process LLM discriminator step is scaffolded but the
-# end-to-end LLM call is queued for v0.1.86. Today the accumulator still
-# accepts entries from tests / external tooling and propagates them via the
-# same machinery as Variant A. Use bootstrap_inline_criteria.yaml for the
-# fully-working inline path.
+# How it works (v0.1.86+): between rounds, the orchestrator spawns an in-process
+# critic via SubagentManager that reads all agents' latest answers and the
+# current accumulator, emits proposed_criteria as JSON, and merges them in.
+# The critic fires once per unique answer snapshot (sha-hash of contents per
+# agent), so every meaningful round transition gets a fresh critique.
 #
 # Inspect emerging criteria at:
 #   .massgen/massgen_logs/<session>/bootstrap_criteria_accumulator.json

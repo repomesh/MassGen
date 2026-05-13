@@ -289,16 +289,20 @@ class TestEvaluationSectionEmissionInstruction:
         assert "proposed_criteria" not in text.lower()
 
     def test_bootstrap_inline_includes_emission_instruction(self):
-        text = self._render("bootstrap_inline")
-        # Must instruct the agent to emit criteria the current answer does not satisfy.
-        assert "proposed_criteria" in text or "propose criteria" in text.lower()
-        assert "does not" in text.lower() or "not yet" in text.lower()
+        text = self._render("bootstrap_inline").lower()
+        # Must instruct the agent to surface new criteria the current answer
+        # does not yet satisfy. Per CLAUDE.md anti-pattern we describe the
+        # behavior, not the literal parameter name, so the assertions test
+        # for the conceptual phrases rather than `proposed_criteria`.
+        assert "criteria emergence" in text or "proposing new evaluation criteria" in text
+        assert "not yet" in text or "do not yet" in text or "do not" in text
 
     def test_bootstrap_subagent_does_not_ask_agent_to_emit(self):
-        text = self._render("bootstrap_subagent")
+        text = self._render("bootstrap_subagent").lower()
         # In subagent mode, a critic emits; the agents themselves should NOT
-        # be asked to emit proposed_criteria.
-        assert "proposed_criteria" not in text.lower()
+        # be told to surface new criteria via the submission.
+        assert "criteria emergence" not in text
+        assert "proposing new evaluation criteria" not in text
 
 
 # ---------------------------------------------------------------------------
@@ -544,6 +548,272 @@ class TestBootstrapEndToEnd:
         texts = {p["text"] for p in orch._bootstrap_criteria_accumulator}
         assert any("Visual hierarchy" in t for t in texts)
         assert any("Symbol coherence" in t for t in texts)
+
+    def test_variant_b_discriminator_skips_when_subagent_returns_failure(self):
+        """A failed subagent (success=False) must NOT have its answer parsed
+        — it may carry partial/error text that pollutes the accumulator."""
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        orch = self._make_full_orch("bootstrap_subagent")
+        orch.coordination_tracker = SimpleNamespace(
+            answers_by_agent={"a1": [SimpleNamespace(content="An answer", agent_id="a1")]},
+        )
+        orch.current_task = "Test task"
+        orch.session_id = "test"
+        orch.orchestrator_id = "test-orch"
+        orch.agents = {"a1": SimpleNamespace(backend=SimpleNamespace(filesystem_manager=SimpleNamespace(cwd="/tmp/test_ws")))}
+
+        # Mock returns success=False with partial/error text — parser would
+        # otherwise accept it.
+        fake_answer = '{"criteria":[{"text":"Junk from failed run","category":"primary"}],"aspiration":"x"}'
+        mock_manager = MagicMock()
+        mock_manager.spawn_subagent = AsyncMock(
+            return_value=SimpleNamespace(answer=fake_answer, success=False),
+        )
+        with patch("massgen.subagent.manager.SubagentManager", return_value=mock_manager):
+            count = asyncio.run(orch._run_bootstrap_discriminator_step())
+        assert count == 0
+        assert orch._bootstrap_criteria_accumulator == []
+
+    def test_maybe_run_discriminator_refires_on_changed_answers(self):
+        """The dedup gate keys on (agent_id, content_hash) — when an agent
+        emits a new answer the discriminator must fire again, not be silenced
+        by an agent-id-only dedup."""
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+
+        orch = self._make_full_orch("bootstrap_subagent")
+        orch.coordination_tracker = SimpleNamespace(answers_by_agent={})
+        orch.current_task = "Test task"
+        orch.session_id = "test"
+        orch.orchestrator_id = "test-orch"
+        orch.agents = {"a1": SimpleNamespace(backend=SimpleNamespace(filesystem_manager=SimpleNamespace(cwd="/tmp/test_ws")))}
+
+        spawn_calls = 0
+
+        def make_answer():
+            return SimpleNamespace(
+                answer='{"criteria":[{"text":"X","category":"primary"}],"aspiration":"y"}',
+                success=True,
+            )
+
+        mock_manager = MagicMock()
+
+        async def _spawn(**_kwargs):
+            nonlocal spawn_calls
+            spawn_calls += 1
+            return make_answer()
+
+        mock_manager.spawn_subagent = _spawn
+
+        with patch("massgen.subagent.manager.SubagentManager", return_value=mock_manager):
+            # Round N — answer set v1
+            orch.coordination_tracker.answers_by_agent = {
+                "a1": [SimpleNamespace(content="answer v1", agent_id="a1")],
+            }
+
+            async def run_v1():
+                return await orch._maybe_run_bootstrap_discriminator({"a1": "answer v1"})
+
+            asyncio.run(run_v1())
+            assert spawn_calls == 1
+
+            # Same content → must NOT re-spawn.
+            asyncio.run(orch._maybe_run_bootstrap_discriminator({"a1": "answer v1"}))
+            assert spawn_calls == 1
+
+            # New content from same agent → MUST re-spawn.
+            orch.coordination_tracker.answers_by_agent = {
+                "a1": [SimpleNamespace(content="answer v2", agent_id="a1")],
+            }
+            asyncio.run(orch._maybe_run_bootstrap_discriminator({"a1": "answer v2"}))
+            assert spawn_calls == 2
+
+    def test_bootstrap_inline_requires_checklist_gated_voting(self):
+        """Misconfiguration: bootstrap_inline + non-checklist_gated voting
+        means submit_checklist isn't registered → emission channel doesn't
+        exist → feature silently no-ops for the whole session. Must raise
+        ValueError at orchestrator init, not log a warning that's easy to miss.
+        """
+        from types import SimpleNamespace
+
+        from massgen.agent_config import AgentConfig, CoordinationConfig
+        from massgen.orchestrator import Orchestrator
+
+        ac = AgentConfig(
+            backend_params={"type": "claude", "model": "claude-sonnet-4-5"},
+            voting_sensitivity="lenient",  # NOT checklist_gated
+            coordination_config=CoordinationConfig(criteria_mode="bootstrap_inline"),
+        )
+        orch = Orchestrator.__new__(Orchestrator)
+        orch.config = ac
+        orch.agents = {"a1": SimpleNamespace(backend=SimpleNamespace())}
+        with pytest.raises(ValueError, match="bootstrap_inline"):
+            orch._init_checklist_tool()
+
+    def test_bootstrap_inline_with_checklist_gated_does_not_raise(self):
+        """Sanity: the well-formed combo proceeds past the early-exit check."""
+
+        from massgen.agent_config import AgentConfig, CoordinationConfig
+        from massgen.orchestrator import Orchestrator
+
+        ac = AgentConfig(
+            backend_params={"type": "claude", "model": "claude-sonnet-4-5"},
+            voting_sensitivity="checklist_gated",
+            voting_threshold=2,
+            coordination_config=CoordinationConfig(criteria_mode="bootstrap_inline"),
+        )
+        orch = Orchestrator.__new__(Orchestrator)
+        orch.config = ac
+        orch.agents = {}  # empty → loop body skipped, but no raise
+
+        # Should not raise even with empty agents (we only care the gate doesn't fire).
+        orch._init_checklist_tool()
+
+    def test_stdio_drain_preserves_fifo_order_under_cap(self, tmp_path):
+        """Per-agent cap drops *later* entries, not random ones — verifies
+        FIFO semantics."""
+        import json
+        from types import SimpleNamespace
+
+        from massgen.agent_config import AgentConfig, CoordinationConfig
+        from massgen.orchestrator import AgentState, Orchestrator
+
+        coord = CoordinationConfig(
+            criteria_mode="bootstrap_inline",
+            bootstrap_max_per_agent_per_round=3,
+            bootstrap_max_total=100,
+        )
+        ac = AgentConfig(
+            backend_params={"type": "claude", "model": "claude-sonnet-4-5"},
+            coordination_config=coord,
+        )
+        orch = Orchestrator.__new__(Orchestrator)
+        orch.config = ac
+        orch._generated_evaluation_criteria = None
+        orch._bootstrap_criteria_accumulator = []
+        orch.agent_states = {"a1": AgentState()}
+        orch._is_changedoc_enabled = lambda: False  # type: ignore[attr-defined]
+        orch._get_decomposition_criteria_for_agent = lambda _aid: None  # type: ignore[attr-defined]
+        orch._is_decomposition_mode = lambda: False  # type: ignore[attr-defined]
+
+        specs_dir = tmp_path / "agent_a_fifo"
+        specs_dir.mkdir()
+        specs_path = specs_dir / "checklist_specs.json"
+        specs_path.write_text("{}", encoding="utf-8")
+        jsonl_path = specs_dir / "proposed_criteria.jsonl"
+        with jsonl_path.open("w", encoding="utf-8") as fh:
+            for i in range(10):
+                fh.write(json.dumps({"text": f"entry_{i}", "category": "standard"}) + "\n")
+        orch.agents = {"a1": SimpleNamespace(backend=SimpleNamespace(_checklist_specs_path=str(specs_path)))}
+
+        orch._drain_pending_criteria_proposals()
+
+        texts = [p["text"] for p in orch._bootstrap_criteria_accumulator]
+        # Cap=3 keeps the FIRST 3 entries (FIFO), drops entries 3..9.
+        assert texts == ["entry_0", "entry_1", "entry_2"]
+
+    def test_multi_agent_content_hash_dedup_fires_per_agent(self):
+        """Two-agent scenario: when only ONE agent's content changes, the
+        discriminator must re-fire (content-hash signature catches the diff,
+        not just the agent-id set)."""
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        orch = self._make_full_orch("bootstrap_subagent")
+        orch.current_task = "Test"
+        orch.session_id = "test"
+        orch.orchestrator_id = "test-orch"
+        orch.agents = {
+            "a1": SimpleNamespace(backend=SimpleNamespace(filesystem_manager=SimpleNamespace(cwd="/tmp"))),
+            "a2": SimpleNamespace(backend=SimpleNamespace(filesystem_manager=SimpleNamespace(cwd="/tmp"))),
+        }
+        # Tracker is consulted by _run_bootstrap_discriminator_step; mirror the
+        # current_answers we pass to _maybe_run.
+        orch.coordination_tracker = SimpleNamespace(
+            answers_by_agent={
+                "a1": [SimpleNamespace(content="v1", agent_id="a1")],
+                "a2": [SimpleNamespace(content="v1", agent_id="a2")],
+            },
+        )
+
+        spawn_count = 0
+
+        async def _spawn(**_kwargs):
+            nonlocal spawn_count
+            spawn_count += 1
+            return SimpleNamespace(
+                answer='{"criteria":[{"text":"X","category":"primary"}],"aspiration":"y"}',
+                success=True,
+            )
+
+        mock_manager = SimpleNamespace(spawn_subagent=_spawn)
+        with patch("massgen.subagent.manager.SubagentManager", return_value=mock_manager):
+            # Round 1: both agents at v1
+            asyncio.run(orch._maybe_run_bootstrap_discriminator({"a1": "v1", "a2": "v1"}))
+            assert spawn_count == 1
+
+            # Round 2: a1 unchanged, a2 unchanged → no fire
+            asyncio.run(orch._maybe_run_bootstrap_discriminator({"a1": "v1", "a2": "v1"}))
+            assert spawn_count == 1
+
+            # Round 3: a2 changed → must fire
+            orch.coordination_tracker.answers_by_agent["a2"][-1].content = "v2"
+            asyncio.run(orch._maybe_run_bootstrap_discriminator({"a1": "v1", "a2": "v2"}))
+            assert spawn_count == 2
+
+            # Round 4: a1 changed, a2 same as round 3 → must fire again
+            orch.coordination_tracker.answers_by_agent["a1"][-1].content = "v3"
+            asyncio.run(orch._maybe_run_bootstrap_discriminator({"a1": "v3", "a2": "v2"}))
+            assert spawn_count == 3
+
+    def test_stdio_drain_respects_per_agent_round_cap(self, tmp_path):
+        """bootstrap_max_per_agent_per_round bounds how many entries the drain
+        harvests from a single agent's JSONL in one pass — protects against a
+        single rogue agent flooding the accumulator."""
+        import json
+        from types import SimpleNamespace
+
+        from massgen.agent_config import AgentConfig, CoordinationConfig
+        from massgen.orchestrator import AgentState, Orchestrator
+
+        coord = CoordinationConfig(
+            criteria_mode="bootstrap_inline",
+            bootstrap_max_per_agent_per_round=3,
+            bootstrap_max_total=100,
+        )
+        ac = AgentConfig(
+            backend_params={"type": "claude", "model": "claude-sonnet-4-5"},
+            coordination_config=coord,
+        )
+        orch = Orchestrator.__new__(Orchestrator)
+        orch.config = ac
+        orch._generated_evaluation_criteria = None
+        orch._bootstrap_criteria_accumulator = []
+        orch.agent_states = {"a1": AgentState()}
+        orch._is_changedoc_enabled = lambda: False  # type: ignore[attr-defined]
+        orch._get_decomposition_criteria_for_agent = lambda _aid: None  # type: ignore[attr-defined]
+        orch._is_decomposition_mode = lambda: False  # type: ignore[attr-defined]
+
+        specs_dir = tmp_path / "agent_a_spillover"
+        specs_dir.mkdir()
+        specs_path = specs_dir / "checklist_specs.json"
+        specs_path.write_text("{}", encoding="utf-8")
+        jsonl_path = specs_dir / "proposed_criteria.jsonl"
+        with jsonl_path.open("w", encoding="utf-8") as fh:
+            for i in range(20):
+                fh.write(json.dumps({"text": f"flood {i}", "category": "standard"}) + "\n")
+        orch.agents = {"a1": SimpleNamespace(backend=SimpleNamespace(_checklist_specs_path=str(specs_path)))}
+
+        orch._drain_pending_criteria_proposals()
+
+        # Cap is 3 — accumulator must not pick up all 20.
+        assert len(orch._bootstrap_criteria_accumulator) == 3
+        assert not jsonl_path.exists()
 
     def test_variant_b_discriminator_skipped_when_not_subagent_mode(self):
         """static and bootstrap_inline modes must not invoke the discriminator."""
