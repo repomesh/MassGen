@@ -10,6 +10,8 @@ Covers:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -840,6 +842,213 @@ class TestBootstrapEndToEnd:
             count = asyncio.run(orch._run_bootstrap_discriminator_step())
         assert count == 0
         mock_mgr_class.assert_not_called()
+
+    def test_variant_b_discriminator_caps_subagent_at_one_answer(self, tmp_path):
+        """The discriminator subagent should run a single answer with no
+        refinement loop. Observed live in log_20260513_093905_671729: the
+        subagent ran 2+ rounds with refinement (answer1.1 → answer1.2) and
+        27 file-op tool calls before timing out at 180s, instead of emitting
+        criteria JSON in one shot. The fix: pass max_new_answers_per_agent=1
+        (and fast_iteration_mode=True) through SubagentOrchestratorConfig
+        coordination.
+        """
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        orch = self._make_full_orch("bootstrap_subagent")
+        orch.coordination_tracker = SimpleNamespace(
+            answers_by_agent={"a1": [SimpleNamespace(content="An answer", agent_id="a1")]},
+        )
+        orch.current_task = "Test task"
+        orch.session_id = "test"
+        orch.orchestrator_id = "test-orch"
+        agent_ws = tmp_path / "agent_ws"
+        agent_ws.mkdir()
+        orch.agents = {
+            "a1": SimpleNamespace(backend=SimpleNamespace(filesystem_manager=SimpleNamespace(cwd=str(agent_ws)))),
+        }
+
+        captured_config = {}
+
+        def capture_config(*args, **kwargs):
+            captured_config["coordination"] = kwargs.get("coordination", {})
+            return MagicMock(enabled=kwargs.get("enabled", True), agents=kwargs.get("agents", []))
+
+        mock_manager = MagicMock()
+        mock_manager.spawn_subagent = AsyncMock(
+            return_value=SimpleNamespace(
+                answer='{"criteria":[{"text":"x","category":"primary"}],"aspiration":"y"}',
+                success=True,
+            ),
+        )
+        with (
+            patch(
+                "massgen.subagent.models.SubagentOrchestratorConfig",
+                side_effect=capture_config,
+            ),
+            patch("massgen.subagent.manager.SubagentManager", return_value=mock_manager),
+        ):
+            asyncio.run(orch._run_bootstrap_discriminator_step())
+
+        coord = captured_config.get("coordination") or {}
+        assert coord.get("max_new_answers_per_agent") == 1, f"discriminator subagent must cap at 1 answer (single-shot), got {coord}"
+        # With a single critic agent the default voting_threshold=3 can never be
+        # reached, so the subagent's orchestrator keeps entering vote/eval rounds
+        # after the answer. voting_threshold=1 lets the agent's self-vote close
+        # the run, and max_new_answers_global=1 is the hard cap.
+        assert coord.get("voting_threshold") == 1, f"discriminator must lower voting_threshold so single-agent self-vote ends the run, got {coord}"
+        assert coord.get("max_new_answers_global") == 1, f"discriminator must set max_new_answers_global=1 as a hard cap, got {coord}"
+
+    def test_variant_b_discriminator_picks_up_criteria_json_artifact(self, tmp_path):
+        """When the subagent writes criteria.json to its workspace, the
+        discriminator should pick it up via find_precollab_artifact and merge
+        from that artifact — mirroring the EvaluationCriteriaGenerator pattern.
+        The answer-text fallback remains for backwards compat, but the file
+        pickup path is preferred.
+        """
+        import asyncio
+        import json
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        orch = self._make_full_orch("bootstrap_subagent")
+        orch.coordination_tracker = SimpleNamespace(
+            answers_by_agent={"a1": [SimpleNamespace(content="An answer", agent_id="a1")]},
+        )
+        orch.current_task = "Test task"
+        orch.session_id = "test"
+        orch.orchestrator_id = "test-orch"
+        agent_ws = tmp_path / "agent_ws"
+        agent_ws.mkdir()
+        orch.agents = {
+            "a1": SimpleNamespace(backend=SimpleNamespace(filesystem_manager=SimpleNamespace(cwd=str(agent_ws)))),
+        }
+
+        # Build a criteria.json file the discriminator should pick up.
+        artifact = tmp_path / "criteria.json"
+        artifact.write_text(
+            json.dumps(
+                {
+                    "aspiration": "Excellence",
+                    "criteria": [
+                        {"text": "From artifact: structural coherence wins", "category": "primary"},
+                        {"text": "From artifact: avoid generic cliches", "category": "standard"},
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        # Empty / generic answer text — must NOT be used when artifact exists.
+        mock_manager = MagicMock()
+        mock_manager.spawn_subagent = AsyncMock(
+            return_value=SimpleNamespace(answer="(no JSON in answer text)", success=True),
+        )
+
+        with (
+            patch("massgen.subagent.manager.SubagentManager", return_value=mock_manager),
+            patch(
+                "massgen.precollab_utils.find_precollab_artifact",
+                return_value=artifact,
+            ),
+            patch("massgen.orchestrator.get_log_session_dir", return_value=str(tmp_path)),
+        ):
+            count = asyncio.run(orch._run_bootstrap_discriminator_step())
+
+        assert count == 2, "discriminator should merge both artifact criteria"
+        texts = {p["text"] for p in orch._bootstrap_criteria_accumulator}
+        assert any("From artifact: structural coherence" in t for t in texts)
+        assert any("From artifact: avoid generic cliches" in t for t in texts)
+
+    def test_variant_b_discriminator_prompt_instructs_write_criteria_json(self, tmp_path):
+        """The discriminator prompt must instruct the subagent to write
+        criteria.json to its workspace so the parent can pick it up — the
+        canonical file-pickup pattern used elsewhere (persona / criteria
+        generators).
+        """
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        orch = self._make_full_orch("bootstrap_subagent")
+        orch.coordination_tracker = SimpleNamespace(
+            answers_by_agent={"a1": [SimpleNamespace(content="An answer", agent_id="a1")]},
+        )
+        orch.current_task = "Test task"
+        orch.session_id = "test"
+        orch.orchestrator_id = "test-orch"
+        agent_ws = tmp_path / "agent_ws"
+        agent_ws.mkdir()
+        orch.agents = {
+            "a1": SimpleNamespace(backend=SimpleNamespace(filesystem_manager=SimpleNamespace(cwd=str(agent_ws)))),
+        }
+        mock_manager = MagicMock()
+        mock_manager.spawn_subagent = AsyncMock(
+            return_value=SimpleNamespace(answer='{"criteria":[],"aspiration":"x"}', success=True),
+        )
+
+        with patch("massgen.subagent.manager.SubagentManager", return_value=mock_manager):
+            asyncio.run(orch._run_bootstrap_discriminator_step())
+
+        prompt = mock_manager.spawn_subagent.call_args.kwargs.get("task", "") or (mock_manager.spawn_subagent.call_args.args[0] if mock_manager.spawn_subagent.call_args.args else "")
+        assert "criteria.json" in prompt, f"discriminator prompt must reference criteria.json (the artifact filename); got: {prompt[:500]}"
+
+    def test_variant_b_discriminator_writes_context_md_before_spawn(self, tmp_path):
+        """SubagentManager.spawn_subagent fails with "CONTEXT.md not found in
+        workspace" unless the parent_workspace it's pointed at contains a
+        CONTEXT.md. Observed live in log_20260513_090725_683824 — all three
+        bootstrap_discriminator_N spawns failed for this reason.
+
+        Regression: the discriminator must materialize CONTEXT.md at the
+        parent_workspace passed to SubagentManager BEFORE spawn_subagent is
+        called.
+        """
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        orch = self._make_full_orch("bootstrap_subagent")
+        orch.coordination_tracker = SimpleNamespace(
+            answers_by_agent={"a1": [SimpleNamespace(content="An answer", agent_id="a1")]},
+        )
+        orch.current_task = "Design a logo"
+        orch.session_id = "test"
+        orch.orchestrator_id = "test-orch"
+        # Use a real temp dir so CONTEXT.md materialization is observable.
+        agent_workspace = tmp_path / "agent_workspace"
+        agent_workspace.mkdir()
+        orch.agents = {
+            "a1": SimpleNamespace(
+                backend=SimpleNamespace(filesystem_manager=SimpleNamespace(cwd=str(agent_workspace))),
+            ),
+        }
+
+        captured_parent_workspace = {}
+
+        def capture_manager(**kwargs):
+            captured_parent_workspace["path"] = kwargs.get("parent_workspace")
+            mgr = MagicMock()
+            mgr.spawn_subagent = AsyncMock(
+                return_value=SimpleNamespace(
+                    answer='{"criteria":[{"text":"x","category":"primary"}],"aspiration":"y"}',
+                    success=True,
+                ),
+            )
+            return mgr
+
+        with patch("massgen.subagent.manager.SubagentManager", side_effect=capture_manager):
+            asyncio.run(orch._run_bootstrap_discriminator_step())
+
+        parent_ws = captured_parent_workspace.get("path")
+        assert parent_ws, "SubagentManager must be constructed with a parent_workspace"
+        ctx_md = Path(parent_ws) / "CONTEXT.md"
+        assert ctx_md.exists(), (
+            f"CONTEXT.md must exist at the parent_workspace passed to SubagentManager " f"(checked {ctx_md}); otherwise spawn_subagent fails with " f"'CONTEXT.md not found in workspace'"
+        )
+        # The discriminator's CONTEXT.md should reference the task so the
+        # subagent has minimum context.
+        assert "Design a logo" in ctx_md.read_text(encoding="utf-8")
 
     def test_stdio_emissions_jsonl_drains_into_accumulator(self, tmp_path):
         """Non-SDK backends (gemini/codex/etc.) emit by appending to

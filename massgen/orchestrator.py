@@ -1157,13 +1157,18 @@ class Orchestrator(ChatAgent):
                 prompt_parts.append(f"- {entry.get('text', '')}")
         prompt_parts.append(
             "\n# Your Output\n"
-            'Emit a JSON object: {"aspiration": "<one-sentence vision of an ideal answer>", '
+            'Produce a JSON object: {"aspiration": "<one-sentence vision of an ideal answer>", '
             '"criteria": [{"text": "...", "category": "primary|standard|stretch", '
             '"anti_patterns": ["..."]}, ...]}. '
             "Each criterion must (a) take a position on what 'good' means on a specific "
             "dimension, not a dimension label; (b) describe a quality the current answers "
             "do NOT fully achieve; (c) be reusable for future similar tasks, not specific "
-            "to this exact wording. Emit 2-5 criteria. Output ONLY the JSON (no commentary).",
+            "to this exact wording. Emit 2-5 criteria.\n\n"
+            "Write the JSON to a file called `criteria.json` in your workspace and also "
+            "include it verbatim in your final answer text. The orchestrator will pick "
+            "up `criteria.json` from your workspace; the inline copy is a fallback.\n\n"
+            "Do not run a refinement loop. One pass is enough. Do not call planning, "
+            "checklist, or evaluation tools — just analyze the answers and write the JSON.",
         )
         prompt = "\n".join(prompt_parts)
 
@@ -1185,6 +1190,33 @@ class Orchestrator(ChatAgent):
                 parent_workspace = str(cwd)
                 break
 
+        # SubagentManager.spawn_subagent requires CONTEXT.md in the
+        # parent_workspace and aborts with success=False otherwise (verified
+        # live in log_20260513_090725_683824 — three discriminator spawns all
+        # failed for this reason). Mirror the EvaluationCriteriaGenerator
+        # pattern: scope a `.bootstrap_discriminator` subdir under the parent
+        # workspace, materialize CONTEXT.md there, and point SubagentManager
+        # at that subdir so we don't pollute the parent agent's workspace.
+        discriminator_workspace = parent_workspace
+        try:
+            discriminator_workspace = os.path.join(parent_workspace, ".bootstrap_discriminator")
+            os.makedirs(discriminator_workspace, exist_ok=True)
+            context_md_path = os.path.join(discriminator_workspace, "CONTEXT.md")
+            with open(context_md_path, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "# Bootstrap Criteria Discriminator\n\n"
+                    f"Task being critiqued:\n{task}\n\n"
+                    "Goal: identify quality dimensions the current answers fail to satisfy "
+                    "and emit them as JSON proposed_criteria. See the spawn task for the "
+                    "exact output schema.\n",
+                )
+        except OSError as exc:
+            logger.warning(
+                "[bootstrap_criteria] failed to materialize CONTEXT.md for discriminator: %s",
+                exc,
+            )
+            discriminator_workspace = parent_workspace
+
         # Build a simplified backend config from the first parent agent.
         simplified_configs: list[dict[str, Any]] = []
         for aid, agent in (self.agents or {}).items():
@@ -1203,12 +1235,27 @@ class Orchestrator(ChatAgent):
             return 0
 
         try:
+            # Single-shot discriminator: cap the subagent at one answer so it
+            # doesn't run a multi-round refinement loop, and turn on
+            # fast_iteration_mode to skip post-candidate scaffolding phases.
+            #
+            # Observed live (log_20260513_095325_530872): with only
+            # max_new_answers_per_agent=1 the critic still entered an R2 voting
+            # round because the default voting_threshold=3 can never be reached
+            # by a single agent — so the orchestrator kept iterating. Adding
+            # voting_threshold=1 (single-agent self-vote → consensus) and
+            # max_new_answers_global=1 (hard global cap on total new answers)
+            # forces termination after the first answer.
             subagent_config = SubagentOrchestratorConfig(
                 enabled=True,
                 agents=simplified_configs,
                 coordination={
                     "enable_subagents": False,
                     "broadcast": False,
+                    "max_new_answers_per_agent": 1,
+                    "max_new_answers_global": 1,
+                    "voting_threshold": 1,
+                    "fast_iteration_mode": True,
                 },
             )
             log_dir = None
@@ -1217,7 +1264,7 @@ class Orchestrator(ChatAgent):
             except Exception:
                 pass
             manager = SubagentManager(
-                parent_workspace=parent_workspace,
+                parent_workspace=discriminator_workspace,
                 parent_agent_id="bootstrap_discriminator",
                 orchestrator_id=getattr(self, "orchestrator_id", "orchestrator"),
                 parent_agent_configs=simplified_configs,
@@ -1229,6 +1276,28 @@ class Orchestrator(ChatAgent):
             next_round_idx = int(getattr(self, "_bootstrap_round_index", 0) or 0) + 1
             self._bootstrap_round_index = next_round_idx
             subagent_id = f"bootstrap_discriminator_{next_round_idx}"
+
+            # Surface this spawn to the TUI so the user can see the discriminator
+            # subagent running. SubagentManager.spawn_subagent is called directly
+            # from the orchestrator (no per-agent backend callback fires here), so
+            # without explicit notifications the discriminator runs silently for
+            # ~3 minutes per round-transition. Mirror the pattern used for
+            # decomposition/persona-generation runtime subagents.
+            display = getattr(getattr(self, "coordination_ui", None), "display", None)
+            anchor_agent_id = next(iter((self.agents or {}).keys()), None)
+            spawn_call_id = subagent_id
+            if display and anchor_agent_id and hasattr(display, "notify_runtime_subagent_started"):
+                try:
+                    display.notify_runtime_subagent_started(
+                        agent_id=anchor_agent_id,
+                        subagent_id=subagent_id,
+                        task=prompt,
+                        timeout_seconds=180,
+                        call_id=spawn_call_id,
+                    )
+                except Exception as _exc:
+                    logger.debug("[bootstrap_criteria] notify_runtime_subagent_started failed: %s", _exc)
+
             result = await manager.spawn_subagent(
                 task=prompt,
                 subagent_id=subagent_id,
@@ -1236,6 +1305,17 @@ class Orchestrator(ChatAgent):
             )
         except Exception as exc:
             logger.warning("[bootstrap_criteria] discriminator spawn failed: %s", exc, exc_info=True)
+            if "display" in locals() and display and "anchor_agent_id" in locals() and anchor_agent_id and hasattr(display, "notify_runtime_subagent_completed"):
+                try:
+                    display.notify_runtime_subagent_completed(
+                        agent_id=anchor_agent_id,
+                        subagent_id=locals().get("subagent_id", "bootstrap_discriminator"),
+                        call_id=locals().get("spawn_call_id", "bootstrap_discriminator"),
+                        status="failed",
+                        error=str(exc),
+                    )
+                except Exception:
+                    pass
             return 0
 
         # Require explicit success — a failed result may carry partial/error
@@ -1244,17 +1324,79 @@ class Orchestrator(ChatAgent):
             logger.info(
                 "[bootstrap_criteria] discriminator subagent returned success=False; skipping merge",
             )
+            if display and anchor_agent_id and hasattr(display, "notify_runtime_subagent_completed"):
+                try:
+                    display.notify_runtime_subagent_completed(
+                        agent_id=anchor_agent_id,
+                        subagent_id=subagent_id,
+                        call_id=spawn_call_id,
+                        status="failed",
+                    )
+                except Exception:
+                    pass
             return 0
         answer_text = getattr(result, "answer", "") or ""
-        if not answer_text:
-            return 0
 
         from massgen.bootstrap_criteria import merge_proposals
         from massgen.evaluation_criteria_generator import _parse_criteria_response
 
-        criteria, _aspiration = _parse_criteria_response(answer_text, min_criteria=1, max_criteria=10)
+        # Preferred pickup path: read criteria.json written by the subagent to
+        # its workspace. Mirrors EvaluationCriteriaGenerator._find_criteria_json.
+        # Fall back to parsing the answer text only if no artifact found.
+        criteria = []
+        artifact_log_dir = str(log_dir) if log_dir else None
+        if artifact_log_dir:
+            try:
+                from massgen.precollab_utils import find_precollab_artifact
+
+                artifact_path = find_precollab_artifact(
+                    artifact_log_dir,
+                    subagent_id,
+                    "criteria.json",
+                )
+                if artifact_path is not None:
+                    artifact_text = artifact_path.read_text(encoding="utf-8")
+                    criteria, _aspiration = _parse_criteria_response(
+                        artifact_text,
+                        min_criteria=1,
+                        max_criteria=10,
+                    )
+                    if criteria:
+                        logger.info(
+                            "[bootstrap_criteria] discriminator picked up criteria.json (%d criteria)",
+                            len(criteria),
+                        )
+            except Exception as _exc:
+                logger.debug("[bootstrap_criteria] criteria.json pickup failed: %s", _exc)
+
+        if not criteria and not answer_text:
+            if display and anchor_agent_id and hasattr(display, "notify_runtime_subagent_completed"):
+                try:
+                    display.notify_runtime_subagent_completed(
+                        agent_id=anchor_agent_id,
+                        subagent_id=subagent_id,
+                        call_id=spawn_call_id,
+                        status="completed",
+                    )
+                except Exception:
+                    pass
+            return 0
+
+        if not criteria:
+            criteria, _aspiration = _parse_criteria_response(answer_text, min_criteria=1, max_criteria=10)
         if not criteria:
             logger.info("[bootstrap_criteria] discriminator returned no parseable criteria")
+            if display and anchor_agent_id and hasattr(display, "notify_runtime_subagent_completed"):
+                try:
+                    display.notify_runtime_subagent_completed(
+                        agent_id=anchor_agent_id,
+                        subagent_id=subagent_id,
+                        call_id=spawn_call_id,
+                        status="completed",
+                        answer_preview="No parseable criteria returned",
+                    )
+                except Exception:
+                    pass
             return 0
         proposals = [
             {
@@ -1279,6 +1421,18 @@ class Orchestrator(ChatAgent):
                 added,
                 len(self._bootstrap_criteria_accumulator),
             )
+        if display and anchor_agent_id and hasattr(display, "notify_runtime_subagent_completed"):
+            try:
+                preview = f"Added {added} new criterion/criteria to accumulator" if added > 0 else "No new criteria"
+                display.notify_runtime_subagent_completed(
+                    agent_id=anchor_agent_id,
+                    subagent_id=subagent_id,
+                    call_id=spawn_call_id,
+                    status="completed",
+                    answer_preview=preview,
+                )
+            except Exception:
+                pass
         return added
 
     def _drain_at_session_end(self) -> None:
