@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (v0.1.86 follow-up to discriminative criteria emergence)
+- **Variant B (`bootstrap_subagent`) is now functional**: `Orchestrator._run_bootstrap_discriminator_step()` spawns an in-process critic via `SubagentManager` (mirrors the `EvaluationCriteriaGenerator.generate_criteria_via_subagent` pattern). The critic reads the current task and each agent's latest answer, emits proposed_criteria as JSON, and the orchestrator merges them into the accumulator. Wired into the main coordination loop at the same between-rounds gate as `_run_criteria_evolution_if_needed` (`orchestrator.py:6446+`). Once per unique answer-label set via `_maybe_run_bootstrap_discriminator` so unchanged rounds aren't re-critiqued. The v0.1.85 "queued for v0.1.86" stub is removed.
+- **Session-end drain hook** (`Orchestrator._drain_at_session_end`): forced drain before final presentation, captures stdio JSONL emissions that arrived after the last `_resolve_effective_checklist_criteria` call. Closes the gap observed in the first live `bootstrap_inline` run where codex's late-round emissions were stranded in `/var/folders/.../massgen_checklist_*/proposed_criteria.jsonl`.
+- 4 new tests in `massgen/tests/test_bootstrap_criteria.py` (35 total): session-end drain captures stranded stdio emissions; discriminator spawns SubagentManager and merges parsed criteria (mocked); discriminator no-op in static / bootstrap_inline modes; discriminator no-op when no answers exist.
+
 ## Recent Releases
 
 **v0.1.85 (May 11, 2026)** - Discriminative Criteria Emergence (`criteria_mode`)

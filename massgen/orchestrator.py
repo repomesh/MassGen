@@ -966,13 +966,6 @@ class Orchestrator(ChatAgent):
         criteria_mode = getattr(coord, "criteria_mode", "static")
         if not is_bootstrap_mode(criteria_mode):
             return
-        if criteria_mode == "bootstrap_subagent" and not getattr(self, "_bootstrap_subagent_notice_logged", False):
-            logger.info(
-                "[bootstrap_criteria] criteria_mode=bootstrap_subagent is wired; "
-                "the in-process LLM discriminator pass is queued for v0.1.86. "
-                "The accumulator still propagates any seeded entries.",
-            )
-            self._bootstrap_subagent_notice_logged = True
         cap = int(getattr(coord, "bootstrap_max_total", 30) or 0)
         agent_states = getattr(self, "agent_states", {}) or {}
         merged_any = False
@@ -1030,6 +1023,224 @@ class Orchestrator(ChatAgent):
                 merged_any = True
         if merged_any:
             self._persist_bootstrap_accumulator()
+
+    async def _maybe_run_bootstrap_discriminator(self, current_answers: dict[str, str]) -> int:
+        """Between-rounds gate for the Variant B discriminator.
+
+        Runs `_run_bootstrap_discriminator_step` at most once per unique
+        answer-label set (so we don't re-critique unchanged rounds). Returns
+        0 when:
+        - criteria_mode != "bootstrap_subagent"
+        - no answers yet
+        - this label set has already been critiqued
+        - the underlying spawn fails
+        """
+        coord = getattr(self.config, "coordination_config", None)
+        if coord is None or getattr(coord, "criteria_mode", "static") != "bootstrap_subagent":
+            return 0
+        if not current_answers:
+            return 0
+        label_signature = tuple(sorted(current_answers.keys()))
+        seen = getattr(self, "_bootstrap_discriminator_completed_signatures", None)
+        if seen is None:
+            seen = set()
+            self._bootstrap_discriminator_completed_signatures = seen
+        if label_signature in seen:
+            return 0
+        seen.add(label_signature)
+        return await self._run_bootstrap_discriminator_step()
+
+    async def _run_bootstrap_discriminator_step(self) -> int:
+        """Variant B: spawn an in-process critic to emit gap-driven criteria.
+
+        Reads each agent's latest answer from the coordination tracker and the
+        current bootstrap accumulator, asks an LLM critic for proposed_criteria
+        that distinguish a stronger answer from what's there, and merges the
+        result into the accumulator.
+
+        Returns the count of NEW criteria added (after dedup). Returns 0 and
+        is a no-op when:
+        - criteria_mode != "bootstrap_subagent"
+        - no answers exist yet (nothing to critique)
+        - SubagentManager call fails / returns unparseable output
+
+        Mirrors the pattern in EvaluationCriteriaGenerator.generate_criteria_via_subagent
+        but with a discriminator prompt and a smaller min_criteria floor.
+        """
+        coord = getattr(self.config, "coordination_config", None)
+        if coord is None or getattr(coord, "criteria_mode", "static") != "bootstrap_subagent":
+            return 0
+
+        tracker = getattr(self, "coordination_tracker", None)
+        answers_by_agent = getattr(tracker, "answers_by_agent", None) if tracker else None
+        if not answers_by_agent:
+            return 0
+        latest: dict[str, str] = {}
+        for aid, ans_list in answers_by_agent.items():
+            if not ans_list:
+                continue
+            last = ans_list[-1]
+            content = getattr(last, "content", None) or getattr(last, "answer", None) or ""
+            if content:
+                latest[aid] = content
+        if not latest:
+            return 0
+
+        task = getattr(self, "current_task", "") or ""
+        existing_accumulator = list(self._bootstrap_criteria_accumulator or [])
+
+        # Build the discriminator prompt. The critic's job is to identify
+        # quality dimensions a stronger answer would satisfy that the current
+        # answers do NOT. Per CLAUDE.md anti-pattern: describe the desired
+        # behavior in natural language; do not hardcode tool-call syntax.
+        prompt_parts: list[str] = [
+            "You are a discriminative critic for a multi-agent coordination system.",
+            "Your job: emit evaluation criteria the CURRENT ANSWERS fail to satisfy.",
+            "",
+            f"# Task\n{task}",
+            "",
+            "# Current Answers",
+        ]
+        for aid, content in latest.items():
+            preview = content if len(content) <= 4000 else content[:4000] + "..."
+            prompt_parts.append(f"\n## {aid}\n{preview}")
+        if existing_accumulator:
+            prompt_parts.append("\n# Criteria already proposed (do not repeat)")
+            for entry in existing_accumulator:
+                prompt_parts.append(f"- {entry.get('text', '')}")
+        prompt_parts.append(
+            "\n# Your Output\n"
+            'Emit a JSON object: {"aspiration": "<one-sentence vision of an ideal answer>", '
+            '"criteria": [{"text": "...", "category": "primary|standard|stretch", '
+            '"anti_patterns": ["..."]}, ...]}. '
+            "Each criterion must (a) take a position on what 'good' means on a specific "
+            "dimension, not a dimension label; (b) describe a quality the current answers "
+            "do NOT fully achieve; (c) be reusable for future similar tasks, not specific "
+            "to this exact wording. Emit 2-5 criteria. Output ONLY the JSON (no commentary).",
+        )
+        prompt = "\n".join(prompt_parts)
+
+        try:
+            from massgen.subagent.manager import SubagentManager
+            from massgen.subagent.models import SubagentOrchestratorConfig
+        except ImportError as exc:
+            logger.warning("[bootstrap_criteria] SubagentManager unavailable: %s", exc)
+            return 0
+
+        # Resolve a workspace dir for the discriminator (mirror pattern from
+        # EvaluationCriteriaGenerator). Best-effort — use the first agent's
+        # workspace if resolvable, else fall back to a tmpdir.
+        parent_workspace = "."
+        for agent in (self.agents or {}).values():
+            fs = getattr(getattr(agent, "backend", None), "filesystem_manager", None)
+            cwd = getattr(fs, "cwd", None) if fs else None
+            if cwd:
+                parent_workspace = str(cwd)
+                break
+
+        # Build a simplified backend config from the first parent agent.
+        simplified_configs: list[dict[str, Any]] = []
+        for aid, agent in (self.agents or {}).items():
+            backend = getattr(agent, "backend", None)
+            cfg = getattr(backend, "config", {}) if backend else {}
+            backend_cfg = {
+                "type": cfg.get("type", "openai") if isinstance(cfg, dict) else "openai",
+                "model": cfg.get("model") if isinstance(cfg, dict) else None,
+                "enable_mcp_command_line": False,
+                "enable_code_based_tools": False,
+                "exclude_file_operation_mcps": False,
+            }
+            simplified_configs.append({"id": f"critic_{aid}", "backend": backend_cfg})
+            break  # one critic is enough
+        if not simplified_configs:
+            return 0
+
+        try:
+            subagent_config = SubagentOrchestratorConfig(
+                enabled=True,
+                agents=simplified_configs,
+                coordination={
+                    "enable_subagents": False,
+                    "broadcast": False,
+                },
+            )
+            log_dir = None
+            try:
+                log_dir = get_log_session_dir()
+            except Exception:
+                pass
+            manager = SubagentManager(
+                parent_workspace=parent_workspace,
+                parent_agent_id="bootstrap_discriminator",
+                orchestrator_id=getattr(self, "orchestrator_id", "orchestrator"),
+                parent_agent_configs=simplified_configs,
+                max_concurrent=1,
+                default_timeout=180,
+                subagent_orchestrator_config=subagent_config,
+                log_directory=str(log_dir) if log_dir else None,
+            )
+            next_round_idx = int(getattr(self, "_bootstrap_round_index", 0) or 0) + 1
+            self._bootstrap_round_index = next_round_idx
+            subagent_id = f"bootstrap_discriminator_{next_round_idx}"
+            result = await manager.spawn_subagent(
+                task=prompt,
+                subagent_id=subagent_id,
+                timeout_seconds=180,
+            )
+        except Exception as exc:
+            logger.warning("[bootstrap_criteria] discriminator spawn failed: %s", exc, exc_info=True)
+            return 0
+
+        answer_text = getattr(result, "answer", "") or ""
+        if not answer_text:
+            return 0
+
+        from massgen.bootstrap_criteria import merge_proposals
+        from massgen.evaluation_criteria_generator import _parse_criteria_response
+
+        criteria, _aspiration = _parse_criteria_response(answer_text, min_criteria=1, max_criteria=10)
+        if not criteria:
+            logger.info("[bootstrap_criteria] discriminator returned no parseable criteria")
+            return 0
+        proposals = [
+            {
+                "text": c.text,
+                "category": c.category,
+                "anti_patterns": list(c.anti_patterns) if getattr(c, "anti_patterns", None) else None,
+            }
+            for c in criteria
+        ]
+        before = len(self._bootstrap_criteria_accumulator)
+        cap = int(getattr(coord, "bootstrap_max_total", 30) or 0)
+        self._bootstrap_criteria_accumulator = merge_proposals(
+            self._bootstrap_criteria_accumulator,
+            proposals,
+            cap=cap,
+        )
+        added = len(self._bootstrap_criteria_accumulator) - before
+        if added > 0:
+            self._persist_bootstrap_accumulator()
+            logger.info(
+                "[bootstrap_criteria] discriminator added %d new criteria (accumulator size: %d)",
+                added,
+                len(self._bootstrap_criteria_accumulator),
+            )
+        return added
+
+    def _drain_at_session_end(self) -> None:
+        """Force a final drain pass before the session ends.
+
+        Reason: `_drain_pending_criteria_proposals` is called from
+        `_resolve_effective_checklist_criteria`, which only fires while
+        coordination is active. Emissions written to stdio JSONL after the
+        last `_resolve` and before final presentation get stranded otherwise
+        (observed live: codex emitted 6 criteria across rounds, zero reached
+        the accumulator). This hook runs unconditionally as a safety net.
+        """
+        try:
+            self._drain_pending_criteria_proposals()
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.debug("[bootstrap_criteria] session-end drain failed: %s", exc)
 
     def _persist_bootstrap_accumulator(self) -> None:
         """Write the current bootstrap accumulator snapshot to the session log dir.
@@ -6446,6 +6657,15 @@ Your answer:"""
             if not criteria_ready:
                 await asyncio.sleep(0.25)
                 continue
+
+            # Bootstrap discriminator gate (Variant B): runs once per unique
+            # answer-label set when criteria_mode == "bootstrap_subagent".
+            # Emits gap-driven criteria from a critic and merges into the
+            # accumulator before agents restart. No-op for static / inline.
+            try:
+                await self._maybe_run_bootstrap_discriminator(current_answers)
+            except Exception as exc:
+                logger.warning("[bootstrap_criteria] discriminator gate failed: %s", exc)
 
             # Start new coordination iteration only after blocking pre-round gates complete.
             self.coordination_tracker.start_new_iteration()
@@ -17867,6 +18087,11 @@ Your answer:"""
 
     async def _present_final_answer(self) -> AsyncGenerator[StreamChunk, None]:
         """Present the final coordinated answer with optional post-evaluation and restart loop."""
+
+        # Safety-net drain: any criteria emissions written to stdio JSONL after
+        # the last _resolve_effective_checklist_criteria call would otherwise be
+        # stranded. Catches the slow-agent / late-round case before shutdown.
+        self._drain_at_session_end()
 
         # Select the best agent based on current state
         if not self._selected_agent:

@@ -393,6 +393,7 @@ class TestBootstrapEndToEnd:
         orch.config = ac
         orch._generated_evaluation_criteria = None
         orch._bootstrap_criteria_accumulator = []
+        orch._bootstrap_round_index = 0
         orch.agent_states = {"a1": AgentState(), "a2": AgentState()}
         orch._is_changedoc_enabled = lambda: False  # type: ignore[attr-defined]
         orch._get_decomposition_criteria_for_agent = lambda _aid: None  # type: ignore[attr-defined]
@@ -426,13 +427,18 @@ class TestBootstrapEndToEnd:
         assert "Concrete examples over abstractions" in accumulator_texts
         assert "State assumptions explicitly" in accumulator_texts
 
-    def test_subagent_mode_marks_notice_once(self):
+    def test_subagent_mode_drain_does_not_invoke_critic(self):
+        """The drain is for harvesting emitted proposals — it does NOT call
+        the discriminator. The discriminator is triggered separately via
+        _run_bootstrap_discriminator_step() from an async between-rounds path.
+        Calling drain in subagent mode is a no-op for the critic path.
+        """
         orch = self._make_full_orch("bootstrap_subagent")
-        assert not getattr(orch, "_bootstrap_subagent_notice_logged", False)
-        # Two drain calls should set the once-flag and not error.
+        # Drain calls without any pending proposals or stdio JSONLs.
         orch._drain_pending_criteria_proposals()
         orch._drain_pending_criteria_proposals()
-        assert orch._bootstrap_subagent_notice_logged is True
+        # No errors, accumulator stays empty (no seeded entries here).
+        assert orch._bootstrap_criteria_accumulator == []
 
     def test_subagent_mode_still_propagates_seeded_entries(self):
         orch = self._make_full_orch("bootstrap_subagent")
@@ -442,6 +448,128 @@ class TestBootstrapEndToEnd:
         ]
         items, *_ = orch._resolve_effective_checklist_criteria()
         assert "Subagent-emitted gap criterion" in items
+
+    def test_session_end_drain_captures_late_stdio_emissions(self, tmp_path):
+        """Late-round emissions (written to stdio JSONL after the last
+        _resolve_effective_checklist_criteria call) must still reach the
+        accumulator. A live run on 2026-05-11 showed codex emitted 6 criteria
+        across rounds, zero reached the accumulator because no _resolve fired
+        between codex's submissions and session end.
+
+        The fix: Orchestrator._drain_at_session_end() runs unconditionally
+        before final presentation.
+        """
+        import json
+        from types import SimpleNamespace
+
+        orch = self._make_full_orch("bootstrap_inline")
+        # Simulate a backend that has emitted but the orchestrator hasn't
+        # drained since (no _resolve called).
+        specs_dir = tmp_path / "agent_b_temp"
+        specs_dir.mkdir()
+        specs_path = specs_dir / "checklist_specs.json"
+        specs_path.write_text("{}", encoding="utf-8")
+        jsonl_path = specs_dir / "proposed_criteria.jsonl"
+        jsonl_path.write_text(
+            json.dumps({"text": "Stranded late emission", "category": "primary"}) + "\n",
+            encoding="utf-8",
+        )
+        orch.agents = {"agent_b": SimpleNamespace(backend=SimpleNamespace(_checklist_specs_path=str(specs_path)))}
+
+        # Invoke the session-end hook directly.
+        orch._drain_at_session_end()
+
+        texts = {p["text"] for p in orch._bootstrap_criteria_accumulator}
+        assert "Stranded late emission" in texts
+        assert not jsonl_path.exists()
+
+    def test_variant_b_discriminator_spawns_subagent_and_merges_criteria(self):
+        """Variant B (bootstrap_subagent): _run_bootstrap_discriminator_step()
+        spawns an in-process critic via SubagentManager, parses the response,
+        and merges proposed_criteria into the accumulator.
+
+        Mocks SubagentManager to avoid a real LLM call. The mock returns a
+        well-formed criteria JSON; the test asserts the accumulator receives
+        them.
+        """
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        orch = self._make_full_orch("bootstrap_subagent")
+        # Stub the coordination tracker with one answer per agent.
+        orch.coordination_tracker = SimpleNamespace(
+            answers_by_agent={
+                "a1": [SimpleNamespace(content="Answer from agent a1", agent_id="a1")],
+                "a2": [SimpleNamespace(content="Answer from agent a2", agent_id="a2")],
+            },
+        )
+        orch.current_task = "Design a logo"
+        orch.session_id = "test-session"
+        # Workspace + log dir don't matter when SubagentManager is mocked, but
+        # the method may attempt to resolve them; stub minimal attributes.
+        orch.agents = {
+            "a1": SimpleNamespace(backend=SimpleNamespace(filesystem_manager=SimpleNamespace(cwd="/tmp/test_ws"))),
+            "a2": SimpleNamespace(backend=SimpleNamespace(filesystem_manager=SimpleNamespace(cwd="/tmp/test_ws"))),
+        }
+        orch.orchestrator_id = "test-orch"
+
+        # The mocked subagent answer — a critic-shaped response.
+        fake_answer = """```json
+{
+  "criteria": [
+    {"text": "Visual hierarchy: lead element must dominate the composition without crowding subordinate elements.", "category": "primary"},
+    {"text": "Symbol coherence: every glyph must reinforce a single design intent.", "category": "standard"},
+    {"text": "Color discipline: palette must stay below 4 hues with deliberate weight assignment.", "category": "standard"},
+    {"text": "Stretch: design must be recognizable at 16px.", "category": "stretch"}
+  ],
+  "aspiration": "A logo that earns recall in under one glance."
+}
+```"""
+        mock_manager = MagicMock()
+        mock_manager.spawn_subagent = AsyncMock(return_value=SimpleNamespace(answer=fake_answer, success=True))
+
+        with patch("massgen.subagent.manager.SubagentManager", return_value=mock_manager):
+            count = asyncio.run(orch._run_bootstrap_discriminator_step())
+
+        assert count >= 1, "discriminator should merge at least one new criterion"
+        mock_manager.spawn_subagent.assert_called_once()
+        spawn_kwargs = mock_manager.spawn_subagent.call_args.kwargs
+        # Prompt should reference the current task and the agents' answers.
+        prompt = spawn_kwargs.get("task", "") or (
+            spawn_kwargs.get("task") if "task" in spawn_kwargs else mock_manager.spawn_subagent.call_args.args[0] if mock_manager.spawn_subagent.call_args.args else ""
+        )
+        assert "Design a logo" in prompt
+        # Accumulator now contains the parsed criteria.
+        texts = {p["text"] for p in orch._bootstrap_criteria_accumulator}
+        assert any("Visual hierarchy" in t for t in texts)
+        assert any("Symbol coherence" in t for t in texts)
+
+    def test_variant_b_discriminator_skipped_when_not_subagent_mode(self):
+        """static and bootstrap_inline modes must not invoke the discriminator."""
+        import asyncio
+        from unittest.mock import patch
+
+        for mode in ("static", "bootstrap_inline"):
+            orch = self._make_full_orch(mode)
+            with patch("massgen.subagent.manager.SubagentManager") as mock_mgr_class:
+                count = asyncio.run(orch._run_bootstrap_discriminator_step())
+            assert count == 0
+            mock_mgr_class.assert_not_called()
+
+    def test_variant_b_discriminator_skipped_when_no_answers(self):
+        """No answers in the tracker → discriminator is a no-op (nothing to critique)."""
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        orch = self._make_full_orch("bootstrap_subagent")
+        orch.coordination_tracker = SimpleNamespace(answers_by_agent={})
+        orch.current_task = "test"
+        with patch("massgen.subagent.manager.SubagentManager") as mock_mgr_class:
+            count = asyncio.run(orch._run_bootstrap_discriminator_step())
+        assert count == 0
+        mock_mgr_class.assert_not_called()
 
     def test_stdio_emissions_jsonl_drains_into_accumulator(self, tmp_path):
         """Non-SDK backends (gemini/codex/etc.) emit by appending to
