@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.85
+**Current Version:** v0.1.86
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** May 11, 2026
+**Last Updated:** May 13, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,10 +42,26 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.86** | 05/13/26 | `bootstrap_subagent` LLM Discriminator | @ncrispino | Complete the discriminative criteria story — between-rounds LLM critic that proposes criteria for the accumulator wired in v0.1.85 |
-| | | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.84/v0.1.85 ([#959](https://github.com/massgen/MassGen/issues/959)) |
+| **v0.1.87** | 05/15/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.86 ([#959](https://github.com/massgen/MassGen/issues/959)) |
+| | | Discriminative Criteria Refinements | @ncrispino | Selection, ranking, and retirement of stale criteria for long-running refinement loops |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.86 - `bootstrap_subagent` Discriminator + Codex MCP Approval Fix (Completed)
+
+**Released:** May 13, 2026 | PRs: [#1090](https://github.com/massgen/MassGen/pull/1090)
+
+### Features
+- **`bootstrap_subagent` Variant (fully functional)**: The dedicated critic-driven criteria path now runs an in-process LLM discriminator between rounds. The critic reads the task and each agent's latest answer, emits `proposed_criteria` as JSON, and merges them into the accumulator for the next round's checklist
+- **Answer-Snapshot Gate**: The discriminator runs once per unique answer snapshot, avoiding repeated critiques when the answer set has not changed
+- **Session-End Drain**: Late stdio JSONL criteria emissions are drained before final presentation so they are not stranded after the final checklist resolution pass
+- **Codex MCP Approval Fix**: Codex workspaces now write both non-interactive approval bypasses needed for external MCP tool calls under `codex exec`
+- **Tests**: Bootstrap criteria coverage expanded to 35 tests; Codex workspace approval policy coverage added across approval modes
+
+### Notes
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.87.
 
 ---
 
@@ -204,24 +220,25 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.86 - `bootstrap_subagent` LLM Discriminator & Image/Video Edit
+## 📋 v0.1.87 - Image/Video Edit & Criteria Refinements
 
 ### Features
 
-**1. `bootstrap_subagent` LLM Discriminator** (@ncrispino)
-- In-process LLM pass that turns the wired-but-pending `bootstrap_subagent` mode into a fully functional between-rounds critic — pairs with the v0.1.85 accumulator infrastructure
-- **Use Case**: Get the same discriminative-criteria-emergence behavior as `bootstrap_inline`, but driven by a dedicated critic instead of by the answering agents themselves
-
-**2. Image/Video Edit Capabilities (Deferred from v0.1.84/v0.1.85)** (@ncrispino)
+**1. Image/Video Edit Capabilities (Deferred from v0.1.86)** (@ncrispino)
 - Issue: [#959](https://github.com/massgen/MassGen/issues/959)
 - Investigate and support image and video editing capabilities across providers
 - Multi-turn editing workflows with continuation IDs
 - **Use Case**: Enable iterative media editing within multi-agent workflows
 
+**2. Discriminative Criteria Refinements** (@ncrispino)
+- Build on v0.1.85/v0.1.86 criteria emergence with selection, ranking, and retirement of stale criteria
+- **Use Case**: Keep long-running refinement loops focused on the most useful current criteria
+
 ### Success Criteria
-- ✅ `bootstrap_subagent` runs an LLM critic between rounds and seeds the accumulator
-- ✅ Image editing capabilities documented and tested
-- ✅ Video editing capabilities documented and tested
+- [ ] Image editing capabilities documented and tested
+- [ ] Video editing capabilities documented and tested
+- [ ] Multi-turn editing flow works end-to-end
+- [ ] Criteria refinement behavior is documented and covered by tests
 
 ---
 
