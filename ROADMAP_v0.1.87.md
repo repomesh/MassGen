@@ -1,32 +1,14 @@
-# MassGen v0.1.86 Roadmap
+# MassGen v0.1.87 Roadmap
 
-**Target Release:** May 13, 2026
+**Target Release:** May 15, 2026
 
 ## Overview
 
-Version 0.1.86 completes the discriminative criteria emergence story started in v0.1.85 and picks up image/video edit capabilities (deferred from v0.1.84/v0.1.85).
+Version 0.1.87 picks up the image/video edit work deferred from v0.1.86 and continues refinement of the discriminative criteria pipeline after `bootstrap_inline` and `bootstrap_subagent` became functional.
 
 ---
 
-## Feature: `bootstrap_subagent` LLM Discriminator
-
-**Depends on:** v0.1.85's `bootstrap_criteria` accumulator
-**Owner:** @ncrispino
-
-### Goals
-
-- **In-Process Critic**: An LLM pass between rounds that proposes criteria for the accumulator — turning the wired-but-pending `bootstrap_subagent` mode into a fully functional variant
-- **Parity with `bootstrap_inline`**: Same end result (criteria augment the next round's checklist), different sourcing (a dedicated critic vs. the answering agents themselves)
-
-### Success Criteria
-
-- [ ] `bootstrap_subagent` runs an LLM critic between rounds
-- [ ] Seeded entries flow through the accumulator and are merged into round-N+1's checklist
-- [ ] Tests cover the critic pass and propagation end-to-end
-
----
-
-## Feature: Image/Video Edit Capabilities (Deferred from v0.1.84/v0.1.85)
+## Feature: Image/Video Edit Capabilities (Deferred from v0.1.86)
 
 **Issue:** [#959](https://github.com/massgen/MassGen/issues/959)
 **Owner:** @ncrispino
@@ -35,20 +17,42 @@ Version 0.1.86 completes the discriminative criteria emergence story started in 
 
 - **Edit Capability Coverage**: Investigate and support image and video editing capabilities across providers
 - **Multi-Turn Editing**: Multi-turn editing workflows with continuation IDs
+- **Provider Parity**: Document which providers support generation, editing, continuation, and media input/output combinations
 
 ### Success Criteria
 
 - [ ] Image editing capabilities documented and tested
 - [ ] Video editing capabilities documented and tested
 - [ ] Multi-turn editing flow works end-to-end
+- [ ] Provider capability notes are updated where users discover multimodal examples
+
+---
+
+## Feature: Discriminative Criteria Refinements
+
+**Depends on:** v0.1.85 `bootstrap_inline` and v0.1.86 `bootstrap_subagent`
+**Owner:** @ncrispino
+
+### Goals
+
+- **Selection and Ranking**: Keep the most useful emergent criteria prominent as the accumulator grows
+- **Stale Criteria Retirement**: Avoid long-running refinement loops carrying obsolete criteria indefinitely
+- **Operational Clarity**: Improve docs and examples for choosing `bootstrap_inline` vs. `bootstrap_subagent`
+
+### Success Criteria
+
+- [ ] Criteria refinement behavior is documented
+- [ ] Tests cover ranking/selection or stale-criteria retirement behavior if implemented
+- [ ] Examples clearly distinguish agent-proposed and critic-proposed criteria flows
 
 ---
 
 ## Related Tracks
 
-- **v0.1.85**: Discriminative Criteria Emergence (`criteria_mode`) — `bootstrap_inline` and `bootstrap_subagent` accumulator infrastructure
+- **v0.1.86**: Functional `bootstrap_subagent` discriminator and Codex MCP approval fix
+- **v0.1.85**: Discriminative Criteria Emergence (`criteria_mode`) — `bootstrap_inline` and accumulator infrastructure
 
 ## What's Next
 
 - Continued multimodal expansion and provider parity
-- Refinements to the discriminative criteria pipeline (selection, ranking, retirement of stale criteria)
+- Further quality-loop ergonomics for long-running multi-agent refinement

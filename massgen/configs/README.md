@@ -227,7 +227,22 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.85 - Latest
+### v0.1.86 - Latest
+**New Features:** `bootstrap_subagent` Discriminator + Codex MCP Approval Fix
+
+**Key Features:**
+- **`bootstrap_subagent` Variant**: Fully functional critic-driven path — the orchestrator runs a between-rounds LLM critic, merges `proposed_criteria` into the accumulator, and augments the next round's checklist automatically
+- **Session-End Drain**: Late stdio criteria emissions are drained before final presentation
+- **Codex MCP Approval Fix**: Non-interactive Codex workspaces write the approval bypasses needed for external MCP tools under `codex exec`
+- **Example Configs**: `massgen/configs/coordination/bootstrap_subagent_criteria.yaml` and `bootstrap_inline_criteria.yaml`
+
+**Try It:**
+```bash
+pip install massgen==0.1.86
+uv run massgen --config massgen/configs/coordination/bootstrap_subagent_criteria.yaml "Create an SVG of an AI agent coding."
+```
+
+### v0.1.85
 **New Features:** Discriminative Criteria Emergence (`criteria_mode`)
 
 **Key Features:**
