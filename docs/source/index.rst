@@ -200,6 +200,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.86 (May 13, 2026)** - ``bootstrap_subagent`` Discriminator + Codex MCP Approval Fix
+
+The critic-driven criteria path is now functional: ``orchestrator.coordination.criteria_mode: bootstrap_subagent`` runs an in-process LLM discriminator between rounds, merges proposed criteria into the accumulator, and augments the next round's checklist automatically. Codex MCP tool calls under ``codex exec`` now get the non-interactive approval bypasses needed for external workflow tools.
+
 **v0.1.85 (May 11, 2026)** - Discriminative Criteria Emergence (``criteria_mode``)
 
 New ``orchestrator.coordination.criteria_mode`` option lets evaluation criteria emerge from observed gaps across rounds instead of being pre-authored. The ``bootstrap_inline`` variant is fully functional on all backends with checklist tool support — agents emit ``proposed_criteria`` alongside ``submit_checklist``, the accumulator dedupes/caps, and the next round's checklist is augmented automatically.

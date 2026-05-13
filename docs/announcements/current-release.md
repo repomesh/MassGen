@@ -1,4 +1,4 @@
-# MassGen v0.1.85 Release Announcement
+# MassGen v0.1.86 Release Announcement
 
 <!--
 This is the current release announcement. Copy this + feature-highlights.md to LinkedIn/X.
@@ -7,19 +7,19 @@ After posting, update the social links below.
 
 ## Release Summary
 
-We're excited to release MassGen v0.1.85 — Discriminative Criteria Emergence (`criteria_mode`)! 🚀 Evaluation criteria can now emerge from observed gaps across rounds instead of being pre-authored — agents propose what a stronger answer would satisfy, the accumulator dedupes and caps, and the next round's checklist is augmented automatically. Anti-Goodhart by construction.
+We're excited to release MassGen v0.1.86 — `bootstrap_subagent` Discriminator + Codex MCP Approval Fix! 🚀 The critic-driven criteria path is now functional: MassGen can run an in-process LLM discriminator between rounds, propose stronger evaluation criteria from the current answers, merge them into the accumulator, and augment the next round's checklist automatically.
 
-> ⚠️ **First-stage release — still maturing.** Expect further finalization and more thorough end-to-end testing in v0.1.86.
+This release also fixes Codex MCP tool calls under `codex exec` so checklist/workflow tools no longer fail immediately with "user cancelled MCP tool call" in non-interactive runs.
 
 ## Install
 
 ```bash
-pip install massgen==0.1.85
+pip install massgen==0.1.86
 ```
 
 ## Links
 
-- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.85
+- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.86
 - **X post:** [TO BE ADDED AFTER POSTING]
 - **LinkedIn post:** [TO BE ADDED AFTER POSTING]
 
@@ -31,38 +31,37 @@ Copy everything below this line, then append content from `feature-highlights.md
 
 ---
 
-We're excited to release MassGen v0.1.85 — Discriminative Criteria Emergence (`criteria_mode`)! 🚀 Evaluation criteria can now emerge from observed gaps across rounds instead of being pre-authored — agents propose what a stronger answer would satisfy, the accumulator dedupes and caps, and the next round's checklist is augmented automatically.
-
-> ⚠️ **First-stage release — still maturing.** Expect further finalization and more thorough end-to-end testing in v0.1.86.
+We're excited to release MassGen v0.1.86 — `bootstrap_subagent` Discriminator + Codex MCP Approval Fix! 🚀 The critic-driven criteria path is now functional: MassGen can run an in-process LLM discriminator between rounds, propose stronger evaluation criteria from the current answers, merge them into the accumulator, and augment the next round's checklist automatically.
 
 **Key Improvements:**
 
-🧪 **`bootstrap_inline` (fully functional)** — Self-discriminative criteria across all backends:
-- Each agent emits a short `proposed_criteria` list alongside its `submit_checklist` call — criteria a stronger answer would satisfy that the current answers do *not*
-- Proposals are deduped by exact text and FIFO-capped (`bootstrap_max_total`, default 30)
-- Persisted to `bootstrap_criteria_accumulator.json` in the session log dir
-- SDK (Claude Code) wires the field directly into the in-process tool schema; stdio backends (gemini, codex, response, chat_completions, claude, grok) emit through `proposed_criteria.jsonl` drained by the orchestrator
+🧠 **`bootstrap_subagent` is now functional** — Dedicated critic-driven criteria emergence:
+- `criteria_mode: bootstrap_subagent` runs a between-rounds LLM critic via `SubagentManager`
+- The critic reads the task and each agent's latest answer, then emits `proposed_criteria` as JSON
+- The orchestrator merges those criteria into `bootstrap_criteria_accumulator.json`
+- The next round's checklist is augmented without asking answering agents to propose criteria themselves
+- The discriminator runs once per unique answer snapshot, avoiding repeated critiques of unchanged rounds
 
-🛠️ **`bootstrap_subagent` (wired, LLM step queued for v0.1.86)** — Critic-driven variant:
-- Same accumulator pipeline, but criteria come from a between-rounds critic rather than the answering agents
-- LLM discriminator pass is the v0.1.86 follow-up
+🧹 **Session-end drain** — Late stdio emissions are captured before final presentation, so criteria proposed near the end of a run are not stranded after the final checklist resolution pass.
 
-🛡️ **Anti-Goodhart by Construction** — Criteria come from observed gaps, not priors that may not match the task. Removes a cold-start friction: users no longer need to pre-author criteria for new tasks.
+🛠️ **Codex MCP approval fix** — `codex exec` workspaces now get both approval bypasses needed for non-interactive external MCP calls:
+- Top-level `approval_policy = "never"`
+- Per-MCP-server `default_tools_approval_mode = "approve"`
 
-📦 **New Configs**:
-- `massgen/configs/coordination/bootstrap_inline_criteria.yaml`
-- `massgen/configs/coordination/bootstrap_subagent_criteria.yaml`
+🧪 **Tests**:
+- Expanded bootstrap criteria coverage to 35 tests
+- Added Codex workspace approval policy coverage for all approval modes
 
 **Getting Started:**
 
 ```bash
-pip install massgen==0.1.85
-uv run massgen --config massgen/configs/coordination/bootstrap_inline_criteria.yaml "Create an SVG of an AI agent coding."
+pip install massgen==0.1.86
+uv run massgen --config massgen/configs/coordination/bootstrap_subagent_criteria.yaml "Create an SVG of an AI agent coding."
 ```
 
 Inspect the emerging criteria at `.massgen/massgen_logs/<session>/bootstrap_criteria_accumulator.json`.
 
-Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.85
+Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.86
 
 Feature highlights:
 

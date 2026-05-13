@@ -121,15 +121,15 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🗺️ Roadmap</h3></summary>
 
-- [Recent Achievements (v0.1.85)](#recent-achievements-v0185)
-- [Previous Achievements (v0.0.3 - v0.1.84)](#previous-achievements-v003---v0184)
+- [Recent Achievements (v0.1.86)](#recent-achievements-v0186)
+- [Previous Achievements (v0.0.3 - v0.1.85)](#previous-achievements-v003---v0185)
 - [Key Future Enhancements](#key-future-enhancements)
   - Bug Fixes & Backend Improvements
   - Advanced Agent Collaboration
   - Expanded Model, Tool & Agent Integrations
   - Improved Performance & Scalability
   - Enhanced Developer Experience
-- [v0.1.86 Roadmap](#v0186-roadmap)
+- [v0.1.87 Roadmap](#v0187-roadmap)
 </details>
 
 <details open>
@@ -154,18 +154,19 @@ This project started with the "threads of thought" and "iterative refinement" id
 
 ---
 
-## 🆕 Latest Features (v0.1.85)
+## 🆕 Latest Features (v0.1.86)
 
-**🎉 Released: May 11, 2026**
+**🎉 Released: May 13, 2026**
 
-**What's New in v0.1.85:**
-- **🧪 Discriminative Criteria Emergence (`criteria_mode`)** - New `orchestrator.coordination.criteria_mode` lets evaluation criteria emerge from observed gaps across rounds instead of being pre-authored. The `bootstrap_inline` variant is fully functional on all backends with checklist tool support — agents emit `proposed_criteria` alongside `submit_checklist`, the accumulator dedupes/caps, and the next round's checklist is augmented automatically.
-- **🛡️ Anti-Goodhart by Construction** - Criteria come from observed gaps rather than priors that may not match the task; no cold-start friction for new tasks.
+**What's New in v0.1.86:**
+- **🧠 `bootstrap_subagent` Discriminator** - `orchestrator.coordination.criteria_mode: bootstrap_subagent` now runs a dedicated between-rounds LLM critic that proposes criteria from the current answers, merges them into the accumulator, and augments the next round's checklist automatically.
+- **🧹 Session-End Criteria Drain** - Late stdio JSONL criteria emissions are drained before final presentation so they are not stranded after the last checklist resolution pass.
+- **🛠️ Codex MCP Approval Fix** - Codex workspaces now include the non-interactive approval bypasses needed for external MCP tools such as `submit_checklist`, `create_task_plan`, `new_answer`, and `read_media`.
 
-**Try v0.1.85 Features:**
+**Try v0.1.86 Features:**
 ```bash
-pip install massgen==0.1.85
-uv run massgen --config massgen/configs/coordination/bootstrap_inline_criteria.yaml "Create an SVG of an AI agent coding."
+pip install massgen==0.1.86
+uv run massgen --config massgen/configs/coordination/bootstrap_subagent_criteria.yaml "Create an SVG of an AI agent coding."
 ```
 
 → [See full release history and examples](massgen/configs/README.md#release-history--examples)
@@ -1237,19 +1238,21 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 ⚠️ **Early Stage Notice:** As MassGen is in active development, please expect upcoming breaking architecture changes as we continue to refine and improve the system.
 
-### Recent Achievements (v0.1.85)
+### Recent Achievements (v0.1.86)
 
-**🎉 Released: May 11, 2026**
+**🎉 Released: May 13, 2026**
 
-#### Discriminative Criteria Emergence (`criteria_mode`)
-- **`bootstrap_inline` Variant**: Fully functional on all backends with checklist tool support — agents emit a small `proposed_criteria` list alongside each `submit_checklist` call describing criteria a stronger answer would satisfy that the current answers do *not*. Proposals are deduped, FIFO-capped (`bootstrap_max_total`, default 30), persisted to `bootstrap_criteria_accumulator.json` in the session log dir, and merged into the next round's effective checklist via `EvaluationSection`
-- **`bootstrap_subagent` Variant (wired, LLM step deferred)**: Same accumulator pipeline but criteria are intended to come from a between-rounds critic; the in-process LLM discriminator pass is queued for v0.1.86
-- **`CoordinationConfig.criteria_mode`** + `bootstrap_max_per_agent_per_round` + `bootstrap_max_total` config fields, parsed in `cli.py:_parse_coordination_config`, validated in `CoordinationConfig._validate_criteria_mode`
-- **Cross-backend coverage**: SDK path (Claude Code) gets the field directly in the in-process tool schema; stdio backends (gemini, codex, response, chat_completions, claude, grok) get a JSONL emission channel — `proposed_criteria.jsonl` next to checklist specs, drained by the orchestrator on each criteria resolution
-- **Anti-Goodhart by construction**: Criteria come from observed gaps, not priors that may not match the task
-- **Example Configs**: `massgen/configs/coordination/bootstrap_inline_criteria.yaml` and `bootstrap_subagent_criteria.yaml`
+#### `bootstrap_subagent` Discriminator + Codex MCP Approval Fix
+- **`bootstrap_subagent` Variant (fully functional)**: A dedicated between-rounds LLM critic now reads the task and each agent's latest answer, emits `proposed_criteria` as JSON, and merges them into `bootstrap_criteria_accumulator.json` for the next round's checklist
+- **Answer-Snapshot Gate**: The discriminator runs once per unique answer snapshot, avoiding repeated critiques when the answer set has not changed
+- **Session-End Drain**: Late stdio criteria emissions are captured before final presentation
+- **Codex MCP Approval Fix**: Non-interactive Codex workspaces now write both `approval_policy = "never"` and per-MCP-server `default_tools_approval_mode = "approve"`, preventing external MCP tools from being cancelled immediately under `codex exec`
+- **Example Configs**: `massgen/configs/coordination/bootstrap_subagent_criteria.yaml` for the critic-driven path and `bootstrap_inline_criteria.yaml` for agent-proposed criteria
+- **Tests**: Bootstrap criteria coverage expanded to 35 tests, plus Codex workspace approval policy coverage across approval modes
 
-### Previous Achievements (v0.0.3 - v0.1.84)
+### Previous Achievements (v0.0.3 - v0.1.85)
+
+✅ **Discriminative Criteria Emergence (`criteria_mode`) (v0.1.85)**: New `orchestrator.coordination.criteria_mode` lets evaluation criteria emerge from observed gaps across rounds. `bootstrap_inline` is fully functional on all backends with checklist tool support, with `proposed_criteria` persisted, deduped, capped, and merged into the next round's effective checklist.
 
 ✅ **TUI Consensus Map (v0.1.84)**: Compact visual map below the agent status ribbon during multi-agent runs that summarizes coordination state — agent nodes with latest answer labels, vote arrows, current leader, winner state — driven by existing coordination events without backend schema changes.
 
@@ -1564,13 +1567,13 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 We welcome community contributions to achieve these goals.
 
-### v0.1.86 Roadmap
+### v0.1.87 Roadmap
 
-Version 0.1.86 focuses on completing the discriminative criteria emergence story and picking up deferred multimodal work:
+Version 0.1.87 picks up the multimodal work deferred from v0.1.86 and continues refinement of the discriminative criteria pipeline:
 
 #### Planned Features
-- **`bootstrap_subagent` LLM Discriminator**: In-process LLM pass that turns the wired-but-pending `bootstrap_subagent` mode into a fully functional between-rounds critic — pairs with the v0.1.85 accumulator infrastructure
-- **Image/Video Edit Capabilities** ([#959](https://github.com/massgen/MassGen/issues/959)): Image and video editing across providers with multi-turn editing workflows via continuation IDs — deferred from v0.1.84/v0.1.85
+- **Image/Video Edit Capabilities** ([#959](https://github.com/massgen/MassGen/issues/959)): Image and video editing across providers with multi-turn editing workflows via continuation IDs
+- **Discriminative Criteria Refinements**: Selection, ranking, and retirement of stale criteria for long-running refinement loops
 
 ---
 
