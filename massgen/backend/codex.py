@@ -960,6 +960,12 @@ class CodexBackend(StreamingBufferMixin, NativeToolBackendMixin, LLMBackend):
                     if server.get("exclude_tools"):
                         entry["disabled_tools"] = server["exclude_tools"]
 
+                    # `codex exec` has no UI to answer MCP approval prompts.
+                    # `approval_policy = "never"` covers shell approvals, while
+                    # MCP tools have their own server/tool approval mode.
+                    if not self._is_docker_mode and self.approval_mode in ("full-auto", "auto-edit", "full-access"):
+                        entry["default_tools_approval_mode"] = "approve"
+
                     mcp_section[name] = entry
 
             if mcp_section:
@@ -1007,6 +1013,20 @@ class CodexBackend(StreamingBufferMixin, NativeToolBackendMixin, LLMBackend):
         else:
             hooks_path.unlink(missing_ok=True)
             (config_dir / "codex_hook_script.py").unlink(missing_ok=True)
+
+        # Force approval bypass for non-interactive runs. MassGen always invokes
+        # Codex via `codex exec` with no human in the loop. Two knobs needed:
+        #   - top-level `approval_policy = "never"` covers Codex's shell/patch
+        #     approval path. Without it, the deprecated "on-failure" default
+        #     escalates failures to a non-existent user.
+        #   - per-server `default_tools_approval_mode = "approve"` (set above
+        #     when serializing each [mcp_servers.<name>] block) covers the
+        #     SEPARATE MCP tool-call approval gate. Setting only
+        #     `approval_policy` is not enough — external MCP calls otherwise
+        #     fail with "user cancelled MCP tool call" in `codex exec`.
+        # dangerous-no-sandbox bypasses both via the CLI flag.
+        if not self._is_docker_mode and self.approval_mode in ("full-auto", "auto-edit", "full-access"):
+            config["approval_policy"] = "never"
 
         # Configure sandbox for local (non-Docker) workspace-write mode.
         # Codex OS-level sandbox (Seatbelt on macOS, Landlock on Linux) restricts writes to:

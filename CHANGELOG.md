@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.86 (May 13, 2026)** - `bootstrap_subagent` Discriminator + Codex MCP Approval Fix
+Variant B (`criteria_mode: bootstrap_subagent`) is now functional: the orchestrator runs an in-process critic between rounds, merges critic-proposed criteria into the accumulator, and augments the next round's checklist. This release also fixes Codex MCP tool calls under `codex exec` by writing the approval bypasses needed for non-interactive runs.
+
 **v0.1.85 (May 11, 2026)** - Discriminative Criteria Emergence (`criteria_mode`)
 New `orchestrator.coordination.criteria_mode` option lets evaluation criteria emerge from observed gaps across rounds instead of being pre-authored. `bootstrap_inline` variant is fully functional on all backends with checklist tool support — agents emit `proposed_criteria` alongside `submit_checklist`, the accumulator dedupes/caps, and the next round's checklist is augmented automatically.
 
@@ -17,6 +20,33 @@ A compact visual map below the agent status ribbon during multi-agent runs. Show
 
 **v0.1.83 (May 1, 2026)** - In-Session Standalone Checkpoint MCP Integration
 The standalone checkpoint MCP server can now be exposed *inside* a normal MassGen run via a new `coordination.standalone_checkpoint` config block, giving single-agent sessions access to the richer `init` + `checkpoint` tools backed by their own reviewer team. Enhanced checkpoint tool card visualization separates primary operations from system tasks.
+
+---
+
+## [0.1.86] - 2026-05-13
+
+### Added
+- **Functional `bootstrap_subagent` Variant**: `orchestrator.coordination.criteria_mode: bootstrap_subagent` now runs a between-rounds LLM critic via `Orchestrator._run_bootstrap_discriminator_step()`. The critic reads the task and each agent's latest answer, emits `proposed_criteria` as JSON, and the orchestrator merges them into the accumulator for the next round's checklist.
+- **Discriminator De-Duping Gate**: `_maybe_run_bootstrap_discriminator` runs the critic once per unique answer snapshot, avoiding repeated critiques when the visible answer set has not changed.
+- **Session-End Criteria Drain**: `Orchestrator._drain_at_session_end` forces a final drain before final presentation so late stdio JSONL emissions are not stranded after the last checklist resolution pass.
+
+### Fixed
+- **Codex MCP Approval Bypass**: `CodexBackend._write_workspace_config` now writes both top-level `approval_policy = "never"` and per-MCP-server `default_tools_approval_mode = "approve"` for non-interactive approval modes. This prevents external MCP tools such as `submit_checklist`, `create_task_plan`, `new_answer`, and `read_media` from failing immediately with "user cancelled MCP tool call" under `codex exec`.
+
+### Documentations, Configurations and Resources
+- **Updated Config**: `massgen/configs/coordination/bootstrap_subagent_criteria.yaml` now documents the v0.1.86+ active critic-driven flow.
+
+### Tests
+- `massgen/tests/test_bootstrap_criteria.py` — expanded to 35 tests covering session-end drain, mocked discriminator spawning and merge behavior, static/inline no-op paths, and empty-answer no-op behavior.
+- `massgen/tests/test_codex_native_hook_adapter.py::TestCodexWorkspaceApprovalPolicy` — covers Codex workspace approval policy output across approval modes.
+
+### Notes
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.87.
+
+### Technical Details
+- **Major Focus**: Complete the discriminative criteria emergence story by making the dedicated critic-driven path functional, and restore Codex MCP tool-call reliability for non-interactive automation.
+- **PRs Merged**: [#1090](https://github.com/massgen/MassGen/pull/1090)
+- **Contributors**: @ncrispino, @HenryQi and the MassGen team
 
 ---
 
