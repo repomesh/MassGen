@@ -1,0 +1,56 @@
+# MassGen
+
+> MassGen is a multi-agent framework that coordinates AI agents through redundancy and iterative refinement. Multiple agents tackle the same task in parallel, observe each other's progress, and vote to converge on the best answer. Agents can use tools (MCP), execute code, and read/write files in your project.
+
+This file follows the [llms.txt convention](https://llmstxt.org). It is a curated index of canonical MassGen documentation for AI agents and crawlers. A larger, concatenated dump of the same documentation lives at [`/llms-full.txt`](llms-full.txt).
+
+## Project
+
+- [Project README](https://github.com/Leezekun/MassGen): What MassGen is, screenshots, quickstart, the "How It Works" section.
+- [AI_USAGE.md](https://github.com/Leezekun/MassGen/blob/main/AI_USAGE.md): How LLM agents should invoke MassGen via the CLI (always with `--automation`).
+- [Changelog](changelog.html): Release notes for every MassGen version.
+
+## Quickstart
+
+- [Installation](quickstart/installation.html): Install MassGen via uv / pip.
+- [Running MassGen](quickstart/running-massgen.html): First run, CLI, WebUI, automation mode.
+- [Configuration](quickstart/configuration.html): YAML config structure, agents, backends, orchestrator settings.
+
+## User guide
+
+- [Core concepts](user_guide/concepts.html): Agents, orchestrator, voting, consensus, refinement.
+- [Backends](user_guide/backends.html): Supported model providers and how to configure each (Claude, Gemini, GPT, Grok, Azure, LM Studio, OpenRouter, Codex, Claude Code SDK).
+- [Skills](user_guide/skills.html): MassGen-as-a-skill for AI coding agents (Claude Code, Cursor, Copilot, …).
+- [WebUI](user_guide/webui.html): Browser UI for side-by-side agent visualization and voting.
+- [Filesystem & project integration](user_guide/files/index.html): Context paths, permissions, workspaces, snapshots.
+- [Tools (MCP, code execution, custom tools)](user_guide/tools/index.html): How agents call tools and how to add your own.
+- [Multimodal](user_guide/multimodal.html): Image and audio inputs.
+- [Sessions and multi-turn](user_guide/sessions/index.html): Multi-turn conversations, memory, restart, cancellation.
+- [Integration](user_guide/integration/index.html): Python API, LiteLLM custom provider, HTTP server, automation mode.
+- [Validating configs](user_guide/validating_configs.html): Config schema validation.
+- [Logging](user_guide/logging.html): How to read MassGen run logs.
+
+## Reference
+
+- [CLI reference](reference/cli.html): All `massgen` command flags.
+- [Python API reference](reference/python_api.html): Async API for embedding MassGen.
+- [YAML schema](reference/yaml_schema.html): Full configuration schema.
+- [Configuration examples](reference/configuration_examples.html): Worked examples per use case.
+- [MCP server registry](reference/mcp_server_registry.html): MCP servers known to MassGen.
+- [Supported models](reference/supported_models.html): Model registry.
+- [Timeouts](reference/timeouts.html): Timeout configuration.
+- [Status file](reference/status_file.html): The `status.json` file emitted in automation mode.
+- [Comparisons](reference/comparisons.html): MassGen vs LLM Council, CrewAI, LangGraph, AutoGen.
+
+## Examples
+
+- [Available configs](examples/available_configs.html): Index of YAML configs shipped with MassGen.
+- [Basic examples](examples/basic_examples.html): Single-agent and small multi-agent setups.
+- [Advanced patterns](examples/advanced_patterns.html): Complex coordination patterns.
+- [Case studies](examples/case_studies.html): Side-by-side visual comparisons of MassGen vs single-agent solutions.
+
+## Optional
+
+- [Development & contributing](development/contributing.html): How to contribute to MassGen.
+- [Architecture](development/architecture.html): Internal architecture notes.
+- [Roadmap](development/roadmap.html): What's planned.

@@ -80,11 +80,20 @@ See visual comparisons between MassGen and single-agent solutions, highlighting 
 
 Use MassGen from Claude Code, Codex, Copilot, Cursor, and other AI coding agents.
 
+.. note::
+
+   **For AI agents and crawlers:** This site publishes a curated `llms.txt <llms.txt>`_ index following the `llmstxt.org spec <https://llmstxt.org>`_, plus a concatenated `llms-full.txt <llms-full.txt>`_ dump of the user guide and reference docs.
+
 
 How Does MassGen Compare?
 -------------------------
 
-**MassGen vs LLM Council:** While LLM Council follows a fixed 3-stage pipeline, MassGen agents autonomously decide to contribute new answers or vote for others, reaching consensus organically. Plus, MassGen agents can use tools, execute code, and read/write files in your codebase — backed by active development with regular releases. :doc:`See full comparison → <reference/comparisons>`
+MassGen sits in a different design space than typical multi-agent frameworks. The core differentiator across the board is *parallel attempts with voting and consensus* — agents tackle the same task in parallel, observe each other, and converge on a winner — backed by tools, code execution, filesystem integration, and active development.
+
+- :doc:`MassGen vs LLM Council <reference/comparisons>` — dynamic voting / consensus vs a fixed 3-stage pipeline (responses → ranking → chairman synthesis).
+- :doc:`MassGen vs CrewAI <reference/comparisons/crewai>` — parallel refinement on one task vs role-based decomposition into sub-tasks.
+- :doc:`MassGen vs LangGraph <reference/comparisons/langgraph>` — a pre-built parallel + voting protocol vs a low-level graph runtime you author yourself.
+- :doc:`MassGen vs AutoGen / AG2 <reference/comparisons/autogen>` — parallel attempts with collective validation vs conversation-based multi-agent message passing.
 
 
 Quick Start
@@ -200,6 +209,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.87 (May 15, 2026)** - Documentation: Framework Comparisons & ``llms.txt``
+
+Three new "MassGen vs ..." comparison pages (CrewAI, LangGraph, AutoGen/AG2), a curated ``llms.txt`` index plus a full-corpus ``llms-full.txt`` dump for AI agents and crawlers (per `llmstxt.org <https://llmstxt.org>`_ spec), and a one-line ``refine=False`` fix for the ``bootstrap_subagent`` discriminator.
+
 **v0.1.86 (May 13, 2026)** - ``bootstrap_subagent`` Discriminator + Codex MCP Approval Fix
 
 The critic-driven criteria path is now functional: ``orchestrator.coordination.criteria_mode: bootstrap_subagent`` runs an in-process LLM discriminator between rounds, merges proposed criteria into the accumulator, and augments the next round's checklist automatically. Codex MCP tool calls under ``codex exec`` now get the non-interactive approval bypasses needed for external workflow tools.
@@ -207,14 +220,6 @@ The critic-driven criteria path is now functional: ``orchestrator.coordination.c
 **v0.1.85 (May 11, 2026)** - Discriminative Criteria Emergence (``criteria_mode``)
 
 New ``orchestrator.coordination.criteria_mode`` option lets evaluation criteria emerge from observed gaps across rounds instead of being pre-authored. The ``bootstrap_inline`` variant is fully functional on all backends with checklist tool support — agents emit ``proposed_criteria`` alongside ``submit_checklist``, the accumulator dedupes/caps, and the next round's checklist is augmented automatically.
-
-**v0.1.84 (May 8, 2026)** - TUI Consensus Map
-
-A compact visual map below the agent status ribbon during multi-agent runs. Shows agent nodes with latest answer labels, vote arrows, current vote leader, winner state, and waiting/working indicators — driven by existing coordination events without backend schema changes. Hidden on welcome and single-agent runs.
-
-**v0.1.83 (May 1, 2026)** - In-Session Standalone Checkpoint MCP Integration
-
-The standalone checkpoint MCP server can now be exposed *inside* a normal MassGen run via a new ``coordination.standalone_checkpoint`` config block, giving single-agent sessions access to the richer ``init`` + ``checkpoint`` tools backed by their own reviewer team. Enhanced checkpoint tool card visualization separates primary operations from system tasks.
 
 :doc:`Full changelog → <changelog>`
 

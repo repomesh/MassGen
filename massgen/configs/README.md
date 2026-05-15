@@ -227,7 +227,23 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.86 - Latest
+### v0.1.87 - Latest
+**New Features:** Documentation: Framework Comparisons & `llms.txt`
+
+**Key Features:**
+- **Framework Comparison Pages**: Three new "MassGen vs ..." pages — CrewAI, LangGraph, AutoGen/AG2 — under `docs/source/reference/comparisons/`
+- **`llms.txt` Index**: Curated [llmstxt.org](https://llmstxt.org)-spec index plus full-corpus `llms-full.txt` (~1 MB, 59 files) published at the docs site root
+- **Landing Page Update**: "How Does MassGen Compare?" now lists all four comparisons; parent `comparisons.rst` drops "coming soon" and gains a toctree
+- **`bootstrap_subagent` Single-Shot Fix**: `_run_bootstrap_discriminator_step` now passes `refine=False` to `spawn_subagent` — the canonical knob `SubagentManager` respects at the orchestrator level
+
+**Try It:**
+```bash
+pip install massgen==0.1.87
+# Browse the new comparisons:
+# https://docs.massgen.ai/en/latest/reference/comparisons.html
+```
+
+### v0.1.86
 **New Features:** `bootstrap_subagent` Discriminator + Codex MCP Approval Fix
 
 **Key Features:**
@@ -235,12 +251,6 @@ Most configurations use environment variables for API keys:so
 - **Session-End Drain**: Late stdio criteria emissions are drained before final presentation
 - **Codex MCP Approval Fix**: Non-interactive Codex workspaces write the approval bypasses needed for external MCP tools under `codex exec`
 - **Example Configs**: `massgen/configs/coordination/bootstrap_subagent_criteria.yaml` and `bootstrap_inline_criteria.yaml`
-
-**Try It:**
-```bash
-pip install massgen==0.1.86
-uv run massgen --config massgen/configs/coordination/bootstrap_subagent_criteria.yaml "Create an SVG of an AI agent coding."
-```
 
 ### v0.1.85
 **New Features:** Discriminative Criteria Emergence (`criteria_mode`)
