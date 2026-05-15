@@ -80,6 +80,10 @@ See visual comparisons between MassGen and single-agent solutions, highlighting 
 
 Use MassGen from Claude Code, Codex, Copilot, Cursor, and other AI coding agents.
 
+.. note::
+
+   **For AI agents and crawlers:** This site publishes a curated `llms.txt </llms.txt>`_ index following the `llmstxt.org spec <https://llmstxt.org>`_, plus a concatenated `llms-full.txt </llms-full.txt>`_ dump of the user guide and reference docs.
+
 
 How Does MassGen Compare?
 -------------------------

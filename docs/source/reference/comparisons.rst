@@ -145,11 +145,19 @@ Technical Architecture Differences
 
 The key difference: LLM Council uses a fixed 3-stage pipeline with a designated chairman, while MassGen uses dynamic coordination where agents naturally converge on the best solution through voting.
 
-.. note::
+More Comparisons
+----------------
 
-   More comparisons coming soon:
+Dedicated comparison pages for the most common "MassGen vs …" questions:
 
-   - MassGen vs Claude Code
-   - MassGen vs AG2 (and AutoGen)
-   - MassGen vs LangGraph
-   - MassGen vs CrewAI
+- :doc:`comparisons/crewai` — role-based decomposition with a hosted control plane
+- :doc:`comparisons/langgraph` — low-level graph orchestration with the LangChain stack
+- :doc:`comparisons/autogen` — multi-agent conversations (Microsoft AutoGen and the community AG2 continuation)
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+
+   comparisons/crewai
+   comparisons/langgraph
+   comparisons/autogen
