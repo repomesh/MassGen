@@ -113,7 +113,7 @@ When to Use Each
 
 **Choose MassGen when you need:**
 
-- A pre-built *parallel + voting* coordination protocol you don't have to reimplement.
+- A pre-built *parallel + voting* coordination protocol focused on iterative refinement that you don't have to reimplement.
 - Heterogeneous backends per agent on the same task (Claude + Gemini + GPT + Grok, etc.).
 - A polished TUI / WebUI showing all agents working simultaneously and their consensus path.
 - A local-first stack without a managed deployment platform dependency.

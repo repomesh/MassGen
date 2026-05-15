@@ -134,7 +134,7 @@ When to Use Each
 
 **Choose MassGen when you need:**
 
-- *Parallel attempts + voting* as a first-class control flow.
+- *Parallel attempts + voting* as a first-class control flow with iterative refinement.
 - Side-by-side live visualization of every agent's reasoning and answer.
 - Heterogeneous backends per agent (Claude + Gemini + GPT + Grok all on the same task).
 - An actively developed open-source project with regular releases and a broad backend matrix.
