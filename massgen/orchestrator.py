@@ -1298,10 +1298,19 @@ class Orchestrator(ChatAgent):
                 except Exception as _exc:
                     logger.debug("[bootstrap_criteria] notify_runtime_subagent_started failed: %s", _exc)
 
+            # refine=False is the canonical single-shot knob: SubagentManager
+            # sets max_new_answers_per_agent=1, skip_voting=True, and
+            # skip_final_presentation=True at the orchestrator level (where
+            # they actually win — the coordination-dict overrides we also set
+            # above are belt-and-suspenders, but the orchestrator-level
+            # `max_new_answers_per_agent: 3` default would otherwise shadow
+            # them, as observed live in log_20260513_095921_816676's
+            # subagent_config_bootstrap_discriminator_1.yaml).
             result = await manager.spawn_subagent(
                 task=prompt,
                 subagent_id=subagent_id,
                 timeout_seconds=180,
+                refine=False,
             )
         except Exception as exc:
             logger.warning("[bootstrap_criteria] discriminator spawn failed: %s", exc, exc_info=True)

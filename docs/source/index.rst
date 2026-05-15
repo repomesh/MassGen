@@ -80,11 +80,20 @@ See visual comparisons between MassGen and single-agent solutions, highlighting 
 
 Use MassGen from Claude Code, Codex, Copilot, Cursor, and other AI coding agents.
 
+.. note::
+
+   **For AI agents and crawlers:** This site publishes a curated `llms.txt <llms.txt>`_ index following the `llmstxt.org spec <https://llmstxt.org>`_, plus a concatenated `llms-full.txt <llms-full.txt>`_ dump of the user guide and reference docs.
+
 
 How Does MassGen Compare?
 -------------------------
 
-**MassGen vs LLM Council:** While LLM Council follows a fixed 3-stage pipeline, MassGen agents autonomously decide to contribute new answers or vote for others, reaching consensus organically. Plus, MassGen agents can use tools, execute code, and read/write files in your codebase — backed by active development with regular releases. :doc:`See full comparison → <reference/comparisons>`
+MassGen sits in a different design space than typical multi-agent frameworks. The core differentiator across the board is *parallel attempts with voting and consensus* — agents tackle the same task in parallel, observe each other, and converge on a winner — backed by tools, code execution, filesystem integration, and active development.
+
+- :doc:`MassGen vs LLM Council <reference/comparisons>` — dynamic voting / consensus vs a fixed 3-stage pipeline (responses → ranking → chairman synthesis).
+- :doc:`MassGen vs CrewAI <reference/comparisons/crewai>` — parallel refinement on one task vs role-based decomposition into sub-tasks.
+- :doc:`MassGen vs LangGraph <reference/comparisons/langgraph>` — a pre-built parallel + voting protocol vs a low-level graph runtime you author yourself.
+- :doc:`MassGen vs AutoGen / AG2 <reference/comparisons/autogen>` — parallel attempts with collective validation vs conversation-based multi-agent message passing.
 
 
 Quick Start

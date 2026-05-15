@@ -217,6 +217,8 @@ This collaborative approach ensures that the final output leverages collective i
 ---
 
 > 📖 **Complete Documentation:** For comprehensive guides, API reference, and detailed examples, visit **[MassGen Official Documentation](https://docs.massgen.ai/)**
+>
+> 🤖 **For AI agents:** A curated [`llms.txt`](https://docs.massgen.ai/en/latest/llms.txt) index and full [`llms-full.txt`](https://docs.massgen.ai/en/latest/llms-full.txt) dump are published with the docs ([llmstxt.org spec](https://llmstxt.org)).
 
 ---
 

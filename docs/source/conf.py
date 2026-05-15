@@ -107,6 +107,10 @@ suppress_warnings = [
 templates_path = ["_templates"]
 exclude_patterns = ["case_studies"]  # Exclude standalone HTML from Sphinx processing
 
+# Files in _extra/ are copied verbatim to the build output root (e.g. llms.txt).
+# Use this for files that need to live at the site root, not under /_static/.
+html_extra_path = ["_extra"]
+
 # Autodoc settings
 autodoc_default_options = {
     "members": True,
@@ -214,3 +218,68 @@ if _hoverxref_enabled:
     }
     hoverxref_tooltip_maxwidth = 600
     hoverxref_tooltip_theme = "tooltipster-shadow"
+
+
+# -- llms-full.txt generation (https://llmstxt.org) --------------------------
+# At build-finish, walk the curated documentation roots and concatenate their
+# source files into a single llms-full.txt at the build output root. The
+# hand-curated index lives at _extra/llms.txt and is copied via html_extra_path.
+
+_LLMS_FULL_ROOTS = ("quickstart", "user_guide", "reference")
+_LLMS_FULL_EXTS = (".rst", ".md")
+
+
+def _generate_llms_full_txt(app, exception):
+    if exception is not None:
+        return
+    if app.builder.name != "html":
+        return
+
+    source_root = os.path.abspath(app.srcdir)
+    out_path = os.path.join(app.outdir, "llms-full.txt")
+
+    header = (
+        "# MassGen — full documentation dump\n\n"
+        "> Concatenated source of MassGen's quickstart, user guide, and reference\n"
+        "> documentation. For a curated index see /llms.txt. Generated at\n"
+        "> Sphinx build time from docs/source/{quickstart,user_guide,reference}.\n\n"
+    )
+
+    sections = []
+    for root in _LLMS_FULL_ROOTS:
+        root_path = os.path.join(source_root, root)
+        if not os.path.isdir(root_path):
+            continue
+        for dirpath, _dirnames, filenames in os.walk(root_path):
+            for name in sorted(filenames):
+                if not name.endswith(_LLMS_FULL_EXTS):
+                    continue
+                file_path = os.path.join(dirpath, name)
+                rel_path = os.path.relpath(file_path, source_root)
+                try:
+                    with open(file_path, encoding="utf-8") as fh:
+                        body = fh.read()
+                except (OSError, UnicodeDecodeError):
+                    continue
+                sections.append((rel_path, body))
+
+    sections.sort(key=lambda item: item[0])
+
+    try:
+        with open(out_path, "w", encoding="utf-8") as fh:
+            fh.write(header)
+            for rel_path, body in sections:
+                fh.write(f"\n\n---\n\n## {rel_path}\n\n")
+                fh.write(body)
+                if not body.endswith("\n"):
+                    fh.write("\n")
+    except OSError as exc:
+        print(f"Warning: failed to write llms-full.txt: {exc}")
+        return
+
+    print(f"Wrote llms-full.txt ({len(sections)} files) -> {out_path}")
+
+
+def setup(app):
+    app.connect("build-finished", _generate_llms_full_txt)
+    return {"parallel_read_safe": True, "parallel_write_safe": True}

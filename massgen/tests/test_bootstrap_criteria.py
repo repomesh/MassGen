@@ -899,6 +899,12 @@ class TestBootstrapEndToEnd:
         # the run, and max_new_answers_global=1 is the hard cap.
         assert coord.get("voting_threshold") == 1, f"discriminator must lower voting_threshold so single-agent self-vote ends the run, got {coord}"
         assert coord.get("max_new_answers_global") == 1, f"discriminator must set max_new_answers_global=1 as a hard cap, got {coord}"
+        # And the canonical knob: refine=False on spawn_subagent. This is the
+        # one SubagentManager actually respects at the orchestrator level (the
+        # coordination-dict overrides get shadowed by the orchestrator-level
+        # max_new_answers_per_agent=3 default without it).
+        spawn_kwargs = mock_manager.spawn_subagent.call_args.kwargs
+        assert spawn_kwargs.get("refine") is False, f"discriminator must pass refine=False to spawn_subagent for single-shot, got {spawn_kwargs}"
 
     def test_variant_b_discriminator_picks_up_criteria_json_artifact(self, tmp_path):
         """When the subagent writes criteria.json to its workspace, the
