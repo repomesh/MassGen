@@ -63,6 +63,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ### Notes
 - Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements deferred to v0.1.88.
+- Closes [#1082](https://github.com/massgen/MassGen/issues/1082) (`llms.txt` + `llms-full.txt`) and [#1083](https://github.com/massgen/MassGen/issues/1083) (CrewAI / LangGraph / AutoGen comparison pages).
 
 ---
 

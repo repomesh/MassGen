@@ -44,10 +44,12 @@ A compact visual map below the agent status ribbon during multi-agent runs. Show
 
 ### Notes
 - Originally-planned Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements deferred to v0.1.88.
+- Closes [#1082](https://github.com/massgen/MassGen/issues/1082) (publish `llms.txt` + `llms-full.txt`) and [#1083](https://github.com/massgen/MassGen/issues/1083) (CrewAI / LangGraph / AutoGen comparison pages).
 
 ### Technical Details
 - **Major Focus**: Make MassGen discoverable to AI agents and crawlers, and give human readers structured "MassGen vs ..." comparisons against the three frameworks most often asked about
 - **PRs Merged**: [#1094](https://github.com/massgen/MassGen/pull/1094)
+- **Issues Closed**: [#1082](https://github.com/massgen/MassGen/issues/1082), [#1083](https://github.com/massgen/MassGen/issues/1083)
 - **Contributors**: @ncrispino, @HenryQi and the MassGen team
 
 ---

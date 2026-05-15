@@ -13,6 +13,10 @@
 - **`refine=False`** ([#1094](https://github.com/massgen/MassGen/pull/1094)): `Orchestrator._run_bootstrap_discriminator_step` now passes `refine=False` to `SubagentManager.spawn_subagent`. Without it, the orchestrator's `max_new_answers_per_agent: 3` default shadowed the coordination-dict overrides and let the discriminator refine instead of running single-shot. Found via live log inspection
 - **Test** ([#1094](https://github.com/massgen/MassGen/pull/1094)): `massgen/tests/test_bootstrap_criteria.py` asserts `discriminator must pass refine=False to spawn_subagent for single-shot`
 
+### ✅ Issues Closed
+- [#1082](https://github.com/massgen/MassGen/issues/1082) — publish `llms.txt` + `llms-full.txt` at `docs.massgen.ai`
+- [#1083](https://github.com/massgen/MassGen/issues/1083) — add MassGen vs CrewAI / LangGraph / AutoGen comparison pages
+
 ---
 
 ### 📖 Getting Started

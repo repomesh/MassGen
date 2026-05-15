@@ -57,6 +57,8 @@ pip install massgen==0.1.87
 - Read the comparisons: https://docs.massgen.ai/en/latest/reference/comparisons.html
 - Point your AI agent at: https://docs.massgen.ai/en/latest/llms.txt
 
+Closes #1082 (`llms.txt` + `llms-full.txt`) and #1083 (CrewAI / LangGraph / AutoGen comparison pages) — both raised by @mvanhorn.
+
 Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.87
 
 Feature highlights:
