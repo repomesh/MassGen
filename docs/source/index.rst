@@ -209,6 +209,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.88 (May 20, 2026)** - Antigravity CLI Backend
+
+New ``antigravity_cli`` backend wraps Google's ``agy`` binary as a MassGen backend, with workspace-local ``.antigravity/`` config isolation, Antigravity MCP config translation, native hook adapter support, and runnable configs for single-agent Antigravity and mixed Gemini API + Antigravity fast-iteration runs.
+
 **v0.1.87 (May 15, 2026)** - Documentation: Framework Comparisons & ``llms.txt``
 
 Three new "MassGen vs ..." comparison pages (CrewAI, LangGraph, AutoGen/AG2), a curated ``llms.txt`` index plus a full-corpus ``llms-full.txt`` dump for AI agents and crawlers (per `llmstxt.org <https://llmstxt.org>`_ spec), and a one-line ``refine=False`` fix for the ``bootstrap_subagent`` discriminator.

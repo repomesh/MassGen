@@ -227,7 +227,24 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.87 - Latest
+### v0.1.88 - Latest
+**New Features:** Antigravity CLI Backend
+
+**Key Features:**
+- **Antigravity CLI Backend**: New `antigravity_cli` backend wraps Google's `agy` binary as a MassGen agent backend
+- **Workspace-Local Isolation**: Antigravity config and MCP settings are written under `.antigravity/` in the run workspace instead of the user's global `~/.gemini/` config
+- **MCP Schema Translation**: MassGen MCP server entries are emitted using Antigravity's `mcp_config.json` schema, including `serverUrl` for HTTP servers
+- **Native Hook Adapter**: Antigravity reuses Gemini CLI hook behavior via `AntigravityCLINativeHookAdapter`
+- **Example Configs**: `massgen/configs/providers/antigravity/antigravity_cli_local.yaml` and `massgen/configs/features/fast_iteration_gemini_antigravity.yaml`
+
+**Try It:**
+```bash
+pip install massgen==0.1.88
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+uv run massgen --config massgen/configs/features/fast_iteration_gemini_antigravity.yaml "Create an svg of an AI agent coding."
+```
+
+### v0.1.87
 **New Features:** Documentation: Framework Comparisons & `llms.txt`
 
 **Key Features:**
