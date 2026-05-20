@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.88 (May 20, 2026)** - Antigravity CLI Backend
+Adds a new `antigravity_cli` backend wrapping Google's `agy` binary, with workspace-local `.antigravity/` isolation, MCP config emission using Antigravity's `serverUrl` schema, native-hook adapter support, OAuth/API-key auth handling, and new runnable configs for both single-agent and mixed Gemini + Antigravity runs.
+
 **v0.1.87 (May 15, 2026)** - Documentation: Framework Comparisons & `llms.txt`
 Documentation release adding three "MassGen vs ..." comparison pages (CrewAI, LangGraph, AutoGen/AG2), a curated `llms.txt` index plus full-corpus `llms-full.txt` dump (per [llmstxt.org](https://llmstxt.org) spec), and small README/landing-page pointers so AI agents and crawlers can discover the docs. Also ships a one-line `refine=False` fix for the `bootstrap_subagent` discriminator that was being shadowed by the orchestrator's default `max_new_answers_per_agent`.
 
@@ -20,6 +23,37 @@ New `orchestrator.coordination.criteria_mode` option lets evaluation criteria em
 
 **v0.1.84 (May 8, 2026)** - TUI Consensus Map
 A compact visual map below the agent status ribbon during multi-agent runs. Shows agent nodes with latest answer labels, vote arrows, current vote leader, winner state, and waiting/working indicators — driven by existing coordination events without backend schema changes. Hidden on welcome and single-agent runs.
+
+---
+
+## [0.1.88] - 2026-05-20
+
+### Added
+- **Antigravity CLI Backend** ([#1097](https://github.com/massgen/MassGen/pull/1097)): New `massgen/backend/antigravity_cli.py` wraps Google's `agy` binary as a MassGen backend. It accepts the `antigravity_cli` backend type, streams content from the subprocess, tails Antigravity session logs for tool/thinking events, and exposes provider metadata through the backend capabilities registry.
+- **Workspace-Local Antigravity Isolation** ([#1097](https://github.com/massgen/MassGen/pull/1097)): The backend passes Antigravity's hidden `--gemini_dir <workspace>/.antigravity` flag so MCP config and settings stay inside the run workspace instead of mutating the user's global `~/.gemini/` config.
+- **Antigravity MCP Config Translation** ([#1097](https://github.com/massgen/MassGen/pull/1097)): MassGen MCP server entries are translated to Antigravity's `mcp_config.json` schema, including `serverUrl` for HTTP servers and `command`/`args`/`env` for stdio servers.
+- **Native Hook Adapter** ([#1097](https://github.com/massgen/MassGen/pull/1097)): Added `massgen/mcp_tools/native_hook_adapters/antigravity_cli_adapter.py`, reusing Gemini CLI hook behavior for Antigravity's compatible hook protocol.
+- **Example Configs** ([#1097](https://github.com/massgen/MassGen/pull/1097)):
+  - `massgen/configs/providers/antigravity/antigravity_cli_local.yaml` — single Antigravity CLI agent
+  - `massgen/configs/features/fast_iteration_gemini_antigravity.yaml` — mixed Gemini API + Antigravity CLI fast-iteration run
+
+### Changed
+- **Backend Registry and CLI Wiring**: `antigravity_cli` is exported from `massgen/backend/__init__.py`, registered in `massgen/backend/capabilities.py`, and instantiated in `massgen/cli.py`.
+- **Workspace Snapshot Hygiene**: `.antigravity` / `.antigravitycli` metadata directories are excluded from meaningful-content and snapshot-copy heuristics.
+- **Feature Highlights**: Announcement feature highlights now list Antigravity CLI alongside Claude Code, Codex, Gemini CLI, and GitHub Copilot.
+
+### Tests
+- `massgen/tests/test_antigravity_cli_backend.py` — 490 lines covering binary discovery, command construction, workspace-local config, MCP config schema, provider metadata, stdout/error streaming, workflow JSON envelopes, Docker/API-key constraints, native hook adapter wiring, and environment passthrough.
+
+### Notes
+- Antigravity CLI (`agy`) must be installed separately with `curl -fsSL https://antigravity.google/cli/install.sh | bash`.
+- Local mode can use existing Google OAuth state at `~/.gemini/google_accounts.json`; Docker mode requires `GEMINI_API_KEY` or `GOOGLE_API_KEY` because OAuth state does not cross container boundaries.
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements remain deferred to v0.1.89.
+
+### Technical Details
+- **Major Focus**: Add Google Antigravity CLI as a first-class MassGen backend while keeping project-local isolation and MassGen workflow/tool semantics intact.
+- **PRs Merged**: [#1097](https://github.com/massgen/MassGen/pull/1097)
+- **Contributors**: @ncrispino, @HenryQi and the MassGen team
 
 ---
 
