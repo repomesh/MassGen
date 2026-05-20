@@ -2484,6 +2484,17 @@ def create_backend(backend_type: str, **kwargs) -> Any:
 
         return GeminiCLIBackend(**kwargs)
 
+    elif backend_type == "antigravity_cli":
+        # AntigravityCLIBackend wrapping Google's `agy` Go binary
+        # (successor to Gemini CLI for consumer tiers as of 2026-06-18).
+        # Authentication: existing Google OAuth at ~/.gemini/google_accounts.json,
+        # or GEMINI_API_KEY / GOOGLE_API_KEY env vars (passthrough).
+        # Requires: curl -fsSL https://antigravity.google/cli/install.sh | bash
+
+        from massgen.backend import AntigravityCLIBackend
+
+        return AntigravityCLIBackend(**kwargs)
+
     elif backend_type == "azure_openai":
         api_key = kwargs.get("api_key") or os.getenv("AZURE_OPENAI_API_KEY")
         endpoint = kwargs.get("base_url") or os.getenv("AZURE_OPENAI_ENDPOINT")

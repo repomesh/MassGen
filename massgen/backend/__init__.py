@@ -9,6 +9,7 @@ Supports multiple LLM providers with standardized StreamChunk interface:
 - Gemini (structured output for coordination)
 - Claude Code (claude-code-sdk streaming integration)
 - Codex (OpenAI Codex CLI with OAuth support)
+- Antigravity CLI (Google's `agy` CLI, successor to Gemini CLI as of I/O 2026)
 
 TODO:
 
@@ -17,6 +18,7 @@ TODO:
 - Check if we indeed need to pass agent_id & session_id to backends
 """
 
+from .antigravity_cli import AntigravityCLIBackend
 from .base import LLMBackend, StreamChunk, TokenUsage
 from .chat_completions import ChatCompletionsBackend
 from .claude import ClaudeBackend
@@ -56,6 +58,7 @@ __all__ = [
     "CodexBackend",
     "CopilotBackend",
     "GeminiCLIBackend",
+    "AntigravityCLIBackend",
 ]
 
 # Add Azure OpenAI if available

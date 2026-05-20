@@ -337,6 +337,50 @@ BACKEND_CAPABILITIES: dict[str, BackendCapabilities] = {
             "gemini-2.5-pro": "2025-06",
         },
     ),
+    "antigravity_cli": BackendCapabilities(
+        backend_type="antigravity_cli",
+        provider_name="Antigravity CLI",
+        supported_capabilities={
+            "bash",
+            "mcp",
+            "filesystem_native",
+            "web_search",
+        },
+        builtin_tools=[
+            "shell",
+            "filesystem",
+            "web_search",
+            "subagents",
+            "plugins",
+        ],
+        filesystem_support="native",
+        models=[
+            "gemini-3.5-flash",
+            "gemini-3-flash-preview",
+            "gemini-3.1-pro-preview",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+        ],
+        default_model="gemini-3.5-flash",
+        env_var="GEMINI_API_KEY",
+        model_release_dates={
+            "gemini-3.5-flash": "2026-05",
+            "gemini-3-flash-preview": "2025-12",
+            "gemini-3.1-pro-preview": "2026-02",
+            "gemini-2.5-pro": "2025-06",
+            "gemini-2.5-flash": "2025-06",
+        },
+        notes=(
+            "Google Antigravity CLI (`agy`) — successor to Gemini CLI for consumer "
+            "tiers as of 2026-06-18. agy 1.0.0 selects the model server-side per "
+            "tier (default: Gemini 3.5 Flash); the configured `model` value is "
+            "informational only. Auth: existing Google OAuth (~/.gemini/google_accounts.json) "
+            "or GEMINI_API_KEY/GOOGLE_API_KEY env vars. Install: "
+            "curl -fsSL https://antigravity.google/cli/install.sh | bash. "
+            "MCP servers are merged into ~/.gemini/config/mcp_config.json at "
+            "session start and restored on cleanup (uses `serverUrl` for HTTP)."
+        ),
+    ),
     "gemini_cli": BackendCapabilities(
         backend_type="gemini_cli",
         provider_name="Gemini CLI",
