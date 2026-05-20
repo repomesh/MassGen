@@ -60,7 +60,7 @@ class TestCommandConstruction:
     """The backend invokes `agy` with the right flags for our use cases."""
 
     def test_minimal_command_uses_print_mode_with_yolo(self, backend):
-        cmd = backend._build_exec_command("hello", resume_session=False)
+        cmd = backend._build_exec_command("hello")
         assert cmd[0] == "/fake/bin/agy"
         # -p drives non-interactive mode; the prompt comes after the flag
         assert "-p" in cmd
@@ -69,19 +69,23 @@ class TestCommandConstruction:
         # The user prompt must end up as a real arg, not interpolated
         assert "hello" in cmd
 
-    def test_resume_uses_conversation_flag(self, backend):
-        backend.session_id = "abc-123"
-        cmd = backend._build_exec_command("again", resume_session=True)
-        assert "--conversation" in cmd
-        idx = cmd.index("--conversation")
-        assert cmd[idx + 1] == "abc-123"
+    def test_command_never_emits_conversation_or_continue_flags(self, backend):
+        # Each MassGen call is a single-shot `-p` invocation; the orchestrator
+        # already replays prior-response context in retry prompts, so agy-side
+        # session resumption is unnecessary (and `--conversation` with a UUID
+        # we generated fails with "conversation X not found" since agy assigns
+        # its own IDs). The backend must never emit these flags.
+        cmd = backend._build_exec_command("again")
+        assert "--conversation" not in cmd
+        assert "--continue" not in cmd
+        assert "-c" not in cmd
 
     def test_command_passes_gemini_dir_for_workspace_isolation(self, backend, tmp_path):
         # agy honors a hidden `--gemini_dir <abs_path>` flag (verified via binary
         # strings + live test). We use it so each session gets an isolated config
         # root and never mutates the user's ~/.gemini/.
         backend._config_cwd = str(tmp_path / "cwd")
-        cmd = backend._build_exec_command("hello", resume_session=False)
+        cmd = backend._build_exec_command("hello")
         assert any(arg.startswith("--gemini_dir") for arg in cmd), f"--gemini_dir flag missing from: {cmd}"
         # Path arg must be absolute (agy logs reject relative: ".gemini must be an absolute path")
         gd_index = next(i for i, a in enumerate(cmd) if a == "--gemini_dir" or a.startswith("--gemini_dir="))
@@ -92,15 +96,21 @@ class TestCommandConstruction:
         assert Path(path_arg).is_absolute(), f"--gemini_dir path must be absolute, got {path_arg!r}"
         assert ".antigravity" in path_arg
 
-    def test_resume_false_omits_conversation_flag(self, backend):
-        backend.session_id = "abc-123"
-        cmd = backend._build_exec_command("again", resume_session=False)
-        assert "--conversation" not in cmd
+    def test_command_passes_log_file_for_error_surfacing(self, backend, tmp_path):
+        # agy exits 0 with empty stdout on quota/auth failures. We capture
+        # `--log-file` so silent failures can be surfaced as real errors.
+        backend._config_cwd = str(tmp_path / "cwd")
+        cmd = backend._build_exec_command("hello")
+        assert "--log-file" in cmd, f"--log-file flag missing from: {cmd}"
+        idx = cmd.index("--log-file")
+        log_path = cmd[idx + 1]
+        assert Path(log_path).is_absolute()
+        assert ".antigravity" in log_path
 
     def test_command_does_not_pass_model_flag(self, backend):
         """agy 1.0.0 has no --model flag; we must not emit one even when configured."""
         backend.model = "gemini-3-flash-preview"
-        cmd = backend._build_exec_command("hello", resume_session=False)
+        cmd = backend._build_exec_command("hello")
         assert "--model" not in cmd
         assert "-m" not in cmd
 
@@ -253,7 +263,7 @@ class TestStdoutStreamingParser:
 
         with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc_mock)):
             chunks = []
-            async for chunk in backend._stream_local("hi", resume_session=False):
+            async for chunk in backend._stream_local("hi"):
                 chunks.append(chunk)
 
         contents = [c for c in chunks if c.type == "content"]
@@ -276,12 +286,48 @@ class TestStdoutStreamingParser:
 
         with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc_mock)):
             chunks = []
-            async for chunk in backend._stream_local("hi", resume_session=False):
+            async for chunk in backend._stream_local("hi"):
                 chunks.append(chunk)
 
         errors = [c for c in chunks if c.type == "error"]
         assert len(errors) == 1
         assert "agy" in (errors[0].error or "").lower() or "exit" in (errors[0].error or "").lower()
+
+    @pytest.mark.asyncio
+    async def test_silent_quota_failure_is_surfaced_from_log_file(self, backend, tmp_path):
+        # agy exits 0 with empty stdout on RESOURCE_EXHAUSTED. The backend
+        # must scan the --log-file we pass and surface the real error so the
+        # orchestrator stops retry-looping against an empty response.
+        backend._config_cwd = str(tmp_path / "cwd")
+        log_path = backend._agy_log_file_path()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            "I0520 09:23:29 server.go:1072 Sending user message\n" "E0520 09:23:30 log.go:398] agent executor error: RESOURCE_EXHAUSTED (code 429): Individual quota reached. Resets in 3h0m45s.\n",
+            encoding="utf-8",
+        )
+
+        proc_mock = AsyncMock()
+
+        async def _aiter_stdout():
+            return
+            yield  # pragma: no cover — empty generator
+
+        proc_mock.stdout = _aiter_stdout()
+        proc_mock.wait = AsyncMock(return_value=0)
+        proc_mock.returncode = 0
+
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc_mock)):
+            chunks = []
+            async for chunk in backend._stream_local("hi"):
+                chunks.append(chunk)
+
+        errors = [c for c in chunks if c.type == "error"]
+        contents = [c for c in chunks if c.type == "content"]
+        assert errors, "silent agy failure must yield an error chunk"
+        assert any("quota" in (c.error or "").lower() or "429" in (c.error or "") for c in errors)
+        # User-visible content chunk should also flag the failure so the TUI
+        # shows what happened instead of an empty agent panel.
+        assert any("Antigravity CLI ERROR" in (c.content or "") for c in contents)
 
 
 class TestWorkflowToolTextFallback:
