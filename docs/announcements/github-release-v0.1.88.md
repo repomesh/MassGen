@@ -35,5 +35,5 @@ This is the first version of MassGen's Antigravity integration. v0.1.88 establis
   ```
 - **Try It**:
   ```bash
-  uv run massgen --automation --config massgen/configs/providers/antigravity/antigravity_cli_local.yaml "What is 2+2?"
+  uv run massgen --config massgen/configs/features/fast_iteration_gemini_antigravity.yaml "Create an svg of an AI agent coding."
   ```

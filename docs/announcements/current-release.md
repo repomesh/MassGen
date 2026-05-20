@@ -72,7 +72,7 @@ We're excited to release MassGen v0.1.88 — Antigravity CLI Backend! 🚀 This 
 ```bash
 pip install massgen==0.1.88
 curl -fsSL https://antigravity.google/cli/install.sh | bash
-uv run massgen --automation --config massgen/configs/providers/antigravity/antigravity_cli_local.yaml "What is 2+2?"
+uv run massgen --config massgen/configs/features/fast_iteration_gemini_antigravity.yaml "Create an svg of an AI agent coding."
 ```
 
 Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.88
