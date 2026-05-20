@@ -1,0 +1,21 @@
+# Run with:
+#   uv run massgen --automation \
+#     --config "massgen/configs/providers/antigravity/antigravity_cli_local.yaml" \
+#     "What is 2+2?"
+#
+# Requires:
+#   curl -fsSL https://antigravity.google/cli/install.sh | bash
+#   (binary lands at ~/.local/bin/agy)
+# Auth: existing Google OAuth at ~/.gemini/google_accounts.json, OR set
+# GEMINI_API_KEY / GOOGLE_API_KEY in your environment.
+agents:
+- id: agent_a
+  backend:
+    type: antigravity_cli
+    # NOTE: agy 1.0.0 selects the model server-side per Antigravity tier
+    # (default: Gemini 3.5 Flash). The `model` value below is informational
+    # only — the CLI has no --model flag to honor it.
+    model: gemini-3.5-flash
+ui:
+  display_type: textual_terminal
+  logging_enabled: true

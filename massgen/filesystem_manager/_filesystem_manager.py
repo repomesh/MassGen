@@ -124,7 +124,9 @@ def git_commit_if_changed(workspace: Path, message: str) -> bool:
         return False
 
 
-_WORKSPACE_METADATA_DIRS = frozenset({".git", ".codex", ".gemini", ".massgen", "memory"})
+_WORKSPACE_METADATA_DIRS = frozenset(
+    {".git", ".codex", ".gemini", ".antigravity", ".antigravitycli", ".massgen", "memory"},
+)
 
 
 def has_meaningful_content(path: Path | None) -> bool:
@@ -2361,7 +2363,7 @@ class FilesystemManager:
         # Framework metadata dirs to exclude from temp workspace copies.
         # These contain agent IDs in filenames/content and backend-identifying
         # artifacts — agents don't need them for evaluating others' work.
-        _snapshot_exclude_dirs = {".massgen", ".codex", ".gemini", ".claude", ".git"}
+        _snapshot_exclude_dirs = {".massgen", ".codex", ".gemini", ".antigravity", ".antigravitycli", ".claude", ".git"}
 
         # Copy all snapshots using anonymous IDs
         for agent_id, snapshot_path in all_snapshots.items():

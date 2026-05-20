@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.87
+**Current Version:** v0.1.88
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** May 15, 2026
+**Last Updated:** May 20, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,10 +42,27 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.88** | 05/18/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.86/v0.1.87 ([#959](https://github.com/massgen/MassGen/issues/959)) |
+| **v0.1.89** | 05/22/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.86-v0.1.88 ([#959](https://github.com/massgen/MassGen/issues/959)) |
 | | | Discriminative Criteria Refinements | @ncrispino | Selection, ranking, and retirement of stale criteria for long-running refinement loops |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.88 - Antigravity CLI Backend (Completed)
+
+**Released:** May 20, 2026 | PRs: [#1097](https://github.com/massgen/MassGen/pull/1097)
+
+### Features
+- **Antigravity CLI Backend**: New `antigravity_cli` backend wraps Google's `agy` binary as a MassGen backend
+- **Workspace-Local Isolation**: Antigravity config and MCP settings are written under `.antigravity/` in the run workspace via `--gemini_dir`, avoiding global `~/.gemini/` mutation
+- **MCP Config Translation**: MassGen MCP server entries are translated to Antigravity's schema, including `serverUrl` for HTTP servers
+- **Native Hook Adapter**: `AntigravityCLINativeHookAdapter` reuses Gemini CLI hook behavior for Antigravity's compatible hook protocol
+- **Example Configs**: `massgen/configs/providers/antigravity/antigravity_cli_local.yaml` and `massgen/configs/features/fast_iteration_gemini_antigravity.yaml`
+- **Tests**: `massgen/tests/test_antigravity_cli_backend.py` covers command construction, config isolation, MCP schema, workflow JSON envelopes, Docker/API-key constraints, hook wiring, and env passthrough
+
+### Notes
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements remain deferred to v0.1.89.
 
 ---
 
@@ -238,7 +255,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.88 - Image/Video Edit & Criteria Refinements (Deferred from v0.1.86/v0.1.87)
+## 📋 v0.1.89 - Image/Video Edit & Criteria Refinements (Deferred from v0.1.86-v0.1.88)
 
 ### Features
 
