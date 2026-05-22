@@ -121,15 +121,15 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🗺️ Roadmap</h3></summary>
 
-- [Recent Achievements (v0.1.88)](#recent-achievements-v0188)
-- [Previous Achievements (v0.0.3 - v0.1.87)](#previous-achievements-v003---v0187)
+- [Recent Achievements (v0.1.89)](#recent-achievements-v0189)
+- [Previous Achievements (v0.0.3 - v0.1.88)](#previous-achievements-v003---v0188)
 - [Key Future Enhancements](#key-future-enhancements)
   - Bug Fixes & Backend Improvements
   - Advanced Agent Collaboration
   - Expanded Model, Tool & Agent Integrations
   - Improved Performance & Scalability
   - Enhanced Developer Experience
-- [v0.1.89 Roadmap](#v0189-roadmap)
+- [v0.1.90 Roadmap](#v0190-roadmap)
 </details>
 
 <details open>
@@ -154,18 +154,18 @@ This project started with the "threads of thought" and "iterative refinement" id
 
 ---
 
-## 🆕 Latest Features (v0.1.88)
+## 🆕 Latest Features (v0.1.89)
 
-**🎉 Released: May 20, 2026**
+**🎉 Released: May 22, 2026**
 
-**What's New in v0.1.88:**
-- **🛰️ Antigravity CLI Backend** - New `antigravity_cli` backend wraps Google's `agy` binary so Antigravity can participate as a MassGen agent.
-- **🧰 Workspace-Local MCP Config** - Antigravity MCP settings are written under the run workspace's `.antigravity/` directory, preserving the user's global `~/.gemini/` config.
-- **⚡ New Example Configs** - Added single-agent Antigravity and mixed Gemini API + Antigravity fast-iteration examples.
+**What's New in v0.1.89:**
+- **🛰️ Full Antigravity CLI Integration** - Hardens the first Antigravity backend with workflow-mode parity, auth checks, and reliable workspace writes.
+- **🧰 Workspace Project Anchoring** - MassGen now passes `--add-dir <cwd>` and anchors `.antigravitycli/` in the workspace so agy writes files where other agents and snapshots can see them.
+- **🔌 Native Hooks + Prompt Guardrails** - Antigravity hooks now use standalone `hooks.json` with `enableJsonHooks`, and subagent affordances are hidden when subagents are disabled.
 
-**Try v0.1.88 Features:**
+**Try v0.1.89 Features:**
 ```bash
-pip install massgen==0.1.88
+pip install massgen==0.1.89
 curl -fsSL https://antigravity.google/cli/install.sh | bash
 uv run massgen --config massgen/configs/features/fast_iteration_gemini_antigravity.yaml "Create an svg of an AI agent coding."
 ```
@@ -474,7 +474,7 @@ The system currently supports multiple model providers with advanced capabilitie
   - Advanced tooling: web search, code execution, Files API, programmatic tool calling, tool search with deferred loading
 - **Claude Code**: Native Claude Code SDK with server-side session persistence and built-in dev tools
 - **Gemini**: Gemini 3 Pro, Gemini 2.5 Flash, Gemini 2.5 Pro with code execution and grounding
-- **Antigravity CLI**: Google's `agy` CLI as a MassGen backend, with workspace-local config isolation and Gemini-tier server-side model selection
+- **Antigravity CLI**: Google's `agy` CLI as a MassGen backend, with hardened workspace isolation, workflow-tool fallback, native hooks, and Gemini-tier server-side model selection
 - **Grok / xAI**: Grok-4.1, Grok-4, Grok-3, Grok-3-mini with Grok Live Search
 - **Cerebras AI**: Ultra-fast inference for supported models
 - **Together AI**, **Fireworks AI**, **Groq**: Fast inference for LLaMA, Mistral, Qwen, and other open models
@@ -1242,19 +1242,21 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 ⚠️ **Early Stage Notice:** As MassGen is in active development, please expect upcoming breaking architecture changes as we continue to refine and improve the system.
 
-### Recent Achievements (v0.1.88)
+### Recent Achievements (v0.1.89)
 
-**🎉 Released: May 20, 2026**
+**🎉 Released: May 22, 2026**
 
-#### Antigravity CLI Backend
-- **New Backend Type**: `antigravity_cli` wraps Google's `agy` binary as a MassGen backend with native filesystem, shell, web-search, plugin, and MCP-related capabilities
-- **Workspace Isolation**: Antigravity config is routed through workspace-local `.antigravity/` state via `--gemini_dir`, so MassGen runs do not mutate the user's global Gemini config
-- **MCP Schema Translation**: MassGen MCP server entries are emitted in Antigravity's `mcp_config.json` schema, including `serverUrl` for HTTP servers
-- **Native Hook Adapter**: `AntigravityCLINativeHookAdapter` reuses Gemini CLI hook behavior for Antigravity's compatible hook protocol
-- **Example Configs**: `massgen/configs/providers/antigravity/antigravity_cli_local.yaml` and `massgen/configs/features/fast_iteration_gemini_antigravity.yaml`
-- **Tests**: `massgen/tests/test_antigravity_cli_backend.py` covers command construction, config isolation, MCP schema, workflow JSON envelopes, Docker/API-key constraints, hook wiring, and env passthrough
+#### Antigravity CLI Full Integration & Hardening
+- **Workflow-Mode Parity**: Antigravity now mirrors Gemini CLI's workflow handling for `new_answer` / `vote`, including `new_answer_only` rounds, post-evaluation guards, and duplicate workflow-call suppression
+- **Auth and Binary Health Checks**: The backend verifies `agy --version` and fails fast when neither API-key auth nor cached Google OAuth credentials are available
+- **Workspace Write Reliability**: MassGen passes `--add-dir <cwd>` and creates a workspace-root `.antigravitycli/` marker so agy writes files into the shared workspace instead of hidden scratch directories
+- **Native Hooks**: Antigravity native hooks now use standalone `hooks.json` plus `enableJsonHooks`
+- **Prompt Guardrails**: `TaskContextSection` hides `spawn_subagents` when subagents are disabled, preventing phantom subagent MCP calls in multimodal-only runs
+- **Tests**: `massgen/tests/test_antigravity_cli_backend.py` and `massgen/tests/test_system_prompt_sections.py` cover the hardening path end to end
 
-### Previous Achievements (v0.0.3 - v0.1.87)
+### Previous Achievements (v0.0.3 - v0.1.88)
+
+✅ **Antigravity CLI Backend (v0.1.88)**: Added the first `antigravity_cli` backend wrapping Google's `agy` binary, with workspace-local `.antigravity/` config isolation, MCP config translation, native-hook adapter support, and runnable single-agent / mixed Gemini + Antigravity examples.
 
 ✅ **Framework Comparisons & `llms.txt` (v0.1.87)**: Added CrewAI, LangGraph, and AutoGen/AG2 comparison pages, plus `llms.txt` and generated `llms-full.txt` for AI-agent documentation discovery. Also fixed `bootstrap_subagent` single-shot behavior with `refine=False`.
 
@@ -1575,9 +1577,9 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 We welcome community contributions to achieve these goals.
 
-### v0.1.89 Roadmap
+### v0.1.90 Roadmap
 
-Version 0.1.89 picks up the multimodal work deferred from v0.1.86-v0.1.88 and continues refinement of the discriminative criteria pipeline:
+Version 0.1.90 picks up the multimodal work deferred from v0.1.86-v0.1.89 and continues refinement of the discriminative criteria pipeline:
 
 #### Planned Features
 - **Image/Video Edit Capabilities** ([#959](https://github.com/massgen/MassGen/issues/959)): Image and video editing across providers with multi-turn editing workflows via continuation IDs
