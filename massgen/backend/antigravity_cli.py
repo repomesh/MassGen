@@ -123,6 +123,47 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
                 "Run `agy --version` to verify.",
             )
 
+        # Synchronous binary health check: confirm `agy --version` runs cleanly.
+        # Catches stale/corrupt installs (binary file exists but doesn't execute)
+        # before the orchestrator throws this agent into coordination.
+        # Cheap (~50ms, no API call) and the only way to fail fast on a broken
+        # binary — full auth verification would require a real call.
+        skip_health_check = kwargs.get("skip_health_check", False)
+        if not skip_health_check:
+            self._verify_agy_binary_runs()
+
+    def _verify_agy_binary_runs(self) -> None:
+        """Run ``agy --version`` and raise if the binary is unusable.
+
+        Surfaces a clear error at construction time instead of letting the
+        first orchestration call burn a round on a broken install.
+        """
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                [self._agy_path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError(
+                f"Antigravity CLI ('agy' at {self._agy_path}) is installed but "
+                f"won't run: {exc}. Try `{self._agy_path} --version` manually, "
+                "or reinstall with `curl -fsSL https://antigravity.google/cli/install.sh | bash`.",
+            ) from exc
+        if result.returncode != 0:
+            stderr = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(
+                f"Antigravity CLI ('agy' at {self._agy_path}) exited with code "
+                f"{result.returncode} on `--version`. Output: {stderr or '(empty)'}. "
+                "Try reinstalling with `curl -fsSL https://antigravity.google/cli/install.sh | bash`.",
+            )
+        version = (result.stdout or "").strip()
+        logger.info(f"Antigravity CLI: binary health check passed (agy version {version})")
+
     @property
     def cwd(self) -> str:
         if self.filesystem_manager:
@@ -248,18 +289,24 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
         return Path(self.cwd).resolve() / ".AGENTS.md.massgen_backup"
 
     def _write_system_prompt_md(self) -> None:
-        """Write the MassGen system prompt to <cwd>/AGENTS.md.
+        """Write the MassGen system prompt to <cwd>/AGENTS.md atomically.
 
         agy treats AGENTS.md as persistent workspace context (not as the user
         request), so the model sees coordination/workflow instructions in the
         right channel instead of inside ``<USER_REQUEST>``. Backs up any
         pre-existing AGENTS.md so :meth:`_restore_system_prompt_md` can put
         the original back.
+
+        Atomic-write semantics: writes to ``AGENTS.md.massgen_tmp`` first,
+        then ``os.replace()`` onto the target. If we're killed between the
+        backup-rename and the new-content write, the backup still exists and
+        :meth:`_restore_system_prompt_md` recovers cleanly.
         """
         if not self.system_prompt:
             return
         path = self._workspace_agents_md_path()
         backup = self._workspace_agents_md_backup_path()
+        tmp_path = path.with_suffix(path.suffix + ".massgen_tmp")
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists() and not backup.exists():
             try:
@@ -267,15 +314,27 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
                 logger.info(f"Antigravity CLI: backed up existing {path} -> {backup}")
             except OSError as exc:
                 logger.warning(f"Antigravity CLI: could not back up {path}: {exc}")
-        path.write_text(self.system_prompt, encoding="utf-8")
+        tmp_path.write_text(self.system_prompt, encoding="utf-8")
+        os.replace(tmp_path, path)
         logger.info(
             f"Antigravity CLI: wrote system prompt ({len(self.system_prompt)} chars) to {path}",
         )
 
     def _restore_system_prompt_md(self) -> None:
-        """Restore the user's original AGENTS.md, or remove ours if none existed."""
+        """Restore the user's original AGENTS.md, or remove ours if none existed.
+
+        Best-effort: never raises. Cleans up our temp file if a previous call
+        was killed mid-write (rare but possible if the orchestrator cancels
+        the streaming generator).
+        """
         path = self._workspace_agents_md_path()
         backup = self._workspace_agents_md_backup_path()
+        tmp_path = path.with_suffix(path.suffix + ".massgen_tmp")
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError as exc:
+            logger.warning(f"Antigravity CLI: failed to remove stale {tmp_path}: {exc}")
         try:
             if backup.exists():
                 backup.replace(path)
@@ -543,6 +602,38 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
 
     # ── Streaming ─────────────────────────────────────────────────────────
 
+    @staticmethod
+    async def _terminate_subprocess(
+        proc: asyncio.subprocess.Process,
+        grace_seconds: float = 2.0,
+    ) -> None:
+        """SIGTERM agy and wait up to ``grace_seconds`` before SIGKILL.
+
+        Used on cancellation / unexpected error so we don't leak an orphan
+        agy process when the orchestrator gives up on the agent (timeout,
+        round restart, user abort, etc.).
+        """
+        if proc.returncode is not None:
+            return
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            return
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=grace_seconds)
+        except TimeoutError:
+            logger.warning(
+                f"Antigravity CLI: agy didn't exit within {grace_seconds}s of SIGTERM — sending SIGKILL",
+            )
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                return
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=grace_seconds)
+            except TimeoutError:
+                logger.error("Antigravity CLI: agy did not exit after SIGKILL — giving up")
+
     async def _stream_local(
         self,
         prompt: str,
@@ -595,8 +686,8 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
             finally:
                 await queue.put(_DONE)
 
-        asyncio.create_task(_read_stdout())
-        asyncio.create_task(_tail())
+        stdout_task = asyncio.create_task(_read_stdout())
+        tail_task = asyncio.create_task(_tail())
 
         done_count = 0
         try:
@@ -606,8 +697,19 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
                     done_count += 1
                 else:
                     yield item  # type: ignore[misc]
+        except (asyncio.CancelledError, GeneratorExit):
+            # Orchestrator cancelled us (timeout, user abort, etc.). Cleanly
+            # terminate agy so it doesn't outlive the agent task, then
+            # propagate. Background reader tasks observe proc exit and finish
+            # on their own.
+            logger.info("Antigravity CLI: cancellation requested — terminating agy subprocess")
+            await self._terminate_subprocess(proc)
+            for task in (stdout_task, tail_task):
+                task.cancel()
+            raise
         except Exception as exc:
             logger.error(f"Antigravity CLI streaming error: {exc}")
+            await self._terminate_subprocess(proc)
             yield StreamChunk(type="error", error=str(exc))
             return
 
@@ -734,10 +836,42 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
 
     @staticmethod
     def _message_content_to_text(content: Any) -> str:
+        """Squash a message's content into plain text for the ``agy -p`` arg.
+
+        Multimodal parts (images, audio, video, files) are inlined as
+        human-readable references — agy has filesystem/shell tools and can
+        ``read`` paths or fetch URLs itself when asked. We never silently
+        drop a non-text part; the goal is that the model sees enough to act.
+        """
         if isinstance(content, str):
             return content
         if isinstance(content, list):
-            return "".join(c.get("text", "") for c in content if isinstance(c, dict) and isinstance(c.get("text"), str))
+            parts: list[str] = []
+            for c in content:
+                if not isinstance(c, dict):
+                    parts.append(str(c))
+                    continue
+                if isinstance(c.get("text"), str):
+                    parts.append(c["text"])
+                    continue
+                ctype = c.get("type") or ""
+                # Image / audio / video / file references — surface a path or
+                # URL the agent can use via its native filesystem tools.
+                for key in ("source_path", "image_path", "audio_path", "video_path", "file_path", "url", "image_url"):
+                    val = c.get(key)
+                    if isinstance(val, str) and val:
+                        kind = ctype or key.split("_")[0]
+                        parts.append(f"[{kind}: {val}]")
+                        break
+                else:
+                    # base64-inlined content: too large for the prompt;
+                    # surface a brief stub so the agent knows it exists.
+                    if c.get("base64"):
+                        mime = c.get("mime_type", "binary")
+                        parts.append(f"[inline {ctype or mime} attachment ({len(c.get('base64', ''))} chars b64) — write to a local file if you need to inspect it]")
+                    elif ctype:
+                        parts.append(f"[{ctype} part]")
+            return "".join(parts)
         return str(content)
 
     def _build_prompt_from_messages(self, messages: list[dict[str, Any]]) -> str:

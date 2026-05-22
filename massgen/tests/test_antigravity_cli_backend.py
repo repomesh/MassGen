@@ -10,7 +10,9 @@ Run with: uv run pytest massgen/tests/test_antigravity_cli_backend.py -v
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -24,9 +26,13 @@ from massgen.backend.antigravity_cli import (
 
 @pytest.fixture
 def backend(tmp_path):
-    """AntigravityCLIBackend with binary mocked and cwd in a temp dir."""
+    """AntigravityCLIBackend with binary mocked and cwd in a temp dir.
+
+    Uses ``skip_health_check=True`` so we don't try to subprocess-invoke the
+    fake binary path — health-check coverage lives in TestBinaryHealthCheck.
+    """
     with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/bin/agy"):
-        return AntigravityCLIBackend(cwd=str(tmp_path))
+        return AntigravityCLIBackend(cwd=str(tmp_path), skip_health_check=True)
 
 
 class TestBinaryDiscovery:
@@ -54,6 +60,50 @@ class TestBinaryDiscovery:
         with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value=None):
             with pytest.raises(RuntimeError, match="install.sh"):
                 AntigravityCLIBackend()
+
+
+class TestBinaryHealthCheck:
+    """At construction, the backend must verify `agy --version` actually runs.
+
+    This catches stale/corrupt installs (binary file exists but doesn't execute)
+    BEFORE the orchestrator burns a coordination round on it.
+    """
+
+    def test_construction_runs_version_subprocess(self, tmp_path):
+        with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/bin/agy"):
+            with patch("subprocess.run") as run_mock:
+                run_mock.return_value.returncode = 0
+                run_mock.return_value.stdout = "1.0.0\n"
+                run_mock.return_value.stderr = ""
+                AntigravityCLIBackend(cwd=str(tmp_path))
+                assert run_mock.called
+                args = run_mock.call_args[0][0]
+                assert args[0] == "/fake/bin/agy"
+                assert "--version" in args
+
+    def test_construction_raises_clear_error_on_nonzero_exit(self, tmp_path):
+        with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/bin/agy"):
+            with patch("subprocess.run") as run_mock:
+                run_mock.return_value.returncode = 127
+                run_mock.return_value.stdout = ""
+                run_mock.return_value.stderr = "agy: ELF load failure"
+                with pytest.raises(RuntimeError, match="exited with code 127"):
+                    AntigravityCLIBackend(cwd=str(tmp_path))
+
+    def test_construction_raises_clear_error_on_timeout(self, tmp_path):
+        import subprocess
+
+        with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/bin/agy"):
+            with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="agy", timeout=5)):
+                with pytest.raises(RuntimeError, match="won't run"):
+                    AntigravityCLIBackend(cwd=str(tmp_path))
+
+    def test_skip_health_check_bypasses_subprocess(self, tmp_path):
+        # Escape hatch for tests / unusual environments.
+        with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/bin/agy"):
+            with patch("subprocess.run") as run_mock:
+                AntigravityCLIBackend(cwd=str(tmp_path), skip_health_check=True)
+                assert not run_mock.called
 
 
 class TestCommandConstruction:
@@ -173,7 +223,7 @@ class TestMCPConfigFile:
     def test_write_mcp_config_writes_to_workspace_gemini_dir(self, tmp_path):
         # No monkeypatching needed — the path is derived from cwd, not a module global.
         with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/agy"):
-            be = AntigravityCLIBackend(cwd=str(tmp_path / "cwd"))
+            be = AntigravityCLIBackend(cwd=str(tmp_path / "cwd"), skip_health_check=True)
             be.mcp_servers = [{"name": "only_one", "command": "/x"}]
             be._write_mcp_config()
 
@@ -192,7 +242,7 @@ class TestMCPConfigFile:
             sentinel,
         )
         with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/agy"):
-            be = AntigravityCLIBackend(cwd=str(tmp_path / "cwd"))
+            be = AntigravityCLIBackend(cwd=str(tmp_path / "cwd"), skip_health_check=True)
             be.mcp_servers = [{"name": "mine", "command": "/m"}]
             be._write_mcp_config()
             be._restore_mcp_config()
@@ -210,8 +260,8 @@ class TestMCPConfigFile:
     def test_workspace_mcp_path_is_isolated_per_cwd(self, tmp_path):
         """Each backend instance writes to its own cwd-scoped mcp_config.json."""
         with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/agy"):
-            be_a = AntigravityCLIBackend(cwd=str(tmp_path / "a"))
-            be_b = AntigravityCLIBackend(cwd=str(tmp_path / "b"))
+            be_a = AntigravityCLIBackend(cwd=str(tmp_path / "a"), skip_health_check=True)
+            be_b = AntigravityCLIBackend(cwd=str(tmp_path / "b"), skip_health_check=True)
             assert be_a._workspace_mcp_config_path() != be_b._workspace_mcp_config_path()
             for be in (be_a, be_b):
                 assert be._workspace_mcp_config_path().is_absolute()
@@ -328,6 +378,204 @@ class TestStdoutStreamingParser:
         # User-visible content chunk should also flag the failure so the TUI
         # shows what happened instead of an empty agent panel.
         assert any("Antigravity CLI ERROR" in (c.content or "") for c in contents)
+
+
+class TestAgentsMdAtomicity:
+    """AGENTS.md write/restore must survive interruptions cleanly."""
+
+    def test_write_uses_temp_then_rename(self, backend, tmp_path, monkeypatch):
+        backend._config_cwd = str(tmp_path)
+        backend.system_prompt = "system prompt body"
+
+        # Capture the order of write+replace operations to assert atomicity.
+        seen: list[tuple[str, str]] = []
+        real_write_text = Path.write_text
+        real_replace = os.replace
+
+        def tracking_write_text(self, *a, **kw):
+            seen.append(("write_text", str(self)))
+            return real_write_text(self, *a, **kw)
+
+        def tracking_replace(src, dst):
+            seen.append(("replace", f"{src}->{dst}"))
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(Path, "write_text", tracking_write_text)
+        monkeypatch.setattr(os, "replace", tracking_replace)
+
+        backend._write_system_prompt_md()
+        final_path = backend._workspace_agents_md_path()
+        assert final_path.read_text() == "system prompt body"
+        # The write must hit the temp file first, then be renamed onto target.
+        write_op = next(op for op in seen if op[0] == "write_text")
+        replace_op = next(op for op in seen if op[0] == "replace")
+        assert ".massgen_tmp" in write_op[1], f"write_text should target temp file, got {write_op}"
+        assert ".massgen_tmp" in replace_op[1] and "AGENTS.md" in replace_op[1]
+
+    def test_restore_cleans_up_stale_temp_file(self, backend, tmp_path):
+        # Simulate a previous call that crashed between write-to-temp and rename:
+        # a `.massgen_tmp` file lingers but no AGENTS.md was ever published.
+        backend._config_cwd = str(tmp_path)
+        target = backend._workspace_agents_md_path()
+        tmp_file = target.with_suffix(target.suffix + ".massgen_tmp")
+        tmp_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp_file.write_text("partial write from a crashed run")
+
+        backend._restore_system_prompt_md()
+        assert not tmp_file.exists(), "stale .massgen_tmp must be cleaned up on restore"
+        assert not target.exists(), "no original AGENTS.md should be created from temp leftovers"
+
+    def test_restore_runs_even_if_backup_missing(self, backend, tmp_path):
+        # Common case: no pre-existing AGENTS.md, we wrote one, we remove it.
+        backend._config_cwd = str(tmp_path)
+        target = backend._workspace_agents_md_path()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("managed content")
+
+        backend._restore_system_prompt_md()
+        assert not target.exists()
+
+    def test_restore_preserves_user_owned_agents_md(self, backend, tmp_path):
+        # User had their own AGENTS.md. We wrote ours over it (with a backup).
+        # Restore must put theirs back, not leave ours behind.
+        backend._config_cwd = str(tmp_path)
+        backend.system_prompt = "MassGen-injected"
+        target = backend._workspace_agents_md_path()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("USER OWNED CONTENT")
+
+        backend._write_system_prompt_md()
+        assert target.read_text() == "MassGen-injected"
+        backend._restore_system_prompt_md()
+        assert target.read_text() == "USER OWNED CONTENT"
+
+
+class TestMultimodalContent:
+    """Non-text message parts must be surfaced to agy as readable references
+    (paths/URLs) rather than silently dropped — agy has filesystem/shell tools
+    and can ``read`` an image path or fetch a URL when prompted.
+    """
+
+    def test_plain_text_passthrough(self, backend):
+        assert backend._message_content_to_text("just text") == "just text"
+
+    def test_text_parts_concatenate(self, backend):
+        content = [
+            {"type": "text", "text": "Hello "},
+            {"type": "text", "text": "world"},
+        ]
+        assert backend._message_content_to_text(content) == "Hello world"
+
+    def test_image_path_part_surfaces_as_reference(self, backend):
+        content = [
+            {"type": "text", "text": "Look at this: "},
+            {"type": "image", "source_path": "/abs/path/photo.jpg"},
+        ]
+        out = backend._message_content_to_text(content)
+        assert "Look at this:" in out
+        assert "/abs/path/photo.jpg" in out
+        # Must include a delimiter so the model can tell it's a reference
+        assert "[" in out and "]" in out
+
+    def test_image_url_part_surfaces_url(self, backend):
+        content = [
+            {"type": "image", "image_url": "https://example.com/x.jpg"},
+        ]
+        out = backend._message_content_to_text(content)
+        assert "https://example.com/x.jpg" in out
+
+    def test_audio_path_part_surfaces(self, backend):
+        content = [{"type": "audio", "audio_path": "/clip.wav"}]
+        assert "/clip.wav" in backend._message_content_to_text(content)
+
+    def test_base64_inline_image_is_not_silently_dropped(self, backend):
+        # We don't want to inline 100kb of base64 in the agy prompt, but we
+        # also must not silently drop it. Surface a stub so the agent knows.
+        content = [
+            {"type": "image", "base64": "iVBORw0KGgo..." * 100, "mime_type": "image/png"},
+        ]
+        out = backend._message_content_to_text(content)
+        assert out, "base64 image must produce SOME output, not empty string"
+        assert "inline" in out.lower() or "base64" in out.lower() or "attachment" in out.lower()
+
+    def test_unknown_typed_part_at_least_acknowledges_existence(self, backend):
+        content = [{"type": "weird_custom_type"}]
+        out = backend._message_content_to_text(content)
+        assert "weird_custom_type" in out
+
+
+class TestSubprocessCancellation:
+    """When the orchestrator cancels the streaming generator, agy must die cleanly."""
+
+    @pytest.mark.asyncio
+    async def test_cancellation_terminates_agy_subprocess(self, backend):
+        # Build a fake proc that's "still running" (returncode=None) until killed.
+        proc_mock = AsyncMock()
+        proc_mock.returncode = None
+        terminate_called = {"value": False}
+        kill_called = {"value": False}
+
+        def _terminate():
+            terminate_called["value"] = True
+            proc_mock.returncode = 0  # simulate graceful exit after SIGTERM
+
+        def _kill():
+            kill_called["value"] = True
+            proc_mock.returncode = -9
+
+        proc_mock.terminate = _terminate
+        proc_mock.kill = _kill
+        proc_mock.wait = AsyncMock(return_value=0)
+
+        async def _aiter_stdout():
+            # Block forever so the consumer must cancel us
+            await asyncio.sleep(60)
+            return
+            yield  # pragma: no cover
+
+        proc_mock.stdout = _aiter_stdout()
+
+        async def _consume():
+            chunks = []
+            async for chunk in backend._stream_local("hi"):
+                chunks.append(chunk)
+            return chunks
+
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc_mock)):
+            task = asyncio.create_task(_consume())
+            # Give the generator a moment to start the subprocess
+            await asyncio.sleep(0.05)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        assert terminate_called["value"], "agy subprocess must be SIGTERM'd on cancellation"
+        # No SIGKILL needed because our fake terminate sets returncode=0 immediately
+        assert not kill_called["value"]
+
+    @pytest.mark.asyncio
+    async def test_terminate_falls_back_to_kill_on_stubborn_subprocess(self, backend):
+        # If SIGTERM doesn't elicit exit within grace, we must SIGKILL.
+        proc_mock = AsyncMock()
+        proc_mock.returncode = None
+        proc_mock.terminate = lambda: None  # ignores SIGTERM
+
+        kill_called = {"value": False}
+
+        def _kill():
+            kill_called["value"] = True
+            proc_mock.returncode = -9
+
+        proc_mock.kill = _kill
+        proc_mock.wait = AsyncMock(side_effect=[asyncio.TimeoutError(), 0])
+
+        async def _waiter():
+            raise TimeoutError()
+
+        # Use very short grace so the test is fast.
+        with patch("asyncio.wait_for", AsyncMock(side_effect=[asyncio.TimeoutError(), 0])):
+            await backend._terminate_subprocess(proc_mock, grace_seconds=0.01)
+        assert kill_called["value"], "must SIGKILL when SIGTERM grace expires"
 
 
 class TestWorkflowToolTextFallback:
@@ -473,6 +721,7 @@ class TestDockerModeApiKeyAuth:
                 AntigravityCLIBackend(
                     cwd=str(tmp_path / "cwd"),
                     command_line_execution_mode="docker",
+                    skip_health_check=True,
                 )
 
     def test_docker_mode_writes_api_key_settings_json(self, tmp_path, monkeypatch):
@@ -481,6 +730,7 @@ class TestDockerModeApiKeyAuth:
             be = AntigravityCLIBackend(
                 cwd=str(tmp_path / "cwd"),
                 command_line_execution_mode="docker",
+                skip_health_check=True,
             )
             be._write_workspace_settings_json()
             settings_path = be._workspace_config_dir() / "settings.json"
@@ -493,7 +743,7 @@ class TestDockerModeApiKeyAuth:
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         # Local mode uses OAuth from the host's ~/.gemini/google_accounts.json.
         with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/agy"):
-            AntigravityCLIBackend(cwd=str(tmp_path / "cwd"))  # must not raise
+            AntigravityCLIBackend(cwd=str(tmp_path / "cwd"), skip_health_check=True)  # must not raise
 
 
 class TestNativeHookAdapter:
