@@ -6319,21 +6319,52 @@ class TaskContextSection(SystemPromptSection):
     task-specific terminology.
 
     MEDIUM priority - included when multimodal tools or subagents are enabled.
+
+    Args:
+        subagents_enabled: When True, the prompt advertises `spawn_subagents`
+            and explains the inheritance behavior. When False (multimodal-only
+            agents), all subagent affordances are suppressed — otherwise the
+            model fabricates phantom MCP calls like
+            `mcp__subagent_<8hex>__list_subagents` for a tool that was never
+            registered. Per the "remove affordances at the source" rule:
+            mode-gating a capability means stripping it from the prompt, not
+            blocking it at runtime.
     """
 
-    def __init__(self):
+    def __init__(self, subagents_enabled: bool = False):
         super().__init__(
             title="Task Context",
             priority=Priority.MEDIUM,
             xml_tag="task_context",
         )
+        self.subagents_enabled = subagents_enabled
 
     def build_content(self) -> str:
-        return """## Task Context for Tools and Subagents
+        if self.subagents_enabled:
+            header = (
+                "**REQUIRED**: Before spawning subagents or using `read_media`,\n"
+                "you MUST create a `CONTEXT.md` file in your workspace with task context.\n"
+                "This ordering is strict even for background jobs: write `CONTEXT.md` first, then start `read_media`."
+            )
+            when_to_create = (
+                "Create CONTEXT.md **before** your first use of:\n" "- `spawn_subagents` - subagents will inherit this context\n" "- `read_media` - image/audio/video analysis will use this context"
+            )
+            title_suffix = "Tools and Subagents"
+            audience = "tools or subagents"
+        else:
+            header = (
+                "**REQUIRED**: Before using `read_media`, you MUST create a "
+                "`CONTEXT.md` file in your workspace with task context.\n"
+                "This ordering is strict even for background jobs: write "
+                "`CONTEXT.md` first, then start `read_media`."
+            )
+            when_to_create = "Create CONTEXT.md **before** your first use of:\n" "- `read_media` - image/audio/video analysis will use this context"
+            title_suffix = "Multimodal Tools"
+            audience = "tools"
 
-**REQUIRED**: Before spawning subagents or using `read_media`,
-you MUST create a `CONTEXT.md` file in your workspace with task context.
-This ordering is strict even for background jobs: write `CONTEXT.md` first, then start `read_media`.
+        return f"""## Task Context for {title_suffix}
+
+{header}
 
 `generate_media` does **not** require CONTEXT.md — it works without it.
 
@@ -6347,7 +6378,7 @@ Write a brief file explaining:
 - **What we're building/doing** - the core task in 1-2 sentences
 - **Key terminology** - project-specific terms that could be misinterpreted
 - **Visual/brand details** - style, colors, aesthetic if relevant
-- **Any other context** tools or subagents need to understand the task
+- **Any other context** {audience} need to understand the task
 
 ### Example CONTEXT.md
 ```markdown
@@ -6368,9 +6399,7 @@ that coordinates parallel AI agents through voting and consensus.
 ```
 
 ### When to Create It
-Create CONTEXT.md **before** your first use of:
-- `spawn_subagents` - subagents will inherit this context
-- `read_media` - image/audio/video analysis will use this context
+{when_to_create}
 
 The file will be read automatically and injected into external API calls.
 `generate_media` does not require CONTEXT.md."""

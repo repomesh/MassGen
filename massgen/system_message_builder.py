@@ -631,10 +631,13 @@ class SystemMessageBuilder:
                 logger.info(f"[SystemMessageBuilder] Added subagent section for {agent_id} (max_concurrent: {max_concurrent}, specialized_types: {len(specialized_subagents)})")
 
         # PRIORITY 10 (MEDIUM): Task Context (when multimodal tools OR subagents are enabled)
-        # This instructs agents to create CONTEXT.md before using tools that make external API calls
+        # This instructs agents to create CONTEXT.md before using tools that make external API calls.
+        # We pass `subagents_enabled` so the section only advertises `spawn_subagents` when it's
+        # actually wired — otherwise models hallucinate phantom subagent MCP calls (e.g.,
+        # `mcp__subagent_<8hex>__list_subagents`) and retry-loop against a non-existent server.
         enable_multimodal = agent.backend.config.get("enable_multimodal_tools", False) if agent.backend else False
         if enable_multimodal or enable_subagents:
-            builder.add_section(TaskContextSection())
+            builder.add_section(TaskContextSection(subagents_enabled=enable_subagents))
             logger.info(f"[SystemMessageBuilder] Added task context section for {agent_id} (multimodal: {enable_multimodal}, subagents: {enable_subagents})")
 
         # PRIORITY 10 (MEDIUM): Task Planning

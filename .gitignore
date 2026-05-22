@@ -245,5 +245,11 @@ node_modules/
 .gemini/google_accounts.json
 .gemini/oauth_creds.json
 .gemini/.env
+# Antigravity CLI runtime artifacts (created by `agy` itself when invoked
+# from any directory — the upward project-discovery walk anchors here).
+# Without this, leftover dirs at the repo root can hijack a workspace
+# agent's project root and route file writes into agy's scratch dir.
+.antigravity/
+.antigravitycli/
 # WIP tests not yet implemented
 massgen/tests/_wip/
