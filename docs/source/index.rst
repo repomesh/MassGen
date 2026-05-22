@@ -209,6 +209,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.89 (May 22, 2026)** - Antigravity CLI Full Integration & Hardening
+
+Completes the follow-up Antigravity integration pass with workflow-mode parity, early auth and binary health checks, reliable workspace writes via ``--add-dir``, workspace-root ``.antigravitycli/`` anchoring, standalone ``hooks.json`` support with ``enableJsonHooks``, and prompt guardrails that hide subagent affordances when subagents are disabled.
+
 **v0.1.88 (May 20, 2026)** - Antigravity CLI Backend
 
 New ``antigravity_cli`` backend wraps Google's ``agy`` binary as a MassGen backend, with workspace-local ``.antigravity/`` config isolation, Antigravity MCP config translation, native hook adapter support, and runnable configs for single-agent Antigravity and mixed Gemini API + Antigravity fast-iteration runs.

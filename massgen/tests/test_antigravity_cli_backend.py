@@ -10,7 +10,9 @@ Run with: uv run pytest massgen/tests/test_antigravity_cli_backend.py -v
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -24,9 +26,13 @@ from massgen.backend.antigravity_cli import (
 
 @pytest.fixture
 def backend(tmp_path):
-    """AntigravityCLIBackend with binary mocked and cwd in a temp dir."""
+    """AntigravityCLIBackend with binary mocked and cwd in a temp dir.
+
+    Uses ``skip_health_check=True`` so we don't try to subprocess-invoke the
+    fake binary path — health-check coverage lives in TestBinaryHealthCheck.
+    """
     with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/bin/agy"):
-        return AntigravityCLIBackend(cwd=str(tmp_path))
+        return AntigravityCLIBackend(cwd=str(tmp_path), skip_health_check=True)
 
 
 class TestBinaryDiscovery:
@@ -54,6 +60,50 @@ class TestBinaryDiscovery:
         with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value=None):
             with pytest.raises(RuntimeError, match="install.sh"):
                 AntigravityCLIBackend()
+
+
+class TestBinaryHealthCheck:
+    """At construction, the backend must verify `agy --version` actually runs.
+
+    This catches stale/corrupt installs (binary file exists but doesn't execute)
+    BEFORE the orchestrator burns a coordination round on it.
+    """
+
+    def test_construction_runs_version_subprocess(self, tmp_path):
+        with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/bin/agy"):
+            with patch("subprocess.run") as run_mock:
+                run_mock.return_value.returncode = 0
+                run_mock.return_value.stdout = "1.0.0\n"
+                run_mock.return_value.stderr = ""
+                AntigravityCLIBackend(cwd=str(tmp_path))
+                assert run_mock.called
+                args = run_mock.call_args[0][0]
+                assert args[0] == "/fake/bin/agy"
+                assert "--version" in args
+
+    def test_construction_raises_clear_error_on_nonzero_exit(self, tmp_path):
+        with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/bin/agy"):
+            with patch("subprocess.run") as run_mock:
+                run_mock.return_value.returncode = 127
+                run_mock.return_value.stdout = ""
+                run_mock.return_value.stderr = "agy: ELF load failure"
+                with pytest.raises(RuntimeError, match="exited with code 127"):
+                    AntigravityCLIBackend(cwd=str(tmp_path))
+
+    def test_construction_raises_clear_error_on_timeout(self, tmp_path):
+        import subprocess
+
+        with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/bin/agy"):
+            with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="agy", timeout=5)):
+                with pytest.raises(RuntimeError, match="won't run"):
+                    AntigravityCLIBackend(cwd=str(tmp_path))
+
+    def test_skip_health_check_bypasses_subprocess(self, tmp_path):
+        # Escape hatch for tests / unusual environments.
+        with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/bin/agy"):
+            with patch("subprocess.run") as run_mock:
+                AntigravityCLIBackend(cwd=str(tmp_path), skip_health_check=True)
+                assert not run_mock.called
 
 
 class TestCommandConstruction:
@@ -95,6 +145,21 @@ class TestCommandConstruction:
             path_arg = cmd[gd_index].split("=", 1)[1]
         assert Path(path_arg).is_absolute(), f"--gemini_dir path must be absolute, got {path_arg!r}"
         assert ".antigravity" in path_arg
+
+    def test_command_passes_add_dir_for_workspace_registration(self, backend, tmp_path):
+        # Without --add-dir, agy writes files to .antigravity/antigravity-cli/
+        # scratch/, hiding them from peers + snapshot promotion. We must pass
+        # --add-dir <cwd> so write_to_file/view_file act on the workspace root.
+        cmd = backend._build_exec_command("hello")
+        assert "--add-dir" in cmd, f"--add-dir flag missing from: {cmd}"
+        idx = cmd.index("--add-dir")
+        path_arg = cmd[idx + 1]
+        assert Path(path_arg).is_absolute(), f"--add-dir path must be absolute, got {path_arg!r}"
+        # Must match the workspace cwd, NOT a subdir like .antigravity/ — that
+        # would defeat the purpose (agy would still write outside the workspace).
+        assert ".antigravity" not in path_arg, f"--add-dir must target workspace root, not config dir: {path_arg}"
+        # And it must equal the backend's reported cwd (resolved).
+        assert path_arg == str(Path(backend.cwd).resolve())
 
     def test_command_passes_log_file_for_error_surfacing(self, backend, tmp_path):
         # agy exits 0 with empty stdout on quota/auth failures. We capture
@@ -173,7 +238,7 @@ class TestMCPConfigFile:
     def test_write_mcp_config_writes_to_workspace_gemini_dir(self, tmp_path):
         # No monkeypatching needed — the path is derived from cwd, not a module global.
         with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/agy"):
-            be = AntigravityCLIBackend(cwd=str(tmp_path / "cwd"))
+            be = AntigravityCLIBackend(cwd=str(tmp_path / "cwd"), skip_health_check=True)
             be.mcp_servers = [{"name": "only_one", "command": "/x"}]
             be._write_mcp_config()
 
@@ -192,7 +257,7 @@ class TestMCPConfigFile:
             sentinel,
         )
         with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/agy"):
-            be = AntigravityCLIBackend(cwd=str(tmp_path / "cwd"))
+            be = AntigravityCLIBackend(cwd=str(tmp_path / "cwd"), skip_health_check=True)
             be.mcp_servers = [{"name": "mine", "command": "/m"}]
             be._write_mcp_config()
             be._restore_mcp_config()
@@ -210,8 +275,8 @@ class TestMCPConfigFile:
     def test_workspace_mcp_path_is_isolated_per_cwd(self, tmp_path):
         """Each backend instance writes to its own cwd-scoped mcp_config.json."""
         with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/agy"):
-            be_a = AntigravityCLIBackend(cwd=str(tmp_path / "a"))
-            be_b = AntigravityCLIBackend(cwd=str(tmp_path / "b"))
+            be_a = AntigravityCLIBackend(cwd=str(tmp_path / "a"), skip_health_check=True)
+            be_b = AntigravityCLIBackend(cwd=str(tmp_path / "b"), skip_health_check=True)
             assert be_a._workspace_mcp_config_path() != be_b._workspace_mcp_config_path()
             for be in (be_a, be_b):
                 assert be._workspace_mcp_config_path().is_absolute()
@@ -330,6 +395,505 @@ class TestStdoutStreamingParser:
         assert any("Antigravity CLI ERROR" in (c.content or "") for c in contents)
 
 
+class TestWorkspaceProjectMarker:
+    """agy walks up from cwd looking for `.antigravitycli/` to identify its
+    project root. Without an anchor at the workspace level, agy adopts
+    whichever ancestor directory happens to contain one — making --add-dir
+    ineffective and routing file writes to agy's internal scratch directory.
+    """
+
+    def test_project_marker_path_is_under_workspace_cwd(self, backend, tmp_path):
+        marker = backend._workspace_project_marker_dir()
+        assert marker.name == ".antigravitycli"
+        # Must be in the workspace ROOT, not inside .antigravity/
+        assert marker.parent == Path(backend.cwd).resolve()
+
+    def test_ensure_creates_empty_marker_dir_when_missing(self, backend, tmp_path):
+        marker = backend._workspace_project_marker_dir()
+        assert not marker.exists()
+        backend._ensure_workspace_project_marker()
+        assert marker.exists() and marker.is_dir()
+
+    def test_ensure_is_idempotent_when_marker_already_exists(self, backend, tmp_path):
+        marker = backend._workspace_project_marker_dir()
+        marker.mkdir(parents=True, exist_ok=True)
+        # Add a sentinel file so we can detect destructive recreation.
+        (marker / "sentinel.json").write_text("preserve me")
+        backend._ensure_workspace_project_marker()
+        assert (marker / "sentinel.json").exists()
+        assert (marker / "sentinel.json").read_text() == "preserve me"
+
+    def test_ensure_does_not_raise_on_oserror(self, backend, tmp_path, monkeypatch):
+        # Simulate a filesystem error — the warning is logged but we must
+        # not abort the backend startup over a non-fatal anchor failure.
+        def _boom(*a, **kw):
+            raise OSError("simulated")
+
+        monkeypatch.setattr(Path, "mkdir", _boom)
+        # Must not raise.
+        backend._ensure_workspace_project_marker()
+
+
+class TestHooksJsonWiring:
+    """agy reads hooks from a standalone hooks.json (NOT embedded in
+    settings.json like gemini_cli) and only when ``enableJsonHooks: true``
+    is set in settings.json. Verified via binary-strings probe + live test.
+    """
+
+    def test_hooks_json_path_lives_in_workspace_config_dir(self, backend, tmp_path):
+        path = backend._workspace_hooks_json_path()
+        assert path.name == "hooks.json"
+        # Must be under .antigravity/ so --gemini_dir points agy at it.
+        assert ".antigravity" in str(path)
+
+    def test_write_hooks_json_returns_false_when_no_hooks(self, backend, tmp_path):
+        backend._config_cwd = str(tmp_path)
+        backend._massgen_hooks_config = None
+        assert backend._write_hooks_json() is False
+        assert not backend._workspace_hooks_json_path().exists()
+
+    def test_write_hooks_json_returns_false_for_empty_hooks_payload(self, backend, tmp_path):
+        backend._config_cwd = str(tmp_path)
+        backend._massgen_hooks_config = {"hooks": {}}
+        assert backend._write_hooks_json() is False
+
+    def test_write_hooks_json_emits_file_when_hooks_present(self, backend, tmp_path):
+        backend._config_cwd = str(tmp_path)
+        backend._massgen_hooks_config = {
+            "hooks": {
+                "BeforeTool": [{"matcher": ".*", "hooks": [{"type": "command", "command": "echo x"}]}],
+            },
+        }
+        assert backend._write_hooks_json() is True
+        path = backend._workspace_hooks_json_path()
+        assert path.exists()
+        written = json.loads(path.read_text())
+        # Outer "hooks" key is required by agy's proto field tag
+        # (`Hooks json:"hooks"` in the binary).
+        assert "hooks" in written
+        assert "BeforeTool" in written["hooks"]
+
+    def test_settings_json_enables_json_hooks_flag_when_hooks_written(self, backend, tmp_path):
+        backend._config_cwd = str(tmp_path)
+        backend._write_workspace_settings_json(has_hooks=True)
+        settings_path = backend._workspace_config_dir() / "settings.json"
+        settings = json.loads(settings_path.read_text())
+        # The `json-hooks-enabled` feature flag in agy binary is read from
+        # this settings key; without it agy logs "skipping hooks.json".
+        assert settings.get("enableJsonHooks") is True
+
+    def test_settings_json_omits_flag_when_no_hooks(self, backend, tmp_path):
+        backend._config_cwd = str(tmp_path)
+        backend._write_workspace_settings_json(has_hooks=False)
+        settings_path = backend._workspace_config_dir() / "settings.json"
+        settings = json.loads(settings_path.read_text())
+        # Don't set the flag if we have nothing to gate — leaves the user's
+        # global default in place (and avoids the appearance of hooks being
+        # configured when they aren't).
+        assert "enableJsonHooks" not in settings
+
+    def test_restore_removes_managed_hooks_json(self, backend, tmp_path):
+        backend._config_cwd = str(tmp_path)
+        backend._massgen_hooks_config = {
+            "hooks": {"BeforeTool": [{"matcher": ".*", "hooks": [{"type": "command", "command": "x"}]}]},
+        }
+        backend._write_hooks_json()
+        assert backend._workspace_hooks_json_path().exists()
+        backend._restore_hooks_json()
+        assert not backend._workspace_hooks_json_path().exists()
+
+    def test_write_sets_adapter_hook_dir_to_workspace_config_dir(self, backend, tmp_path):
+        # Mirrors gemini_cli.py:1163-1164 — the adapter needs a hook_dir so
+        # `build_native_hooks_config` knows where IPC payload files live.
+        backend._config_cwd = str(tmp_path)
+        backend._massgen_hooks_config = {
+            "hooks": {"BeforeTool": [{"matcher": ".*", "hooks": [{"type": "command", "command": "x"}]}]},
+        }
+        backend._write_hooks_json()
+        adapter = getattr(backend, "_native_hook_adapter", None)
+        assert adapter is not None
+        if hasattr(adapter, "hook_dir"):
+            assert adapter.hook_dir == backend._workspace_config_dir()
+
+
+class TestAgentsMdAtomicity:
+    """AGENTS.md write/restore must survive interruptions cleanly."""
+
+    def test_write_uses_temp_then_rename(self, backend, tmp_path, monkeypatch):
+        backend._config_cwd = str(tmp_path)
+        backend.system_prompt = "system prompt body"
+
+        # Capture the order of write+replace operations to assert atomicity.
+        seen: list[tuple[str, str]] = []
+        real_write_text = Path.write_text
+        real_replace = os.replace
+
+        def tracking_write_text(self, *a, **kw):
+            seen.append(("write_text", str(self)))
+            return real_write_text(self, *a, **kw)
+
+        def tracking_replace(src, dst):
+            seen.append(("replace", f"{src}->{dst}"))
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(Path, "write_text", tracking_write_text)
+        monkeypatch.setattr(os, "replace", tracking_replace)
+
+        backend._write_system_prompt_md()
+        final_path = backend._workspace_agents_md_path()
+        assert final_path.read_text() == "system prompt body"
+        # The write must hit the temp file first, then be renamed onto target.
+        write_op = next(op for op in seen if op[0] == "write_text")
+        replace_op = next(op for op in seen if op[0] == "replace")
+        assert ".massgen_tmp" in write_op[1], f"write_text should target temp file, got {write_op}"
+        assert ".massgen_tmp" in replace_op[1] and "AGENTS.md" in replace_op[1]
+
+    def test_restore_cleans_up_stale_temp_file(self, backend, tmp_path):
+        # Simulate a previous call that crashed between write-to-temp and rename:
+        # a `.massgen_tmp` file lingers but no AGENTS.md was ever published.
+        backend._config_cwd = str(tmp_path)
+        target = backend._workspace_agents_md_path()
+        tmp_file = target.with_suffix(target.suffix + ".massgen_tmp")
+        tmp_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp_file.write_text("partial write from a crashed run")
+
+        backend._restore_system_prompt_md()
+        assert not tmp_file.exists(), "stale .massgen_tmp must be cleaned up on restore"
+        assert not target.exists(), "no original AGENTS.md should be created from temp leftovers"
+
+    def test_restore_runs_even_if_backup_missing(self, backend, tmp_path):
+        # Common case: no pre-existing AGENTS.md, we wrote one, we remove it.
+        backend._config_cwd = str(tmp_path)
+        target = backend._workspace_agents_md_path()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("managed content")
+
+        backend._restore_system_prompt_md()
+        assert not target.exists()
+
+    def test_restore_preserves_user_owned_agents_md(self, backend, tmp_path):
+        # User had their own AGENTS.md. We wrote ours over it (with a backup).
+        # Restore must put theirs back, not leave ours behind.
+        backend._config_cwd = str(tmp_path)
+        backend.system_prompt = "MassGen-injected"
+        target = backend._workspace_agents_md_path()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("USER OWNED CONTENT")
+
+        backend._write_system_prompt_md()
+        assert target.read_text() == "MassGen-injected"
+        backend._restore_system_prompt_md()
+        assert target.read_text() == "USER OWNED CONTENT"
+
+
+class TestMultimodalContent:
+    """Non-text message parts must be surfaced to agy as readable references
+    (paths/URLs) rather than silently dropped — agy has filesystem/shell tools
+    and can ``read`` an image path or fetch a URL when prompted.
+    """
+
+    def test_plain_text_passthrough(self, backend):
+        assert backend._message_content_to_text("just text") == "just text"
+
+    def test_text_parts_concatenate(self, backend):
+        content = [
+            {"type": "text", "text": "Hello "},
+            {"type": "text", "text": "world"},
+        ]
+        assert backend._message_content_to_text(content) == "Hello world"
+
+    def test_image_path_part_surfaces_as_reference(self, backend):
+        content = [
+            {"type": "text", "text": "Look at this: "},
+            {"type": "image", "source_path": "/abs/path/photo.jpg"},
+        ]
+        out = backend._message_content_to_text(content)
+        assert "Look at this:" in out
+        assert "/abs/path/photo.jpg" in out
+        # Must include a delimiter so the model can tell it's a reference
+        assert "[" in out and "]" in out
+
+    def test_image_url_part_surfaces_url(self, backend):
+        content = [
+            {"type": "image", "image_url": "https://example.com/x.jpg"},
+        ]
+        out = backend._message_content_to_text(content)
+        assert "https://example.com/x.jpg" in out
+
+    def test_audio_path_part_surfaces(self, backend):
+        content = [{"type": "audio", "audio_path": "/clip.wav"}]
+        assert "/clip.wav" in backend._message_content_to_text(content)
+
+    def test_base64_inline_image_is_not_silently_dropped(self, backend):
+        # We don't want to inline 100kb of base64 in the agy prompt, but we
+        # also must not silently drop it. Surface a stub so the agent knows.
+        content = [
+            {"type": "image", "base64": "iVBORw0KGgo..." * 100, "mime_type": "image/png"},
+        ]
+        out = backend._message_content_to_text(content)
+        assert out, "base64 image must produce SOME output, not empty string"
+        assert "inline" in out.lower() or "base64" in out.lower() or "attachment" in out.lower()
+
+    def test_unknown_typed_part_at_least_acknowledges_existence(self, backend):
+        content = [{"type": "weird_custom_type"}]
+        out = backend._message_content_to_text(content)
+        assert "weird_custom_type" in out
+
+
+class TestSubprocessCancellation:
+    """When the orchestrator cancels the streaming generator, agy must die cleanly."""
+
+    @pytest.mark.asyncio
+    async def test_cancellation_terminates_agy_subprocess(self, backend):
+        # Build a fake proc that's "still running" (returncode=None) until killed.
+        proc_mock = AsyncMock()
+        proc_mock.returncode = None
+        terminate_called = {"value": False}
+        kill_called = {"value": False}
+
+        def _terminate():
+            terminate_called["value"] = True
+            proc_mock.returncode = 0  # simulate graceful exit after SIGTERM
+
+        def _kill():
+            kill_called["value"] = True
+            proc_mock.returncode = -9
+
+        proc_mock.terminate = _terminate
+        proc_mock.kill = _kill
+        proc_mock.wait = AsyncMock(return_value=0)
+
+        async def _aiter_stdout():
+            # Block forever so the consumer must cancel us
+            await asyncio.sleep(60)
+            return
+            yield  # pragma: no cover
+
+        proc_mock.stdout = _aiter_stdout()
+
+        async def _consume():
+            chunks = []
+            async for chunk in backend._stream_local("hi"):
+                chunks.append(chunk)
+            return chunks
+
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc_mock)):
+            task = asyncio.create_task(_consume())
+            # Give the generator a moment to start the subprocess
+            await asyncio.sleep(0.05)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        assert terminate_called["value"], "agy subprocess must be SIGTERM'd on cancellation"
+        # No SIGKILL needed because our fake terminate sets returncode=0 immediately
+        assert not kill_called["value"]
+
+    @pytest.mark.asyncio
+    async def test_terminate_falls_back_to_kill_on_stubborn_subprocess(self, backend):
+        # If SIGTERM doesn't elicit exit within grace, we must SIGKILL.
+        proc_mock = AsyncMock()
+        proc_mock.returncode = None
+        proc_mock.terminate = lambda: None  # ignores SIGTERM
+
+        kill_called = {"value": False}
+
+        def _kill():
+            kill_called["value"] = True
+            proc_mock.returncode = -9
+
+        proc_mock.kill = _kill
+        proc_mock.wait = AsyncMock(side_effect=[asyncio.TimeoutError(), 0])
+
+        async def _waiter():
+            raise TimeoutError()
+
+        # Use very short grace so the test is fast.
+        with patch("asyncio.wait_for", AsyncMock(side_effect=[asyncio.TimeoutError(), 0])):
+            await backend._terminate_subprocess(proc_mock, grace_seconds=0.01)
+        assert kill_called["value"], "must SIGKILL when SIGTERM grace expires"
+
+
+class TestWorkflowModeInference:
+    """Mirrors gemini_cli's workflow-mode trio — without these, agy ends up
+    being told both `vote` and `new_answer` are valid in rounds where no
+    candidate answers exist yet, which causes spurious vote calls and
+    contributes to the over-submission behavior observed in v0.1.88 runs.
+    """
+
+    @staticmethod
+    def _vote_and_new_answer_tools():
+        return [
+            {"type": "function", "function": {"name": "new_answer", "description": "..."}},
+            {"type": "function", "function": {"name": "vote", "description": "..."}},
+        ]
+
+    def test_no_current_answers_block_returns_any(self, backend):
+        # First-ever turn: no <CURRENT ANSWERS> block exists yet.
+        messages = [{"role": "user", "content": "Build me something."}]
+        mode = backend._infer_workflow_call_mode(messages, self._vote_and_new_answer_tools())
+        assert mode == "any"
+
+    def test_empty_current_answers_block_returns_new_answer_only(self, backend):
+        # Block exists but contains no <agent…> tag → no one has answered yet.
+        messages = [
+            {
+                "role": "user",
+                "content": "<CURRENT ANSWERS from the agents>\n(no answers yet)\n<END OF CURRENT ANSWERS>",
+            },
+        ]
+        mode = backend._infer_workflow_call_mode(messages, self._vote_and_new_answer_tools())
+        assert mode == "new_answer_only"
+
+    def test_populated_current_answers_block_returns_any(self, backend):
+        messages = [
+            {
+                "role": "user",
+                "content": "<CURRENT ANSWERS from the agents>\n<agent agent1>foo</agent>\n<END OF CURRENT ANSWERS>",
+            },
+        ]
+        mode = backend._infer_workflow_call_mode(messages, self._vote_and_new_answer_tools())
+        assert mode == "any"
+
+    def test_filter_tools_drops_vote_in_new_answer_only(self, backend):
+        tools = self._vote_and_new_answer_tools()
+        filtered = backend._filter_workflow_tools_for_mode(tools, "new_answer_only")
+        names = [t["function"]["name"] for t in filtered]
+        assert "new_answer" in names
+        assert "vote" not in names
+
+    def test_filter_tools_no_op_in_any_mode(self, backend):
+        tools = self._vote_and_new_answer_tools()
+        filtered = backend._filter_workflow_tools_for_mode(tools, "any")
+        assert {t["function"]["name"] for t in filtered} == {"new_answer", "vote"}
+
+    def test_filter_parsed_calls_drops_vote_in_new_answer_only(self, backend):
+        calls = [
+            {"id": "x", "type": "function", "function": {"name": "vote", "arguments": {}}},
+            {"id": "y", "type": "function", "function": {"name": "new_answer", "arguments": {}}},
+        ]
+        filtered = backend._filter_workflow_tool_calls_for_mode(calls, "new_answer_only")
+        assert [c["function"]["name"] for c in filtered] == ["new_answer"]
+
+    def test_new_answer_only_is_sticky_across_calls_with_no_block(self, backend):
+        # Once we infer new_answer_only, a subsequent call with no block at all
+        # should keep us there (mirrors gemini_cli's retry-sticky guard).
+        msgs1 = [{"role": "user", "content": "<CURRENT ANSWERS from the agents>(empty)<END OF CURRENT ANSWERS>"}]
+        assert backend._infer_workflow_call_mode(msgs1, self._vote_and_new_answer_tools()) == "new_answer_only"
+        backend._workflow_call_mode = "new_answer_only"
+        # Now no block — sticky should keep us in new_answer_only.
+        msgs2 = [{"role": "user", "content": "Try again please."}]
+        assert backend._infer_workflow_call_mode(msgs2, self._vote_and_new_answer_tools()) == "new_answer_only"
+
+    def test_mode_inference_requires_both_vote_and_new_answer(self, backend):
+        # If only `new_answer` is in tools, mode inference doesn't activate —
+        # caller is in a non-coordination phase.
+        tools = [{"type": "function", "function": {"name": "new_answer"}}]
+        messages = [{"role": "user", "content": "<CURRENT ANSWERS from the agents>(empty)<END OF CURRENT ANSWERS>"}]
+        assert backend._infer_workflow_call_mode(messages, tools) == "any"
+
+
+class TestPhasePromptPrefix:
+    """When the orchestrator hands us `submit` + `restart_orchestration`,
+    we're in the post-evaluation phase. Mirror gemini_cli's behavior and
+    prefix the prompt so agy doesn't follow stale `new_answer`/`vote`
+    directives quoted in conversation history.
+    """
+
+    def test_post_eval_tools_emit_guard_prefix(self, backend):
+        tools = [
+            {"type": "function", "function": {"name": "submit"}},
+            {"type": "function", "function": {"name": "restart_orchestration"}},
+        ]
+        prefix = backend._build_phase_prompt_prefix(tools)
+        assert "POST-EVALUATION PHASE" in prefix
+        assert "submit" in prefix and "restart_orchestration" in prefix
+
+    def test_regular_workflow_tools_emit_no_prefix(self, backend):
+        tools = [
+            {"type": "function", "function": {"name": "vote"}},
+            {"type": "function", "function": {"name": "new_answer"}},
+        ]
+        assert backend._build_phase_prompt_prefix(tools) == ""
+
+    def test_partial_post_eval_tools_emit_no_prefix(self, backend):
+        # Both must be present; one alone isn't post-eval.
+        tools = [{"type": "function", "function": {"name": "submit"}}]
+        assert backend._build_phase_prompt_prefix(tools) == ""
+
+
+class TestAuthenticationPrecheck:
+    """At stream time, the backend must refuse to launch agy if no
+    credential source exists. Avoids burning a coordination round on a
+    silent UNAUTHENTICATED 401 from the language server.
+    """
+
+    def test_has_creds_when_api_key_set(self, backend):
+        backend.api_key = "test-key"
+        assert backend._has_cached_credentials() is True
+
+    def test_has_creds_when_google_accounts_json_exists(self, backend, tmp_path, monkeypatch):
+        backend.api_key = None
+        fake_home = tmp_path / "home"
+        (fake_home / ".gemini").mkdir(parents=True)
+        (fake_home / ".gemini" / "google_accounts.json").write_text("{}")
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+        assert backend._has_cached_credentials() is True
+
+    def test_no_creds_returns_false(self, backend, tmp_path, monkeypatch):
+        backend.api_key = None
+        fake_home = tmp_path / "empty_home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+        assert backend._has_cached_credentials() is False
+
+    @pytest.mark.asyncio
+    async def test_stream_with_tools_yields_error_chunk_when_unauthenticated(self, backend, tmp_path, monkeypatch):
+        backend.api_key = None
+        fake_home = tmp_path / "empty_home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+
+        chunks = []
+        async for chunk in backend.stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[],
+        ):
+            chunks.append(chunk)
+        errors = [c for c in chunks if c.type == "error"]
+        assert errors, "must yield an error chunk when not authenticated"
+        assert "not authenticated" in (errors[0].error or "").lower() or "GEMINI_API_KEY" in (errors[0].error or "")
+
+
+class TestAgentIdRefreshFromKwargs:
+    """Parity with sibling backends — pick up agent_id from kwargs so the
+    transcript emitter labels events for the right agent across calls.
+    """
+
+    @pytest.mark.asyncio
+    async def test_agent_id_picked_up_from_kwargs(self, backend, tmp_path, monkeypatch):
+        from massgen.backend.base import StreamChunk
+
+        # Make auth check pass so we can exercise the agent_id assignment.
+        backend.api_key = "x"
+        backend.agent_id = None
+        # Stub _stream_local to skip subprocess and just yield a done chunk.
+
+        async def _stub_stream(prompt):
+            yield StreamChunk(type="done", usage={})
+
+        monkeypatch.setattr(backend, "_stream_local", _stub_stream)
+
+        chunks = []
+        async for chunk in backend.stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[],
+            agent_id="agent_b",
+        ):
+            chunks.append(chunk)
+        assert backend.agent_id == "agent_b"
+
+
 class TestWorkflowToolTextFallback:
     """When MassGen orchestrator passes vote/new_answer tools, agy can't expose
     them as native MCP tools — agy 1.0.0 doesn't load MCP tools per invocation.
@@ -368,6 +932,9 @@ class TestWorkflowToolTextFallback:
     @pytest.mark.asyncio
     async def test_prompt_contains_workflow_instructions_when_workflow_tools_present(self, backend):
         """Workflow tool definitions must produce inline text-fallback instructions."""
+        # Provide an api_key so the new _ensure_authenticated pre-check passes
+        # without needing ~/.gemini/google_accounts.json on the CI runner.
+        backend.api_key = "test-key"
         captured_cmd = {}
         proc_mock = AsyncMock()
 
@@ -383,10 +950,21 @@ class TestWorkflowToolTextFallback:
             captured_cmd["cmd"] = list(args)
             return proc_mock
 
+        # The message must include a populated CURRENT ANSWERS block so
+        # workflow-mode inference returns "any" — otherwise (no answers
+        # block OR empty block), it returns "new_answer_only" and `vote`
+        # is correctly stripped from the prompt, breaking the assertion.
+        messages = [
+            {
+                "role": "user",
+                "content": ("what is 2+2?\n\n" "<CURRENT ANSWERS from the agents>\n" "<agent agent1>placeholder answer</agent>\n" "<END OF CURRENT ANSWERS>"),
+            },
+        ]
+
         with patch("asyncio.create_subprocess_exec", new=fake_exec):
             chunks = []
             async for chunk in backend.stream_with_tools(
-                messages=[{"role": "user", "content": "what is 2+2?"}],
+                messages=messages,
                 tools=self._workflow_tools(),
             ):
                 chunks.append(chunk)
@@ -406,6 +984,8 @@ class TestWorkflowToolTextFallback:
     async def test_stdout_workflow_json_yields_tool_calls_chunk(self, backend):
         """When agy emits a workflow JSON envelope on stdout, the backend must
         emit a `StreamChunk(type="tool_calls")` so the orchestrator can act."""
+        # auth pre-check needs a credential source.
+        backend.api_key = "test-key"
         proc_mock = AsyncMock()
 
         async def _aiter_stdout():
@@ -473,6 +1053,7 @@ class TestDockerModeApiKeyAuth:
                 AntigravityCLIBackend(
                     cwd=str(tmp_path / "cwd"),
                     command_line_execution_mode="docker",
+                    skip_health_check=True,
                 )
 
     def test_docker_mode_writes_api_key_settings_json(self, tmp_path, monkeypatch):
@@ -481,6 +1062,7 @@ class TestDockerModeApiKeyAuth:
             be = AntigravityCLIBackend(
                 cwd=str(tmp_path / "cwd"),
                 command_line_execution_mode="docker",
+                skip_health_check=True,
             )
             be._write_workspace_settings_json()
             settings_path = be._workspace_config_dir() / "settings.json"
@@ -493,7 +1075,7 @@ class TestDockerModeApiKeyAuth:
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         # Local mode uses OAuth from the host's ~/.gemini/google_accounts.json.
         with patch.object(AntigravityCLIBackend, "_find_agy_cli", return_value="/fake/agy"):
-            AntigravityCLIBackend(cwd=str(tmp_path / "cwd"))  # must not raise
+            AntigravityCLIBackend(cwd=str(tmp_path / "cwd"), skip_health_check=True)  # must not raise
 
 
 class TestNativeHookAdapter:

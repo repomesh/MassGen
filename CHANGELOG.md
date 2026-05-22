@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.89 (May 22, 2026)** - Antigravity CLI Full Integration & Hardening
+Completes the follow-up Antigravity integration pass with workflow-mode parity, early auth and binary health checks, workspace-root file writes via `--add-dir`, `.antigravitycli/` project-root anchoring, standalone `hooks.json` wiring with `enableJsonHooks`, prompt affordance gating for disabled subagents, and expanded regression coverage.
+
 **v0.1.88 (May 20, 2026)** - Antigravity CLI Backend
 Adds a new `antigravity_cli` backend wrapping Google's `agy` binary, with workspace-local `.antigravity/` isolation, MCP config emission using Antigravity's `serverUrl` schema, native-hook adapter support, OAuth/API-key auth handling, and new runnable configs for both single-agent and mixed Gemini + Antigravity runs.
 
@@ -23,6 +26,34 @@ New `orchestrator.coordination.criteria_mode` option lets evaluation criteria em
 
 **v0.1.84 (May 8, 2026)** - TUI Consensus Map
 A compact visual map below the agent status ribbon during multi-agent runs. Shows agent nodes with latest answer labels, vote arrows, current vote leader, winner state, and waiting/working indicators — driven by existing coordination events without backend schema changes. Hidden on welcome and single-agent runs.
+
+---
+
+## [0.1.89] - 2026-05-22
+
+### Added
+- **Antigravity Workflow-Mode Parity** ([#1099](https://github.com/massgen/MassGen/pull/1099)): Ported Gemini CLI workflow-mode inference into `antigravity_cli`, including `new_answer_only` rounds when no candidate answers exist, post-evaluation phase guards, duplicate workflow-call suppression, and text-fallback parsing for `new_answer` / `vote`.
+- **Auth and Binary Health Checks** ([#1099](https://github.com/massgen/MassGen/pull/1099)): The backend now verifies `agy --version` at construction time and fails fast when neither API-key auth nor cached Google OAuth credentials are available.
+- **Workspace Project Anchoring** ([#1099](https://github.com/massgen/MassGen/pull/1099)): Antigravity runs now pre-create a workspace-root `.antigravitycli/` marker and pass `--add-dir <cwd>` so agy's project discovery and file writes stay inside the MassGen workspace.
+- **Standalone Antigravity Hooks Wiring** ([#1099](https://github.com/massgen/MassGen/pull/1099)): Native hooks now emit Antigravity's standalone `hooks.json` format and enable it through `settings.json` with `enableJsonHooks`.
+
+### Changed
+- **System Prompt Affordance Gating**: `TaskContextSection` now advertises subagent affordances only when subagents are actually enabled, preventing phantom subagent MCP calls in multimodal-only runs.
+- **Antigravity Settings and Cleanup**: System-prompt `AGENTS.md` writes are atomic, transient hook files are restored, and `.antigravity/` / `.antigravitycli/` are ignored as runtime artifacts.
+- **Antigravity Native Hook Adapter Docs**: Adapter comments now describe agy's `hooks.json` storage model instead of Gemini CLI's embedded `settings.json["hooks"]` model.
+
+### Tests
+- `massgen/tests/test_antigravity_cli_backend.py` expanded from initial backend coverage to 1,100+ lines covering health checks, authentication, workspace anchoring, `--add-dir`, hooks.json, workflow-mode filtering, duplicate tool-call suppression, multimodal prompt flattening, cancellation cleanup, and agent-id propagation.
+- `massgen/tests/test_system_prompt_sections.py` adds regression coverage that `TaskContextSection` hides `spawn_subagents` when subagents are disabled and shows it only when enabled.
+
+### Notes
+- This release completes the follow-up Antigravity integration pass that v0.1.88 introduced as a first version.
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements remain deferred to v0.1.90.
+
+### Technical Details
+- **Major Focus**: Make Antigravity CLI reliable in real MassGen coordination runs by hardening auth, workspace isolation, workflow-tool semantics, hook integration, and prompt affordance boundaries.
+- **PRs Merged**: [#1099](https://github.com/massgen/MassGen/pull/1099)
+- **Contributors**: @ncrispino, @HenryQi and the MassGen team
 
 ---
 
@@ -48,7 +79,7 @@ A compact visual map below the agent status ribbon during multi-agent runs. Show
 ### Notes
 - Antigravity CLI (`agy`) must be installed separately with `curl -fsSL https://antigravity.google/cli/install.sh | bash`.
 - Local mode can use existing Google OAuth state at `~/.gemini/google_accounts.json`; Docker mode requires `GEMINI_API_KEY` or `GOOGLE_API_KEY` because OAuth state does not cross container boundaries.
-- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements remain deferred to v0.1.89.
+- Follow-up Antigravity hardening landed in v0.1.89; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements remain deferred to v0.1.90.
 
 ### Technical Details
 - **Major Focus**: Add Google Antigravity CLI as a first-class MassGen backend while keeping project-local isolation and MassGen workflow/tool semantics intact.

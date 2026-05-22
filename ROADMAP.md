@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.88
+**Current Version:** v0.1.89
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** May 20, 2026
+**Last Updated:** May 22, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,10 +42,28 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.89** | 05/22/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.86-v0.1.88 ([#959](https://github.com/massgen/MassGen/issues/959)) |
+| **v0.1.90** | 05/25/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.86-v0.1.89 ([#959](https://github.com/massgen/MassGen/issues/959)) |
 | | | Discriminative Criteria Refinements | @ncrispino | Selection, ranking, and retirement of stale criteria for long-running refinement loops |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.89 - Antigravity CLI Full Integration & Hardening (Completed)
+
+**Released:** May 22, 2026 | PRs: [#1099](https://github.com/massgen/MassGen/pull/1099)
+
+### Features
+- **Workflow-Mode Parity**: Antigravity now mirrors Gemini CLI's workflow handling for `new_answer` / `vote`, including `new_answer_only` rounds, post-evaluation guards, and duplicate workflow-call suppression
+- **Auth and Binary Health Checks**: The backend verifies `agy --version` and fails fast when neither API-key auth nor cached Google OAuth credentials are available
+- **Workspace Write Reliability**: MassGen passes `--add-dir <cwd>` and creates a workspace-root `.antigravitycli/` marker so agy writes files into the shared workspace instead of hidden scratch directories
+- **Native Hooks**: Antigravity native hooks now use standalone `hooks.json` plus `enableJsonHooks`
+- **Prompt Guardrails**: `TaskContextSection` hides `spawn_subagents` when subagents are disabled, preventing phantom subagent MCP calls in multimodal-only runs
+- **Tests**: `massgen/tests/test_antigravity_cli_backend.py` and `massgen/tests/test_system_prompt_sections.py` cover health checks, auth, workspace anchoring, hooks, workflow filtering, and prompt affordance gating
+
+### Notes
+- This completes the follow-up Antigravity integration pass introduced in v0.1.88.
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements remain deferred to v0.1.90.
 
 ---
 
@@ -62,7 +80,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 - **Tests**: `massgen/tests/test_antigravity_cli_backend.py` covers command construction, config isolation, MCP schema, workflow JSON envelopes, Docker/API-key constraints, hook wiring, and env passthrough
 
 ### Notes
-- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements remain deferred to v0.1.89.
+- Follow-up Antigravity hardening landed in v0.1.89; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements remain deferred to v0.1.90.
 
 ---
 
@@ -79,7 +97,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 - **`bootstrap_subagent` Single-Shot Fix**: `Orchestrator._run_bootstrap_discriminator_step` passes `refine=False` to `spawn_subagent` — the canonical knob `SubagentManager` respects at the orchestrator level (the orchestrator's `max_new_answers_per_agent: 3` default was shadowing coordination-dict overrides)
 
 ### Notes
-- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements deferred to v0.1.88.
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements ultimately carried forward to v0.1.90.
 - Closes [#1082](https://github.com/massgen/MassGen/issues/1082) (`llms.txt` + `llms-full.txt`) and [#1083](https://github.com/massgen/MassGen/issues/1083) (CrewAI / LangGraph / AutoGen comparison pages).
 
 ---
@@ -255,7 +273,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.89 - Image/Video Edit & Criteria Refinements (Deferred from v0.1.86-v0.1.88)
+## 📋 v0.1.90 - Image/Video Edit & Criteria Refinements (Deferred from v0.1.86-v0.1.89)
 
 ### Features
 

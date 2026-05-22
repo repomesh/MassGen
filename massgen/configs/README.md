@@ -227,7 +227,24 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.88 - Latest
+### v0.1.89 - Latest
+**New Features:** Antigravity CLI Full Integration & Hardening
+
+**Key Features:**
+- **Workflow-Mode Parity**: Antigravity now mirrors Gemini CLI's `new_answer` / `vote` workflow handling, including `new_answer_only` rounds and post-evaluation guards
+- **Auth and Binary Health Checks**: The backend verifies `agy --version` and fails fast when no API-key or cached Google OAuth credentials are available
+- **Workspace Write Reliability**: MassGen passes `--add-dir <cwd>` and creates a workspace-root `.antigravitycli/` marker so agy writes files into the shared workspace
+- **Native Hooks**: Antigravity hooks now use standalone `hooks.json` plus `enableJsonHooks`
+- **Prompt Guardrails**: `TaskContextSection` hides `spawn_subagents` when subagents are disabled
+
+**Try It:**
+```bash
+pip install massgen==0.1.89
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+uv run massgen --config massgen/configs/features/fast_iteration_gemini_antigravity.yaml "Create an svg of an AI agent coding."
+```
+
+### v0.1.88
 **New Features:** Antigravity CLI Backend
 
 **Key Features:**

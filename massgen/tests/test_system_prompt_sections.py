@@ -7,6 +7,7 @@ from massgen.system_prompt_sections import (
     FilesystemOperationsSection,
     MemorySection,
     OutputFirstVerificationSection,
+    TaskContextSection,
     TaskPlanningSection,
     _build_checklist_analysis,
     _build_checklist_gated_decision,
@@ -530,3 +531,41 @@ def test_background_tool_guidance_discourages_immediate_wait():
     assert "continue with your next task" in lower
     assert "do not immediately call" in lower
     assert "exhausted all" in lower or "genuinely need the result" in lower
+
+
+def test_task_context_section_omits_subagent_affordances_when_disabled():
+    """When `subagents_enabled=False` (multimodal-only agents), the section
+    must not mention `spawn_subagents` or imply subagent capabilities exist.
+
+    Regression for the phantom-MCP bug: models with subagent affordances in
+    their prompt but no connected subagent server hallucinate calls to
+    `mcp__subagent_<8hex>__list_subagents` and retry-loop against an
+    unconnected server. The section is the affordance-source per the
+    "remove affordances at the source" rule.
+    """
+    content = TaskContextSection(subagents_enabled=False).build_content()
+    assert "spawn_subagents" not in content
+    # The word "subagent" itself can still appear historically in titles, but
+    # the inheritance bullet must not — that's what hallucinations latch onto.
+    assert "subagents will inherit" not in content
+    # CONTEXT.md / read_media guidance must remain — that's the actual use
+    # case for multimodal-only agents.
+    assert "CONTEXT.md" in content
+    assert "read_media" in content
+
+
+def test_task_context_section_includes_subagent_affordances_when_enabled():
+    """When subagents are actually wired, the prompt should advertise them."""
+    content = TaskContextSection(subagents_enabled=True).build_content()
+    assert "spawn_subagents" in content
+    assert "subagents will inherit this context" in content
+
+
+def test_task_context_section_defaults_to_subagents_disabled():
+    """Safe default: a bare TaskContextSection() must not leak subagent
+    affordances. The caller must opt in via subagents_enabled=True.
+    """
+    default_content = TaskContextSection().build_content()
+    explicit_content = TaskContextSection(subagents_enabled=False).build_content()
+    assert default_content == explicit_content
+    assert "spawn_subagents" not in default_content
