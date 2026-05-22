@@ -146,6 +146,21 @@ class TestCommandConstruction:
         assert Path(path_arg).is_absolute(), f"--gemini_dir path must be absolute, got {path_arg!r}"
         assert ".antigravity" in path_arg
 
+    def test_command_passes_add_dir_for_workspace_registration(self, backend, tmp_path):
+        # Without --add-dir, agy writes files to .antigravity/antigravity-cli/
+        # scratch/, hiding them from peers + snapshot promotion. We must pass
+        # --add-dir <cwd> so write_to_file/view_file act on the workspace root.
+        cmd = backend._build_exec_command("hello")
+        assert "--add-dir" in cmd, f"--add-dir flag missing from: {cmd}"
+        idx = cmd.index("--add-dir")
+        path_arg = cmd[idx + 1]
+        assert Path(path_arg).is_absolute(), f"--add-dir path must be absolute, got {path_arg!r}"
+        # Must match the workspace cwd, NOT a subdir like .antigravity/ — that
+        # would defeat the purpose (agy would still write outside the workspace).
+        assert ".antigravity" not in path_arg, f"--add-dir must target workspace root, not config dir: {path_arg}"
+        # And it must equal the backend's reported cwd (resolved).
+        assert path_arg == str(Path(backend.cwd).resolve())
+
     def test_command_passes_log_file_for_error_surfacing(self, backend, tmp_path):
         # agy exits 0 with empty stdout on quota/auth failures. We capture
         # `--log-file` so silent failures can be surfaced as real errors.

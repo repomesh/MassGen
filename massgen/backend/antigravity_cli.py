@@ -436,6 +436,18 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
         Always passes ``--gemini_dir <abs_path>`` so agy reads our workspace-local
         config (mcp_config.json, settings.json) instead of the user's global one.
 
+        Always passes ``--add-dir <cwd>`` so agy registers our workspace as an
+        "active workspace" for its built-in tools (``write_to_file``,
+        ``view_file``, ``run_command``). Without this flag, agy's
+        ``write_to_file`` defaults to its internal
+        ``.antigravity/antigravity-cli/scratch/`` directory — files land
+        outside the workspace where peer agents, snapshot promotion, and
+        next-round verification can't find them. Verified live: with
+        ``--add-dir`` agy writes to ``<cwd>/hello.txt``; without it agy
+        writes to ``<cwd>/.antigravity/antigravity-cli/scratch/hello.txt``
+        and the response explicitly asks the user to "set the scratch
+        subdirectory as your active workspace."
+
         Each MassGen call is a single-shot ``-p`` invocation — the orchestrator
         already injects prior-response context into retry prompts, so agy's
         ``--continue``/``--conversation`` session resumption is unnecessary (and
@@ -444,6 +456,7 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
         """
         cmd: list[str] = [self._agy_path]
         cmd.extend(["--gemini_dir", str(self._workspace_config_dir())])
+        cmd.extend(["--add-dir", str(Path(self.cwd).resolve())])
         log_path = self._agy_log_file_path()
         log_path.parent.mkdir(parents=True, exist_ok=True)
         cmd.extend(["--log-file", str(log_path)])
