@@ -392,13 +392,29 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
         except OSError as exc:
             logger.warning(f"Antigravity CLI: failed to clean up AGENTS.md: {exc}")
 
-    def _write_workspace_settings_json(self) -> None:
+    def _workspace_hooks_json_path(self) -> Path:
+        """Path to agy's standalone hooks.json file.
+
+        Unlike Gemini CLI (which embeds hooks under ``"hooks"`` inside
+        ``settings.json``), agy 1.0.x reads hooks from a separate file.
+        Binary strings confirm: ``Loaded hooks.json from %s``,
+        ``No hooks.json found at %s``, ``failed to parse hooks.json``.
+        Subject to ``enableJsonHooks: true`` in settings.json (also
+        confirmed by ``json-hooks-enabled`` / ``EnableJsonHooks`` literals).
+        """
+        return self._workspace_config_dir() / "hooks.json"
+
+    def _write_workspace_settings_json(self, has_hooks: bool = False) -> None:
         """Write a minimal settings.json in the workspace config dir.
 
         In Docker mode (or any time we have an API key but no host OAuth
         login), this forces agy to use `selectedType: "gemini-api-key"` so it
         won't try to start the OAuth flow inside a headless container. The key
         itself is provided via the ``GEMINI_API_KEY`` env var, not in this file.
+
+        When ``has_hooks=True``, also sets ``enableJsonHooks: true`` so agy
+        will pick up our workspace ``hooks.json``. Without this gate agy's
+        log shows ``skipping hooks.json at %s`` instead of ``Loaded hooks.json``.
         """
         config_dir = self._workspace_config_dir()
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -417,7 +433,54 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
                 )
         if self._docker_execution or self.api_key:
             settings.setdefault("security", {}).setdefault("auth", {})["selectedType"] = "gemini-api-key"
+        if has_hooks:
+            settings["enableJsonHooks"] = True
         settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+
+    def _write_hooks_json(self) -> bool:
+        """Write a workspace-local hooks.json built from MassGen's hook adapter.
+
+        Returns True iff a non-empty hooks payload was written (caller uses
+        this to decide whether to set ``enableJsonHooks`` in settings.json).
+        """
+        adapter = self._native_hook_adapter if hasattr(self, "_native_hook_adapter") else None
+        if not adapter:
+            return False
+        # Hook adapter needs to know where its IPC dir lives. Mirror the
+        # gemini_cli pattern (gemini_cli.py:1163-1164) but use our
+        # workspace config dir.
+        if hasattr(adapter, "hook_dir"):
+            adapter.hook_dir = self._workspace_config_dir()
+        if not self._massgen_hooks_config or not hasattr(adapter, "build_native_hooks_config"):
+            return False
+        try:
+            from ..mcp_tools.hooks import (  # noqa: F401 — type ref for clarity
+                GeneralHookManager,
+            )
+        except ImportError:
+            pass
+        # The orchestrator already converted MassGen hooks to the native
+        # config shape via `set_native_hooks_config`; reuse that here.
+        hooks_payload = self._massgen_hooks_config
+        if not hooks_payload or not hooks_payload.get("hooks"):
+            return False
+        hooks_path = self._workspace_hooks_json_path()
+        hooks_path.parent.mkdir(parents=True, exist_ok=True)
+        hooks_path.write_text(json.dumps(hooks_payload, indent=2), encoding="utf-8")
+        logger.info(
+            f"Antigravity CLI: wrote hooks.json to {hooks_path} " f"(events: {sorted(hooks_payload.get('hooks', {}).keys())})",
+        )
+        return True
+
+    def _restore_hooks_json(self) -> None:
+        """Remove the workspace-local hooks.json written by this backend."""
+        hooks_path = self._workspace_hooks_json_path()
+        if hooks_path.exists():
+            try:
+                hooks_path.unlink()
+                logger.info(f"Antigravity CLI: removed workspace {hooks_path}")
+            except OSError as exc:
+                logger.warning(f"Antigravity CLI: failed to remove {hooks_path}: {exc}")
 
     # ── Command construction ──────────────────────────────────────────────
 
@@ -874,7 +937,13 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
         full_prompt = "\n\n".join(p for p in prompt_parts if p)
 
         self._write_mcp_config()
-        self._write_workspace_settings_json()
+        # Hooks are gated by `enableJsonHooks: true` in settings.json (per agy's
+        # `json-hooks-enabled` feature flag). Write hooks.json first, then pass
+        # has_hooks to the settings writer so the flag and the file are emitted
+        # together — otherwise agy logs "skipping hooks.json" instead of
+        # "Loaded hooks.json".
+        hooks_written = self._write_hooks_json()
+        self._write_workspace_settings_json(has_hooks=hooks_written)
         self._write_system_prompt_md()
         try:
             try:
@@ -941,6 +1010,7 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
                 self._finalize_streaming_buffer(agent_id=agent_id)
         finally:
             self._restore_mcp_config()
+            self._restore_hooks_json()
             self._restore_system_prompt_md()
 
     # ── Message helpers ───────────────────────────────────────────────────

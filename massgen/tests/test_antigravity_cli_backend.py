@@ -395,6 +395,88 @@ class TestStdoutStreamingParser:
         assert any("Antigravity CLI ERROR" in (c.content or "") for c in contents)
 
 
+class TestHooksJsonWiring:
+    """agy reads hooks from a standalone hooks.json (NOT embedded in
+    settings.json like gemini_cli) and only when ``enableJsonHooks: true``
+    is set in settings.json. Verified via binary-strings probe + live test.
+    """
+
+    def test_hooks_json_path_lives_in_workspace_config_dir(self, backend, tmp_path):
+        path = backend._workspace_hooks_json_path()
+        assert path.name == "hooks.json"
+        # Must be under .antigravity/ so --gemini_dir points agy at it.
+        assert ".antigravity" in str(path)
+
+    def test_write_hooks_json_returns_false_when_no_hooks(self, backend, tmp_path):
+        backend._config_cwd = str(tmp_path)
+        backend._massgen_hooks_config = None
+        assert backend._write_hooks_json() is False
+        assert not backend._workspace_hooks_json_path().exists()
+
+    def test_write_hooks_json_returns_false_for_empty_hooks_payload(self, backend, tmp_path):
+        backend._config_cwd = str(tmp_path)
+        backend._massgen_hooks_config = {"hooks": {}}
+        assert backend._write_hooks_json() is False
+
+    def test_write_hooks_json_emits_file_when_hooks_present(self, backend, tmp_path):
+        backend._config_cwd = str(tmp_path)
+        backend._massgen_hooks_config = {
+            "hooks": {
+                "BeforeTool": [{"matcher": ".*", "hooks": [{"type": "command", "command": "echo x"}]}],
+            },
+        }
+        assert backend._write_hooks_json() is True
+        path = backend._workspace_hooks_json_path()
+        assert path.exists()
+        written = json.loads(path.read_text())
+        # Outer "hooks" key is required by agy's proto field tag
+        # (`Hooks json:"hooks"` in the binary).
+        assert "hooks" in written
+        assert "BeforeTool" in written["hooks"]
+
+    def test_settings_json_enables_json_hooks_flag_when_hooks_written(self, backend, tmp_path):
+        backend._config_cwd = str(tmp_path)
+        backend._write_workspace_settings_json(has_hooks=True)
+        settings_path = backend._workspace_config_dir() / "settings.json"
+        settings = json.loads(settings_path.read_text())
+        # The `json-hooks-enabled` feature flag in agy binary is read from
+        # this settings key; without it agy logs "skipping hooks.json".
+        assert settings.get("enableJsonHooks") is True
+
+    def test_settings_json_omits_flag_when_no_hooks(self, backend, tmp_path):
+        backend._config_cwd = str(tmp_path)
+        backend._write_workspace_settings_json(has_hooks=False)
+        settings_path = backend._workspace_config_dir() / "settings.json"
+        settings = json.loads(settings_path.read_text())
+        # Don't set the flag if we have nothing to gate — leaves the user's
+        # global default in place (and avoids the appearance of hooks being
+        # configured when they aren't).
+        assert "enableJsonHooks" not in settings
+
+    def test_restore_removes_managed_hooks_json(self, backend, tmp_path):
+        backend._config_cwd = str(tmp_path)
+        backend._massgen_hooks_config = {
+            "hooks": {"BeforeTool": [{"matcher": ".*", "hooks": [{"type": "command", "command": "x"}]}]},
+        }
+        backend._write_hooks_json()
+        assert backend._workspace_hooks_json_path().exists()
+        backend._restore_hooks_json()
+        assert not backend._workspace_hooks_json_path().exists()
+
+    def test_write_sets_adapter_hook_dir_to_workspace_config_dir(self, backend, tmp_path):
+        # Mirrors gemini_cli.py:1163-1164 — the adapter needs a hook_dir so
+        # `build_native_hooks_config` knows where IPC payload files live.
+        backend._config_cwd = str(tmp_path)
+        backend._massgen_hooks_config = {
+            "hooks": {"BeforeTool": [{"matcher": ".*", "hooks": [{"type": "command", "command": "x"}]}]},
+        }
+        backend._write_hooks_json()
+        adapter = getattr(backend, "_native_hook_adapter", None)
+        assert adapter is not None
+        if hasattr(adapter, "hook_dir"):
+            assert adapter.hook_dir == backend._workspace_config_dir()
+
+
 class TestAgentsMdAtomicity:
     """AGENTS.md write/restore must survive interruptions cleanly."""
 
