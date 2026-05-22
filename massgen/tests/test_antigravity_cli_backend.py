@@ -578,6 +578,186 @@ class TestSubprocessCancellation:
         assert kill_called["value"], "must SIGKILL when SIGTERM grace expires"
 
 
+class TestWorkflowModeInference:
+    """Mirrors gemini_cli's workflow-mode trio — without these, agy ends up
+    being told both `vote` and `new_answer` are valid in rounds where no
+    candidate answers exist yet, which causes spurious vote calls and
+    contributes to the over-submission behavior observed in v0.1.88 runs.
+    """
+
+    @staticmethod
+    def _vote_and_new_answer_tools():
+        return [
+            {"type": "function", "function": {"name": "new_answer", "description": "..."}},
+            {"type": "function", "function": {"name": "vote", "description": "..."}},
+        ]
+
+    def test_no_current_answers_block_returns_any(self, backend):
+        # First-ever turn: no <CURRENT ANSWERS> block exists yet.
+        messages = [{"role": "user", "content": "Build me something."}]
+        mode = backend._infer_workflow_call_mode(messages, self._vote_and_new_answer_tools())
+        assert mode == "any"
+
+    def test_empty_current_answers_block_returns_new_answer_only(self, backend):
+        # Block exists but contains no <agent…> tag → no one has answered yet.
+        messages = [
+            {
+                "role": "user",
+                "content": "<CURRENT ANSWERS from the agents>\n(no answers yet)\n<END OF CURRENT ANSWERS>",
+            },
+        ]
+        mode = backend._infer_workflow_call_mode(messages, self._vote_and_new_answer_tools())
+        assert mode == "new_answer_only"
+
+    def test_populated_current_answers_block_returns_any(self, backend):
+        messages = [
+            {
+                "role": "user",
+                "content": "<CURRENT ANSWERS from the agents>\n<agent agent1>foo</agent>\n<END OF CURRENT ANSWERS>",
+            },
+        ]
+        mode = backend._infer_workflow_call_mode(messages, self._vote_and_new_answer_tools())
+        assert mode == "any"
+
+    def test_filter_tools_drops_vote_in_new_answer_only(self, backend):
+        tools = self._vote_and_new_answer_tools()
+        filtered = backend._filter_workflow_tools_for_mode(tools, "new_answer_only")
+        names = [t["function"]["name"] for t in filtered]
+        assert "new_answer" in names
+        assert "vote" not in names
+
+    def test_filter_tools_no_op_in_any_mode(self, backend):
+        tools = self._vote_and_new_answer_tools()
+        filtered = backend._filter_workflow_tools_for_mode(tools, "any")
+        assert {t["function"]["name"] for t in filtered} == {"new_answer", "vote"}
+
+    def test_filter_parsed_calls_drops_vote_in_new_answer_only(self, backend):
+        calls = [
+            {"id": "x", "type": "function", "function": {"name": "vote", "arguments": {}}},
+            {"id": "y", "type": "function", "function": {"name": "new_answer", "arguments": {}}},
+        ]
+        filtered = backend._filter_workflow_tool_calls_for_mode(calls, "new_answer_only")
+        assert [c["function"]["name"] for c in filtered] == ["new_answer"]
+
+    def test_new_answer_only_is_sticky_across_calls_with_no_block(self, backend):
+        # Once we infer new_answer_only, a subsequent call with no block at all
+        # should keep us there (mirrors gemini_cli's retry-sticky guard).
+        msgs1 = [{"role": "user", "content": "<CURRENT ANSWERS from the agents>(empty)<END OF CURRENT ANSWERS>"}]
+        assert backend._infer_workflow_call_mode(msgs1, self._vote_and_new_answer_tools()) == "new_answer_only"
+        backend._workflow_call_mode = "new_answer_only"
+        # Now no block — sticky should keep us in new_answer_only.
+        msgs2 = [{"role": "user", "content": "Try again please."}]
+        assert backend._infer_workflow_call_mode(msgs2, self._vote_and_new_answer_tools()) == "new_answer_only"
+
+    def test_mode_inference_requires_both_vote_and_new_answer(self, backend):
+        # If only `new_answer` is in tools, mode inference doesn't activate —
+        # caller is in a non-coordination phase.
+        tools = [{"type": "function", "function": {"name": "new_answer"}}]
+        messages = [{"role": "user", "content": "<CURRENT ANSWERS from the agents>(empty)<END OF CURRENT ANSWERS>"}]
+        assert backend._infer_workflow_call_mode(messages, tools) == "any"
+
+
+class TestPhasePromptPrefix:
+    """When the orchestrator hands us `submit` + `restart_orchestration`,
+    we're in the post-evaluation phase. Mirror gemini_cli's behavior and
+    prefix the prompt so agy doesn't follow stale `new_answer`/`vote`
+    directives quoted in conversation history.
+    """
+
+    def test_post_eval_tools_emit_guard_prefix(self, backend):
+        tools = [
+            {"type": "function", "function": {"name": "submit"}},
+            {"type": "function", "function": {"name": "restart_orchestration"}},
+        ]
+        prefix = backend._build_phase_prompt_prefix(tools)
+        assert "POST-EVALUATION PHASE" in prefix
+        assert "submit" in prefix and "restart_orchestration" in prefix
+
+    def test_regular_workflow_tools_emit_no_prefix(self, backend):
+        tools = [
+            {"type": "function", "function": {"name": "vote"}},
+            {"type": "function", "function": {"name": "new_answer"}},
+        ]
+        assert backend._build_phase_prompt_prefix(tools) == ""
+
+    def test_partial_post_eval_tools_emit_no_prefix(self, backend):
+        # Both must be present; one alone isn't post-eval.
+        tools = [{"type": "function", "function": {"name": "submit"}}]
+        assert backend._build_phase_prompt_prefix(tools) == ""
+
+
+class TestAuthenticationPrecheck:
+    """At stream time, the backend must refuse to launch agy if no
+    credential source exists. Avoids burning a coordination round on a
+    silent UNAUTHENTICATED 401 from the language server.
+    """
+
+    def test_has_creds_when_api_key_set(self, backend):
+        backend.api_key = "test-key"
+        assert backend._has_cached_credentials() is True
+
+    def test_has_creds_when_google_accounts_json_exists(self, backend, tmp_path, monkeypatch):
+        backend.api_key = None
+        fake_home = tmp_path / "home"
+        (fake_home / ".gemini").mkdir(parents=True)
+        (fake_home / ".gemini" / "google_accounts.json").write_text("{}")
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+        assert backend._has_cached_credentials() is True
+
+    def test_no_creds_returns_false(self, backend, tmp_path, monkeypatch):
+        backend.api_key = None
+        fake_home = tmp_path / "empty_home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+        assert backend._has_cached_credentials() is False
+
+    @pytest.mark.asyncio
+    async def test_stream_with_tools_yields_error_chunk_when_unauthenticated(self, backend, tmp_path, monkeypatch):
+        backend.api_key = None
+        fake_home = tmp_path / "empty_home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+
+        chunks = []
+        async for chunk in backend.stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[],
+        ):
+            chunks.append(chunk)
+        errors = [c for c in chunks if c.type == "error"]
+        assert errors, "must yield an error chunk when not authenticated"
+        assert "not authenticated" in (errors[0].error or "").lower() or "GEMINI_API_KEY" in (errors[0].error or "")
+
+
+class TestAgentIdRefreshFromKwargs:
+    """Parity with sibling backends — pick up agent_id from kwargs so the
+    transcript emitter labels events for the right agent across calls.
+    """
+
+    @pytest.mark.asyncio
+    async def test_agent_id_picked_up_from_kwargs(self, backend, tmp_path, monkeypatch):
+        from massgen.backend.base import StreamChunk
+
+        # Make auth check pass so we can exercise the agent_id assignment.
+        backend.api_key = "x"
+        backend.agent_id = None
+        # Stub _stream_local to skip subprocess and just yield a done chunk.
+
+        async def _stub_stream(prompt):
+            yield StreamChunk(type="done", usage={})
+
+        monkeypatch.setattr(backend, "_stream_local", _stub_stream)
+
+        chunks = []
+        async for chunk in backend.stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[],
+            agent_id="agent_b",
+        ):
+            chunks.append(chunk)
+        assert backend.agent_id == "agent_b"
+
+
 class TestWorkflowToolTextFallback:
     """When MassGen orchestrator passes vote/new_answer tools, agy can't expose
     them as native MCP tools — agy 1.0.0 doesn't load MCP tools per invocation.
