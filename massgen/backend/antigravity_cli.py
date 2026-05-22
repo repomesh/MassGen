@@ -610,8 +610,11 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
         proc: asyncio.subprocess.Process,
     ) -> AsyncGenerator[StreamChunk]:
         """Locate the new transcript.jsonl agy creates and tail it in real-time."""
+        logger.info(
+            f"Antigravity CLI transcript tail starting — brain_dir={brain_dir} " f"exists={brain_dir.exists()} pre_existing_count={len(pre_existing)} agent_id={self.agent_id!r}",
+        )
         transcript_path: Path | None = None
-        for _ in range(100):  # up to 10 s before giving up
+        for poll_iter in range(100):  # up to 10 s before giving up
             if brain_dir.exists():
                 for p in brain_dir.rglob("transcript.jsonl"):
                     if p not in pre_existing:
@@ -624,7 +627,23 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
             await asyncio.sleep(0.1)
 
         if not transcript_path:
+            # Diagnose why we didn't find it: walk one level under brain_dir if
+            # it exists at all, to surface what agy DID write. This is critical
+            # for catching regressions where agy lands the brain dir elsewhere
+            # (e.g., under the project root instead of appDataDir).
+            if brain_dir.exists():
+                children = list(brain_dir.iterdir())
+                child_summary = [f"{c.name}/" if c.is_dir() else c.name for c in children[:10]]
+            else:
+                child_summary = "<brain_dir missing>"
+            logger.warning(
+                f"Antigravity CLI transcript tail: gave up after ~{poll_iter / 10:.1f}s "
+                f"(brain_dir={brain_dir} exists={brain_dir.exists()} children={child_summary} "
+                f"proc_returncode={proc.returncode}). No transcript events will reach TUI.",
+            )
             return
+
+        logger.info(f"Antigravity CLI transcript tail: streaming events from {transcript_path}")
 
         seen: set[int] = set()
         # FIFO queue of pending tool calls emitted from PLANNER_RESPONSE, matched
@@ -636,7 +655,16 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
             if step in seen:
                 return
             seen.add(step)
-            self._process_transcript_event(event, pending_tool_calls)
+            try:
+                self._process_transcript_event(event, pending_tool_calls)
+            except Exception as exc:
+                # Per-event isolation: a malformed transcript entry (e.g.,
+                # missing ``created_at``, unexpected type) must not nuke the
+                # whole tail. Log and move on so subsequent events still
+                # reach the TUI.
+                logger.warning(
+                    f"Antigravity CLI: dropped malformed transcript event " f"step={step} type={event.get('type')}: {exc}",
+                )
 
         with open(transcript_path) as fh:
             while True:
@@ -833,6 +861,12 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
                 async for chunk in self._find_and_tail_transcript(brain_dir, pre_existing, proc):
                     produced_real_output["value"] = True
                     await queue.put(chunk)
+            except Exception as exc:
+                # Without this catch, exceptions inside _process_transcript_event
+                # silently kill the tail task and the TUI gets zero thinking /
+                # tool_start / tool_complete events for agent_b. Always log the
+                # traceback so regressions are obvious in the orchestrator log.
+                logger.exception(f"Antigravity CLI transcript tail crashed: {exc}")
             finally:
                 await queue.put(_DONE)
 

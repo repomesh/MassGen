@@ -932,6 +932,9 @@ class TestWorkflowToolTextFallback:
     @pytest.mark.asyncio
     async def test_prompt_contains_workflow_instructions_when_workflow_tools_present(self, backend):
         """Workflow tool definitions must produce inline text-fallback instructions."""
+        # Provide an api_key so the new _ensure_authenticated pre-check passes
+        # without needing ~/.gemini/google_accounts.json on the CI runner.
+        backend.api_key = "test-key"
         captured_cmd = {}
         proc_mock = AsyncMock()
 
@@ -947,10 +950,21 @@ class TestWorkflowToolTextFallback:
             captured_cmd["cmd"] = list(args)
             return proc_mock
 
+        # The message must include a populated CURRENT ANSWERS block so
+        # workflow-mode inference returns "any" — otherwise (no answers
+        # block OR empty block), it returns "new_answer_only" and `vote`
+        # is correctly stripped from the prompt, breaking the assertion.
+        messages = [
+            {
+                "role": "user",
+                "content": ("what is 2+2?\n\n" "<CURRENT ANSWERS from the agents>\n" "<agent agent1>placeholder answer</agent>\n" "<END OF CURRENT ANSWERS>"),
+            },
+        ]
+
         with patch("asyncio.create_subprocess_exec", new=fake_exec):
             chunks = []
             async for chunk in backend.stream_with_tools(
-                messages=[{"role": "user", "content": "what is 2+2?"}],
+                messages=messages,
                 tools=self._workflow_tools(),
             ):
                 chunks.append(chunk)
@@ -970,6 +984,8 @@ class TestWorkflowToolTextFallback:
     async def test_stdout_workflow_json_yields_tool_calls_chunk(self, backend):
         """When agy emits a workflow JSON envelope on stdout, the backend must
         emit a `StreamChunk(type="tool_calls")` so the orchestrator can act."""
+        # auth pre-check needs a credential source.
+        backend.api_key = "test-key"
         proc_mock = AsyncMock()
 
         async def _aiter_stdout():
