@@ -395,6 +395,45 @@ class TestStdoutStreamingParser:
         assert any("Antigravity CLI ERROR" in (c.content or "") for c in contents)
 
 
+class TestWorkspaceProjectMarker:
+    """agy walks up from cwd looking for `.antigravitycli/` to identify its
+    project root. Without an anchor at the workspace level, agy adopts
+    whichever ancestor directory happens to contain one — making --add-dir
+    ineffective and routing file writes to agy's internal scratch directory.
+    """
+
+    def test_project_marker_path_is_under_workspace_cwd(self, backend, tmp_path):
+        marker = backend._workspace_project_marker_dir()
+        assert marker.name == ".antigravitycli"
+        # Must be in the workspace ROOT, not inside .antigravity/
+        assert marker.parent == Path(backend.cwd).resolve()
+
+    def test_ensure_creates_empty_marker_dir_when_missing(self, backend, tmp_path):
+        marker = backend._workspace_project_marker_dir()
+        assert not marker.exists()
+        backend._ensure_workspace_project_marker()
+        assert marker.exists() and marker.is_dir()
+
+    def test_ensure_is_idempotent_when_marker_already_exists(self, backend, tmp_path):
+        marker = backend._workspace_project_marker_dir()
+        marker.mkdir(parents=True, exist_ok=True)
+        # Add a sentinel file so we can detect destructive recreation.
+        (marker / "sentinel.json").write_text("preserve me")
+        backend._ensure_workspace_project_marker()
+        assert (marker / "sentinel.json").exists()
+        assert (marker / "sentinel.json").read_text() == "preserve me"
+
+    def test_ensure_does_not_raise_on_oserror(self, backend, tmp_path, monkeypatch):
+        # Simulate a filesystem error — the warning is logged but we must
+        # not abort the backend startup over a non-fatal anchor failure.
+        def _boom(*a, **kw):
+            raise OSError("simulated")
+
+        monkeypatch.setattr(Path, "mkdir", _boom)
+        # Must not raise.
+        backend._ensure_workspace_project_marker()
+
+
 class TestHooksJsonWiring:
     """agy reads hooks from a standalone hooks.json (NOT embedded in
     settings.json like gemini_cli) and only when ``enableJsonHooks: true``

@@ -289,6 +289,33 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
         """Project-scoped agy data root, passed via ``--gemini_dir``."""
         return Path(self.cwd).resolve() / ".antigravity"
 
+    def _workspace_project_marker_dir(self) -> Path:
+        """Workspace-anchor for agy's project discovery walk.
+
+        agy walks UP from cwd looking for ``.antigravitycli/`` to decide the
+        project root. Without an anchor at the workspace level, agy adopts
+        whichever ancestor directory happens to contain one — which can be
+        a sibling MassGen agent's leftover or even the user's repo root if
+        anyone has ever run ``agy`` interactively there. The wrong project
+        root makes ``--add-dir`` ineffective: agy still routes
+        ``write_to_file`` into its internal scratch directory, hidden from
+        peers and snapshot promotion.
+
+        Pre-creating an empty ``.antigravitycli/`` at the workspace stops
+        the upward walk here (verified live).
+        """
+        return Path(self.cwd).resolve() / ".antigravitycli"
+
+    def _ensure_workspace_project_marker(self) -> None:
+        """Idempotently create the workspace project-discovery anchor."""
+        marker = self._workspace_project_marker_dir()
+        try:
+            marker.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            logger.warning(
+                f"Antigravity CLI: could not create project marker {marker}: {exc} " "— agy may walk up to a parent's .antigravitycli and adopt the wrong project",
+            )
+
     def _workspace_mcp_config_path(self) -> Path:
         """Where to drop our merged mcp_config.json so agy reads it."""
         return self._workspace_config_dir() / "config" / "mcp_config.json"
@@ -936,6 +963,11 @@ class AntigravityCLIBackend(NativeToolBackendMixin, StreamingBufferMixin, LLMBac
         prompt_parts.append(prompt)
         full_prompt = "\n\n".join(p for p in prompt_parts if p)
 
+        # Anchor agy's project discovery at the workspace root. Without this,
+        # agy walks up looking for a `.antigravitycli/` directory and adopts
+        # whichever parent it finds first — breaking workspace isolation and
+        # making --add-dir ineffective.
+        self._ensure_workspace_project_marker()
         self._write_mcp_config()
         # Hooks are gated by `enableJsonHooks: true` in settings.json (per agy's
         # `json-hooks-enabled` feature flag). Write hooks.json first, then pass
