@@ -1,4 +1,4 @@
-# MassGen v0.1.89 Release Announcement
+# MassGen v0.1.90 Release Announcement
 
 <!--
 This is the current release announcement. Copy this + feature-highlights.md to LinkedIn/X.
@@ -7,30 +7,23 @@ After posting, update the social links below.
 
 ## Release Summary
 
-We're excited to release MassGen v0.1.89 — Antigravity CLI Full Integration & Hardening! 🚀 This release completes the follow-up Antigravity integration pass: workflow-mode parity, early auth and binary health checks, reliable workspace writes via `--add-dir`, workspace-root `.antigravitycli/` anchoring, standalone `hooks.json` support, and prompt guardrails that hide subagent affordances when subagents are disabled.
+We're excited to release MassGen v0.1.90 — Discriminative Criteria Refinements & Checklist Calibration! 🚀 This release strengthens MassGen's quality loop: criteria that do not distinguish agents are demoted, checklist reasoning is carried into the next round as targeted feedback, candidate answer order is counterbalanced to reduce position bias, and the checklist gate now derives all thresholds from one consistent 0-10 scale.
 
 ## Install
 
 ```bash
-pip install massgen==0.1.89
-```
-
-Antigravity CLI itself is installed separately:
-
-```bash
-curl -fsSL https://antigravity.google/cli/install.sh | bash
+pip install massgen==0.1.90
 ```
 
 ## Links
 
-- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.89
+- **Release notes:** https://github.com/massgen/MassGen/releases/tag/v0.1.90
 - **X post:** [TO BE ADDED AFTER POSTING]
 - **LinkedIn post:** [TO BE ADDED AFTER POSTING]
 
 ## Posting Notes
 
-- **Suggested image:** Use the full Antigravity integration graphic.
-- **Fallback image:** If the full graphic is not ready, use a screenshot of the v0.1.89 release notes.
+- **Suggested image:** Use a screenshot of the v0.1.90 release notes or a criteria/checklist calibration graphic.
 
 ---
 
@@ -40,48 +33,51 @@ Copy everything below this line, then append content from `feature-highlights.md
 
 ---
 
-We're excited to release MassGen v0.1.89 — Antigravity CLI Full Integration & Hardening! 🚀 This release completes the follow-up Antigravity integration pass: workflow-mode parity, early auth and binary health checks, reliable workspace writes via `--add-dir`, workspace-root `.antigravitycli/` anchoring, standalone `hooks.json` support, and prompt guardrails that hide subagent affordances when subagents are disabled.
+We're excited to release MassGen v0.1.90 — Discriminative Criteria Refinements & Checklist Calibration! 🚀 This release strengthens MassGen's quality loop: criteria that do not distinguish agents are demoted, checklist reasoning is carried into the next round as targeted feedback, candidate answer order is counterbalanced to reduce position bias, and the checklist gate now derives all thresholds from one consistent 0-10 scale.
 
 **Key Improvements:**
 
-🛰️ **Workflow-Mode Parity**:
-- Antigravity now mirrors Gemini CLI's `new_answer` / `vote` workflow handling
-- `vote` is hidden in no-answer rounds, keeping agents in `new_answer_only` mode when needed
-- Post-evaluation prompts guard against stale `new_answer`, `vote`, or `stop` calls
-- Duplicate parsed workflow calls are suppressed within a single turn
+🎯 **Discriminative-Power Pruning**:
+- Bootstrap criteria now compute score spread across agents
+- Low-spread, non-discriminative criteria are demoted to `stretch`
+- A protected floor keeps enough criteria active so the gate does not collapse
 
-🧰 **Reliable Workspace Writes**:
-- MassGen passes `--add-dir <cwd>` so agy's file tools write into the shared workspace
-- A workspace-root `.antigravitycli/` marker anchors agy's project discovery
-- `.antigravity/` and `.antigravitycli/` are treated as runtime artifacts
+🧠 **Criterion Feedback Loop**:
+- Checklist score reasoning is preserved instead of discarded after the verdict
+- The lowest-scoring reasoning per criterion becomes the most diagnostic next-round signal
+- Agents receive a `<CRITERION FEEDBACK ...>` memo before their next answer
 
-🔐 **Auth + Binary Health Checks**:
-- The backend verifies `agy --version` before entering orchestration
-- Runs fail fast when no `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or cached Google OAuth credentials are available
-- Docker mode continues to require API-key auth because OAuth state does not cross container boundaries
+⚖️ **Position-Bias Calibration**:
+- Candidate answer order is rotated per scoring agent
+- The primacy slot is distributed across agents
+- Equal aggregate checklist scores now break deterministically instead of depending on dictionary insertion order
 
-🔌 **Native Hooks**:
-- Antigravity hooks now use standalone `hooks.json`
-- `settings.json` enables hooks through `enableJsonHooks`
-- The native hook adapter documents the Antigravity storage model separately from Gemini CLI
+📏 **Unified Checklist Gate**:
+- `ChecklistGate.from_budget(...)` derives effective threshold, required-true count, and confidence cutoff together
+- All gate values now use the same 0-10 scale
+- This prevents scale drift between checklist decision paths
 
-🧭 **Prompt Guardrails**:
-- `TaskContextSection` only advertises `spawn_subagents` when subagents are actually enabled
-- Multimodal-only runs keep `read_media` context guidance without leaking phantom subagent MCP affordances
+🧩 **Shared Score Utilities**:
+- New `massgen/score_utils.py` centralizes score extraction and per-agent score-shape detection
+- Checklist, quality, and bootstrap paths now use the same parsing behavior
+- Backend circuit-breaker config parsing is consolidated across shared custom-tool/MCP backends
+
+⚡ **Fast-Iteration Config Updates**:
+- Fast-iteration examples now default to local command execution
+- The default pairings were refreshed for current Gemini, Codex, and Antigravity workflows
 
 🧪 **Tests**:
-- `massgen/tests/test_antigravity_cli_backend.py` now covers health checks, authentication, workspace anchoring, `--add-dir`, hooks.json, workflow-mode filtering, duplicate tool-call suppression, multimodal prompt flattening, cancellation cleanup, and agent-id propagation
-- `massgen/tests/test_system_prompt_sections.py` covers subagent affordance gating
+- New coverage for discriminative pruning, criterion feedback, position-bias calibration, and shared score parsing
+- Checklist server tests updated for feedback extraction and gate behavior
 
 **Getting Started:**
 
 ```bash
-pip install massgen==0.1.89
-curl -fsSL https://antigravity.google/cli/install.sh | bash
-uv run massgen --config massgen/configs/features/fast_iteration_gemini_antigravity.yaml "Create an svg of an AI agent coding."
+pip install massgen==0.1.90
+uv run massgen --config massgen/configs/features/fast_iteration.yaml "Create an svg of an AI agent coding."
 ```
 
-Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.89
+Release notes: https://github.com/massgen/MassGen/releases/tag/v0.1.90
 
 Feature highlights:
 

@@ -209,6 +209,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.90 (May 25, 2026)** - Discriminative Criteria Refinements & Checklist Calibration
+
+Improves checklist-gated refinement quality with discriminative-power pruning, per-criterion feedback carried into the next round, position-bias counterbalancing, deterministic tie-breaking, a unified checklist gate on a single 0-10 scale, shared score parsing utilities, and fast-iteration config updates.
+
 **v0.1.89 (May 22, 2026)** - Antigravity CLI Full Integration & Hardening
 
 Completes the follow-up Antigravity integration pass with workflow-mode parity, early auth and binary health checks, reliable workspace writes via ``--add-dir``, workspace-root ``.antigravitycli/`` anchoring, standalone ``hooks.json`` support with ``enableJsonHooks``, and prompt guardrails that hide subagent affordances when subagents are disabled.
