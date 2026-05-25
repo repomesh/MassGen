@@ -133,6 +133,7 @@ IMPORTANT: You are responding to the latest message in an ongoing conversation. 
         agent_mapping: dict[str, str] | None = None,
         agent_changedocs: dict[str, str] | None = None,
         answer_label_mapping: dict[str, str] | None = None,
+        order_seed: int | None = None,
     ) -> str:
         """Format current answers section with agent summaries (Case 2) using anonymous agent IDs.
 
@@ -147,6 +148,12 @@ IMPORTANT: You are responding to the latest message in an ongoing conversation. 
             answer_label_mapping: Optional mapping from real agent ID to versioned label
                                  (e.g., agent_a -> agent1.2). When provided, uses versioned
                                  labels in XML headers for provenance tracking.
+            order_seed: Optional integer to counterbalance position bias. When provided, the
+                       candidates are presented in a stable label-sorted order left-rotated by
+                       ``order_seed % n`` so no candidate permanently occupies the primacy slot
+                       across rounds/agents. Anonymous labels stay attached to their own content,
+                       so score attribution is unaffected. When ``None``, the legacy
+                       insertion-order behavior is preserved.
         """
         if "format_current_answers_with_summaries" in self._template_overrides:
             override = self._template_overrides["format_current_answers_with_summaries"]
@@ -161,7 +168,15 @@ IMPORTANT: You are responding to the latest message in an ongoing conversation. 
             for i, agent_id in enumerate(sorted(agent_summaries.keys()), 1):
                 agent_mapping[agent_id] = f"agent{i}"
 
-        for agent_id, summary in agent_summaries.items():
+        ordered_items = list(agent_summaries.items())
+        if order_seed is not None and len(ordered_items) > 1:
+            # Counterbalance position bias: stable base order by anonymous label,
+            # then left-rotate by order_seed so the primacy slot cycles across agents.
+            ordered_items.sort(key=lambda kv: agent_mapping.get(kv[0], kv[0]))
+            rotation = order_seed % len(ordered_items)
+            ordered_items = ordered_items[rotation:] + ordered_items[:rotation]
+
+        for agent_id, summary in ordered_items:
             # Use versioned label (agent1.2) if available, otherwise base anonymous ID (agent1)
             anon_id = (answer_label_mapping or {}).get(agent_id) or agent_mapping.get(agent_id, agent_id)
             changedoc = (agent_changedocs or {}).get(agent_id)
@@ -522,6 +537,7 @@ Please address these specific issues in your coordination and final answer.
         agent_mapping: dict[str, str] | None = None,
         agent_changedocs: dict[str, str] | None = None,
         answer_label_mapping: dict[str, str] | None = None,
+        order_seed: int | None = None,
     ) -> str:
         """Build Case 2 user message (summaries exist).
 
@@ -538,7 +554,7 @@ Please address these specific issues in your coordination and final answer.
         """
         return f"""{self.format_original_message(task, paraphrase)}
 
-{self.format_current_answers_with_summaries(agent_summaries, agent_mapping, agent_changedocs=agent_changedocs, answer_label_mapping=answer_label_mapping)}"""
+{self.format_current_answers_with_summaries(agent_summaries, agent_mapping, agent_changedocs=agent_changedocs, answer_label_mapping=answer_label_mapping, order_seed=order_seed)}"""
 
     def build_evaluation_message(
         self,
@@ -548,6 +564,7 @@ Please address these specific issues in your coordination and final answer.
         agent_mapping: dict[str, str] | None = None,
         agent_changedocs: dict[str, str] | None = None,
         answer_label_mapping: dict[str, str] | None = None,
+        order_seed: int | None = None,
     ) -> str:
         """Build evaluation user message for any case.
 
@@ -562,7 +579,7 @@ Please address these specific issues in your coordination and final answer.
             answer_label_mapping: Optional mapping from real agent ID to versioned label.
         """
         if agent_answers:
-            return self.build_case2_user_message(task, agent_answers, paraphrase, agent_mapping, agent_changedocs=agent_changedocs, answer_label_mapping=answer_label_mapping)
+            return self.build_case2_user_message(task, agent_answers, paraphrase, agent_mapping, agent_changedocs=agent_changedocs, answer_label_mapping=answer_label_mapping, order_seed=order_seed)
         else:
             return self.build_case1_user_message(task, paraphrase)
 
@@ -575,6 +592,7 @@ Please address these specific issues in your coordination and final answer.
         agent_mapping: dict[str, str] | None = None,
         agent_changedocs: dict[str, str] | None = None,
         answer_label_mapping: dict[str, str] | None = None,
+        order_seed: int | None = None,
     ) -> str:
         """Build coordination context including conversation history and current state.
 
@@ -612,7 +630,9 @@ Please address these specific issues in your coordination and final answer.
 
         # Add agent answers
         if agent_answers:
-            context_parts.append(self.format_current_answers_with_summaries(agent_answers, agent_mapping, agent_changedocs=agent_changedocs, answer_label_mapping=answer_label_mapping))
+            context_parts.append(
+                self.format_current_answers_with_summaries(agent_answers, agent_mapping, agent_changedocs=agent_changedocs, answer_label_mapping=answer_label_mapping, order_seed=order_seed),
+            )
         else:
             context_parts.append(self.format_current_answers_empty())
 
@@ -633,6 +653,7 @@ Please address these specific issues in your coordination and final answer.
         decomposition_mode: bool = False,
         agent_changedocs: dict[str, str] | None = None,
         answer_label_mapping: dict[str, str] | None = None,
+        order_seed: int | None = None,
     ) -> dict[str, Any]:
         """Build complete initial conversation for MassGen evaluation.
 
@@ -662,7 +683,15 @@ Please address these specific issues in your coordination and final answer.
 
         return {
             "system_message": system_message,
-            "user_message": self.build_evaluation_message(task, agent_summaries, paraphrase, agent_mapping, agent_changedocs=agent_changedocs, answer_label_mapping=answer_label_mapping),
+            "user_message": self.build_evaluation_message(
+                task,
+                agent_summaries,
+                paraphrase,
+                agent_mapping,
+                agent_changedocs=agent_changedocs,
+                answer_label_mapping=answer_label_mapping,
+                order_seed=order_seed,
+            ),
             "tools": self.get_standard_tools(valid_agent_ids, decomposition_mode=decomposition_mode),
         }
 
@@ -678,6 +707,7 @@ Please address these specific issues in your coordination and final answer.
         decomposition_mode: bool = False,
         agent_changedocs: dict[str, str] | None = None,
         answer_label_mapping: dict[str, str] | None = None,
+        order_seed: int | None = None,
     ) -> dict[str, Any]:
         """Build complete conversation with conversation history context for MassGen evaluation.
 
@@ -717,6 +747,7 @@ Please address these specific issues in your coordination and final answer.
                 agent_mapping,
                 agent_changedocs=agent_changedocs,
                 answer_label_mapping=answer_label_mapping,
+                order_seed=order_seed,
             ),
             "tools": self.get_standard_tools(valid_agent_ids, decomposition_mode=decomposition_mode),
         }

@@ -495,6 +495,9 @@ class Orchestrator(ChatAgent):
         # rounds; capped by coordination_config.bootstrap_max_total.
         self._bootstrap_criteria_accumulator: list[dict[str, Any]] = []
         self._bootstrap_round_index: int = 0
+        # Most recent per-agent per-criterion scores ({label: {Ei: score}}), used
+        # to demote non-discriminative ("free-pass") criteria in bootstrap mode.
+        self._last_per_agent_criterion_scores: dict[str, dict[str, Any]] = {}
 
         # Prompt improvement guard
         self._prompt_improved: bool = False
@@ -1493,8 +1496,33 @@ class Orchestrator(ChatAgent):
         self._drain_pending_criteria_proposals()
         from massgen.bootstrap_criteria import (
             augment_with_accumulator,
+            demote_categories,
+            find_nondiscriminative_criteria,
             is_bootstrap_mode,
         )
+
+        def _demote_nondiscriminative(cats: dict[str, str]) -> dict[str, str]:
+            """In bootstrap mode, soften criteria that didn't discriminate last round.
+
+            Free-pass criteria (every agent scored them near-identically) provide no
+            gradient, so they are reclassified to ``stretch`` and stop acting as hard
+            gates. A protected floor keeps the gate from being hollowed out. No-op in
+            static mode or before any per-agent scores exist.
+            """
+            if not is_bootstrap_mode(criteria_mode):
+                return cats
+            scores = getattr(self, "_last_per_agent_criterion_scores", None)
+            if not scores:
+                return cats
+            stale = find_nondiscriminative_criteria(scores)
+            if not stale:
+                return cats
+            logger.info(
+                "[Orchestrator] Demoting non-discriminative criteria to stretch: %s",
+                stale,
+            )
+            return demote_categories(cats, stale)
+
         from massgen.system_prompt_sections import (
             _CHECKLIST_ITEM_ANTI_PATTERNS,
             _CHECKLIST_ITEM_ANTI_PATTERNS_CHANGEDOC,
@@ -1531,8 +1559,8 @@ class Orchestrator(ChatAgent):
                     item_score_anchors,
                     accumulator,
                 )
-                return items, cats, vby, source, anti, anchors
-            return custom_items, item_categories or {}, item_verify_by, source, item_anti_patterns, item_score_anchors
+                return items, _demote_nondiscriminative(cats), vby, source, anti, anchors
+            return custom_items, _demote_nondiscriminative(item_categories or {}), item_verify_by, source, item_anti_patterns, item_score_anchors
 
         if use_accumulator:
             # No base source — accumulator stands alone with source label "bootstrap".
@@ -1544,7 +1572,7 @@ class Orchestrator(ChatAgent):
                 None,
                 accumulator,
             )
-            return items, cats, vby, "bootstrap", anti, anchors
+            return items, _demote_nondiscriminative(cats), vby, "bootstrap", anti, anchors
 
         if self._is_changedoc_enabled():
             return (
@@ -2114,6 +2142,30 @@ class Orchestrator(ChatAgent):
             _last_checklist_result["checklist_explanation"] = str(result.get("explanation", ""))
             _last_checklist_result["diagnostic_report_path"] = resolved_path or fallback_path
             _last_checklist_result["diagnostic_report_artifact_paths"] = list(report_data.get("artifact_paths", []))
+            # Retain per-agent per-criterion scores for discriminative-power pruning
+            # (Pillar 4). Only present when the submission used per-agent scoring.
+            _per_agent = result.get("per_agent_scores")
+            if isinstance(_per_agent, dict) and _per_agent:
+                _orchestrator._last_per_agent_criterion_scores = _per_agent
+
+            # Reflexion gradient (Pillar 5): when the agent will iterate, thread the
+            # per-criterion reasoning from this submission into the next round's prompt
+            # so the textual "why it failed / how to fix" gradient isn't lost to scores.
+            try:
+                if result.get("verdict") == _state.get("iterate_action", "new_answer"):
+                    from massgen.mcp_tools.checklist_tools_server import (
+                        extract_criterion_feedback,
+                        format_criterion_feedback_memo,
+                    )
+
+                    _memo = format_criterion_feedback_memo(
+                        extract_criterion_feedback(raw_scores),
+                        failed_ids=result.get("failed_criteria"),
+                    )
+                    if _memo:
+                        _orchestrator._queue_round_start_context_block(_agent_id, _memo)
+            except Exception as _memo_err:  # never let feedback threading break the verdict
+                logger.debug("[Orchestrator] criterion feedback memo skipped: %s", _memo_err)
 
             # Only accepted checklist submissions should consume this round's quota.
             # Validation failures (incomplete/malformed payloads or gated rejections)
@@ -4611,12 +4663,19 @@ class Orchestrator(ChatAgent):
                     answer_preview=crit_preview or f"{len(criteria)} criteria generated.",
                 )
             else:
+                # Loud signal: a fallback means domain-specific generation did NOT
+                # succeed and the run is using GENERIC criteria, which flattens the
+                # evaluation gradient. Make this unmistakable rather than neutral.
+                logger.warning(
+                    "[Orchestrator] Evaluation criteria FELL BACK to %d generic defaults " "(domain-specific generation did not produce usable criteria; " "output quality may suffer).",
+                    len(criteria),
+                )
                 self._notify_precollab_completed(
                     anchor_agent,
                     "criteria_generation",
                     call_id,
                     display,
-                    answer_preview=f"Using {len(criteria)} fallback criteria.",
+                    answer_preview=f"⚠ Generation failed — using {len(criteria)} GENERIC fallback criteria (quality may suffer).",
                 )
 
         except Exception as e:
@@ -16399,6 +16458,16 @@ Your answer:"""
             agent_mapping = self.coordination_tracker.get_reverse_agent_mapping()
             answer_label_mapping = self.coordination_tracker.get_answer_label_mapping()
             _is_decomp = getattr(self.config, "coordination_mode", "voting") == "decomposition"
+            # Position-bias counterbalancing: rotate candidate presentation by this
+            # scoring agent's own anonymous label index, which places its OWN answer
+            # last in its view and distributes the primacy slot across agents
+            # (reduces both first-position bias and self-preference). Deterministic.
+            _order_seed = None
+            if normalized_answers and len(normalized_answers) > 1:
+                _own_label = agent_mapping.get(agent_id, "")
+                _label_digits = "".join(ch for ch in _own_label if ch.isdigit())
+                if _label_digits:
+                    _order_seed = int(_label_digits)
             # Gather changedocs from coordination tracker if enabled
             _agent_changedocs = self._gather_agent_changedocs()
             if conversation_context and conversation_context.get(
@@ -16419,6 +16488,7 @@ Your answer:"""
                     decomposition_mode=_is_decomp,
                     agent_changedocs=_agent_changedocs,
                     answer_label_mapping=answer_label_mapping,
+                    order_seed=_order_seed,
                 )
             else:
                 # Fallback to standard conversation building
@@ -16432,6 +16502,7 @@ Your answer:"""
                     decomposition_mode=_is_decomp,
                     agent_changedocs=_agent_changedocs,
                     answer_label_mapping=answer_label_mapping,
+                    order_seed=_order_seed,
                 )
 
             # Inject restart context if this is a restart attempt (like multi-turn context)

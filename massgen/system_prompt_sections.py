@@ -187,19 +187,26 @@ def _checklist_effective_threshold(T: int, remaining: int, total: int) -> int:
 
 
 def _checklist_required_true(effective_threshold: int, num_items: int = 4) -> int:
-    """How many TRUE items needed to justify vote/stop.
+    """How many TRUE items are needed to justify vote/stop.
 
-    Relaxes with higher thresholds so agents can pass via quality
-    instead of only stopping when hitting max_new_answers_per_agent.
+    Relaxes as the effective threshold rises (tighter answer budget or a higher
+    configured ``voting_threshold``) so agents can converge by quality instead
+    of only stopping when they exhaust ``max_new_answers_per_agent``.
 
-    - Floor: max(1, (num_items + 1) // 2) — e.g. 2 for 4 items
-    - Formula: max(floor, num_items - effective_threshold // 30)
-    - At threshold 0:  max(2, 4-0) = 4 (strict)
-    - At threshold 50: max(2, 4-1) = 3
-    - At threshold 70+: max(2, 4-2) = 2 (lenient)
+    ``effective_threshold`` is on the 0-10 scale produced by
+    :func:`_checklist_effective_threshold`. Relaxation scales linearly from 0
+    (require every item) at ET=0 up to ``num_items - floor`` at ET=10, and never
+    drops below the floor of a simple majority.
+
+    For num_items=4 (floor 2):
+      - ET 0-2  -> require 4 (strict; keep exploring while budget is ample)
+      - ET 3-7  -> require 3
+      - ET 8-10 -> require 2 (floor; converge as budget runs out)
     """
     floor = max(1, (num_items + 1) // 2)
-    relaxation = effective_threshold // 30
+    span = num_items - floor
+    clamped = max(0, min(10, effective_threshold))
+    relaxation = round(span * clamped / 10)
     return max(floor, num_items - relaxation)
 
 

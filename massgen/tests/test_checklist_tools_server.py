@@ -561,52 +561,55 @@ class TestGapReportGateRemoval:
 
 
 class TestChecklistRequiredTrue:
-    """Tests for _checklist_required_true threshold relaxation."""
+    """Tests for _checklist_required_true relaxation on the 0-10 effective-threshold scale.
 
-    def test_threshold_0_requires_all_4_items(self):
-        """At threshold 0, all 4 items should be required (default)."""
+    The effective threshold is produced by _checklist_effective_threshold and is
+    always clamped to [0, 10]; the relaxation must therefore activate within that
+    range (the previous `// 30` formula made relaxation dead under every config).
+    """
+
+    def test_threshold_0_requires_all_items(self):
+        """At ET=0 (ample budget, low base threshold), every item is required."""
         from massgen.system_prompt_sections import _checklist_required_true
 
         assert _checklist_required_true(0) == 4
         assert _checklist_required_true(0, num_items=4) == 4
-
-    def test_threshold_50_relaxes_to_3(self):
-        """At threshold 50, requirement should relax to 3 for 4 items."""
-        from massgen.system_prompt_sections import _checklist_required_true
-
-        assert _checklist_required_true(50, num_items=4) == 3
-
-    def test_threshold_70_relaxes_to_2(self):
-        """At threshold 70+, requirement should relax to floor (2 for 4 items)."""
-        from massgen.system_prompt_sections import _checklist_required_true
-
-        assert _checklist_required_true(70, num_items=4) == 2
-
-    def test_threshold_100_respects_floor(self):
-        """Even at max threshold, never go below floor."""
-        from massgen.system_prompt_sections import _checklist_required_true
-
-        result = _checklist_required_true(100, num_items=4)
-        assert result >= 2  # floor = max(1, (4+1)//2) = 2
-
-    def test_threshold_0_requires_all_5_items(self):
-        """At threshold 0 with 5 items, all items should be required."""
-        from massgen.system_prompt_sections import _checklist_required_true
-
         assert _checklist_required_true(0, num_items=5) == 5
+        assert _checklist_required_true(0, num_items=3) == 3
 
-    def test_threshold_50_relaxes_to_4_for_5_items(self):
-        """At threshold 50, requirement should relax to 4 for 5 items."""
+    def test_relaxation_activates_within_0_10_scale(self):
+        """Relaxation must fire for ET values configs actually produce (2-7)."""
         from massgen.system_prompt_sections import _checklist_required_true
 
-        assert _checklist_required_true(50, num_items=5) == 4
+        # 4 items, floor 2: ET 3-7 relaxes to 3.
+        assert _checklist_required_true(3, num_items=4) == 3
+        assert _checklist_required_true(5, num_items=4) == 3
+        assert _checklist_required_true(7, num_items=4) == 3
 
-    def test_floor_for_3_items(self):
-        """Floor for 3 items should be 2."""
+    def test_high_threshold_relaxes_to_floor(self):
+        """At the top of the scale, requirement reaches (but never passes) the floor."""
         from massgen.system_prompt_sections import _checklist_required_true
 
-        assert _checklist_required_true(0, num_items=3) == 3  # strict at 0
-        assert _checklist_required_true(70, num_items=3) >= 2  # floor = max(1, (3+1)//2) = 2
+        assert _checklist_required_true(8, num_items=4) == 2  # floor for 4 items
+        assert _checklist_required_true(10, num_items=4) == 2
+        assert _checklist_required_true(10, num_items=5) == 3  # floor for 5 items
+        assert _checklist_required_true(10, num_items=3) == 2  # floor for 3 items
+
+    def test_never_below_floor_even_above_scale(self):
+        """ET beyond the 0-10 range is clamped; never drops below the majority floor."""
+        from massgen.system_prompt_sections import _checklist_required_true
+
+        assert _checklist_required_true(100, num_items=4) == 2
+        assert _checklist_required_true(100, num_items=3) == 2
+
+    def test_required_is_monotonic_non_increasing(self):
+        """Higher effective threshold must never increase the required count."""
+        from massgen.system_prompt_sections import _checklist_required_true
+
+        for n in (3, 4, 5):
+            seq = [_checklist_required_true(et, num_items=n) for et in range(0, 11)]
+            assert all(b <= a for a, b in zip(seq, seq[1:])), (n, seq)
+            assert min(seq) == max(1, (n + 1) // 2)  # bottoms out at floor
 
 
 # ---------------------------------------------------------------------------

@@ -1601,6 +1601,11 @@ class RoundTimeoutPostHook(PatternHook):
 
         timeout = self._get_timeout_for_current_round()
         if timeout is None:
+            # No soft timeout this round: drop the pending request instead of
+            # latching it. Leaving the flag set would make request_wrap_up()
+            # return False for the rest of the round, silently swallowing the
+            # request (it can be re-requested, or fire once a timed round starts).
+            self._manual_wrap_up_requested = False
             return None
 
         elapsed = time.time() - self.get_round_start_time()
