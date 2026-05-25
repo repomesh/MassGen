@@ -24,16 +24,7 @@ from __future__ import annotations
 from statistics import pstdev
 from typing import Any
 
-
-def _coerce_score(value: Any) -> float | None:
-    """Extract a numeric score from either a plain number or a ``{"score": N}`` dict."""
-    if isinstance(value, dict):
-        value = value.get("score")
-    if isinstance(value, bool):  # guard: bool is an int subclass
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    return None
+from massgen.score_utils import extract_score
 
 
 def criterion_score_spread(
@@ -51,10 +42,10 @@ def criterion_score_spread(
         if not isinstance(agent_scores, dict):
             continue
         for cid, raw in agent_scores.items():
-            score = _coerce_score(raw)
+            score = extract_score(raw, default=None)
             if score is None:
                 continue
-            by_criterion.setdefault(cid, []).append(score)
+            by_criterion.setdefault(cid, []).append(float(score))
 
     return {cid: pstdev(vals) for cid, vals in by_criterion.items() if len(vals) >= 2}
 

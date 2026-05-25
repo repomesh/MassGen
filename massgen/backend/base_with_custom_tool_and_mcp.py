@@ -75,6 +75,7 @@ from ..utils.tool_argument_normalization import normalize_json_object_argument
 from ._constants import configure_openrouter_extra_body
 from .base import LLMBackend, StreamChunk, get_multimodal_tool_definitions
 from .capabilities import normalize_backend_type
+from .llm_circuit_breaker import LLMCircuitBreakerConfig
 
 
 @dataclass
@@ -363,6 +364,28 @@ SUPPORTED_AUDIO_MIME_TYPES = {
 
 class CustomToolAndMCPBackend(LLMBackend):
     """Base backend class with MCP (Model Context Protocol) support."""
+
+    @staticmethod
+    def _build_circuit_breaker_config(
+        kwargs: dict[str, Any],
+    ) -> LLMCircuitBreakerConfig:
+        """Extract circuit breaker settings from kwargs and build config.
+
+        Pops every ``llm_circuit_breaker_*`` prefixed kwarg (mutating ``kwargs``)
+        and forwards the un-prefixed names to ``LLMCircuitBreakerConfig``. Shared
+        by all inheriting backends (response, chat_completions, claude, gemini, grok).
+        """
+        cb_kwargs: dict[str, Any] = {}
+        prefix = "llm_circuit_breaker_"
+        keys_to_pop: list[str] = []
+        for key in kwargs:
+            if key.startswith(prefix):
+                param = key[len(prefix) :]
+                cb_kwargs[param] = kwargs[key]
+                keys_to_pop.append(key)
+        for key in keys_to_pop:
+            kwargs.pop(key)
+        return LLMCircuitBreakerConfig(**cb_kwargs)
 
     def __init__(self, api_key: str | None = None, **kwargs):
         """Initialize backend with MCP support."""

@@ -23,6 +23,8 @@ from typing import Any
 
 import fastmcp
 
+from massgen.score_utils import extract_score
+
 logger = logging.getLogger(__name__)
 
 SERVER_NAME = "massgen_quality_tools"
@@ -99,12 +101,8 @@ def _write_state(session_dir: Path, state: dict[str, Any]) -> None:
 
 
 def _extract_score(entry: Any) -> int:
-    """Extract numeric score from int or {"score": int, "reasoning": str}."""
-    if isinstance(entry, dict):
-        return int(entry.get("score", 0))
-    if isinstance(entry, (int, float)):
-        return int(entry)
-    return 0
+    """Extract numeric score (int) from int or {"score": int, "reasoning": str}."""
+    return int(extract_score(entry))
 
 
 # ---------------------------------------------------------------------------

@@ -172,6 +172,24 @@ def _checklist_budget_context(remaining: int, total: int) -> str:
         return f"Budget is moderate ({remaining}/{total} slots remain)."
 
 
+# ---------------------------------------------------------------------------
+# Checklist vote/stop gate — the "loss function" that decides when agents stop
+# refining and converge.
+#
+# SCALE CONTRACT (read before touching the functions below): every threshold
+# value here lives on a single 0-10 strictness scale.
+#   - `voting_threshold` (config, `agent_config.py`) is on this 0-10 scale;
+#     shipped configs use 2-3. It is NOT a percentage.
+#   - `_checklist_effective_threshold` budget-adjusts it, clamped to [0, 10].
+#   - `_checklist_required_true` and `_checklist_confidence_cutoff` both consume
+#     that 0-10 effective threshold.
+# A past bug came from one function assuming a 0-100 scale while the others used
+# 0-10. Build the gate via `ChecklistGate.from_budget(...)` so all three knobs
+# are derived together from the same scale and can't drift apart again.
+# ---------------------------------------------------------------------------
+_CHECKLIST_THRESHOLD_SCALE_MAX = 10
+
+
 def _checklist_effective_threshold(T: int, remaining: int, total: int) -> int:
     """Compute budget-adjusted effective threshold (0-10)."""
     et = T
@@ -213,6 +231,41 @@ def _checklist_required_true(effective_threshold: int, num_items: int = 4) -> in
 def _checklist_confidence_cutoff(effective_threshold: int) -> int:
     """Minimum confidence score (0-10) for a score to count as TRUE."""
     return max(4, int(10 - effective_threshold * 0.5))
+
+
+@dataclass(frozen=True)
+class ChecklistGate:
+    """Cohesive, scale-consistent view of the checklist vote/stop gate.
+
+    All three knobs are derived from one 0-10 strictness scale (see the SCALE
+    CONTRACT above). Construct via :meth:`from_budget` so callers never compute
+    the three values independently and risk a scale mismatch.
+
+    Attributes:
+        effective_threshold: Budget-adjusted threshold on the 0-10 scale.
+        required_true: How many criteria must score TRUE to justify vote/stop.
+        confidence_cutoff: Minimum per-criterion score (0-10) that counts as TRUE.
+    """
+
+    effective_threshold: int
+    required_true: int
+    confidence_cutoff: int
+
+    @classmethod
+    def from_budget(
+        cls,
+        voting_threshold: int,
+        remaining: int,
+        total: int,
+        num_items: int = 4,
+    ) -> "ChecklistGate":
+        """Derive all three gate knobs from the answer budget in one place."""
+        effective = _checklist_effective_threshold(voting_threshold, remaining, total)
+        return cls(
+            effective_threshold=effective,
+            required_true=_checklist_required_true(effective, num_items=num_items),
+            confidence_cutoff=_checklist_confidence_cutoff(effective),
+        )
 
 
 def build_fast_mode_guidance(
@@ -647,8 +700,9 @@ def _build_checklist_decision(
     iterate_action: str = "new_answer",
 ) -> str:
     """Build checklist decision section (binary T/F, visible threshold)."""
-    effective_t = _checklist_effective_threshold(threshold, remaining, total)
-    required = _checklist_required_true(effective_t)
+    gate = ChecklistGate.from_budget(threshold, remaining, total)
+    effective_t = gate.effective_threshold
+    required = gate.required_true
     budget = _checklist_budget_context(remaining, total)
 
     # Build numbered checklist with E-prefix
@@ -721,9 +775,10 @@ def _build_checklist_scored_decision(
     item_score_anchors: dict[str, dict[str, str]] | None = None,
 ) -> str:
     """Build checklist_scored decision section (0-10 confidence, visible cutoff)."""
-    effective_t = _checklist_effective_threshold(threshold, remaining, total)
-    required = _checklist_required_true(effective_t)
-    cutoff = _checklist_confidence_cutoff(effective_t)
+    gate = ChecklistGate.from_budget(threshold, remaining, total)
+    effective_t = gate.effective_threshold
+    required = gate.required_true
+    cutoff = gate.confidence_cutoff
     budget = _checklist_budget_context(remaining, total)
 
     # Build numbered checklist with confidence instructions, E-prefix, PRIMARY marker,

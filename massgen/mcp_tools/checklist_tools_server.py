@@ -26,8 +26,16 @@ from typing import Any
 import fastmcp
 
 from massgen.mcp_tools.planning.planning_dataclasses import normalize_task_execution
+from massgen.score_utils import extract_score
+from massgen.score_utils import is_per_agent_scores as _is_per_agent_scores
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_score(entry: Any) -> int:
+    """Extract numeric score as an int (checklist scores are 0-10 integers)."""
+    return int(extract_score(entry, default=0))
+
 
 SERVER_NAME = "massgen_checklist"
 
@@ -170,15 +178,6 @@ def build_round_evaluator_task_mode_redirect(state: dict[str, Any]) -> str | Non
     if next_tasks_path:
         parts.append(f"Reference next-task handoff: {next_tasks_path}.")
     return " ".join(parts)
-
-
-def _extract_score(entry: Any) -> int:
-    """Extract numeric score from either int or {"score": int, "reasoning": str}."""
-    if isinstance(entry, dict):
-        return entry.get("score", 0)
-    if isinstance(entry, (int, float)):
-        return int(entry)
-    return 0
 
 
 def _criterion_sort_key(cid: str) -> tuple[int, str]:
@@ -782,13 +781,6 @@ def _evaluate_gap_report(report_path: str, state: dict[str, Any]) -> dict[str, A
         result["issues"].append(msg)
 
     return result
-
-
-def _is_per_agent_scores(scores: dict[str, Any], item_prefix: str) -> bool:
-    """Return True if scores is per-agent format (keyed by agent label, not E/T-prefixed)."""
-    if not scores:
-        return False
-    return not any(k.startswith(item_prefix) or k.startswith("T") or k.startswith("E") for k in scores)
 
 
 def _extract_submitted_agent_labels(scores_payload: Any, item_prefix: str = "E") -> set[str]:

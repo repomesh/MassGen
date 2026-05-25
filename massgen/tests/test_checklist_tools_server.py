@@ -612,6 +612,47 @@ class TestChecklistRequiredTrue:
             assert min(seq) == max(1, (n + 1) // 2)  # bottoms out at floor
 
 
+class TestChecklistGate:
+    """The cohesive gate must stay consistent with the underlying primitives.
+
+    ChecklistGate.from_budget exists so call sites derive all three knobs from a
+    single 0-10 scale rather than calling three functions that could drift apart
+    (the cause of the original scale-mismatch bug). This locks that contract.
+    """
+
+    def test_from_budget_matches_primitive_composition(self):
+        from massgen.system_prompt_sections import (
+            ChecklistGate,
+            _checklist_confidence_cutoff,
+            _checklist_effective_threshold,
+            _checklist_required_true,
+        )
+
+        for voting_threshold in (2, 3, 5):
+            for total in (3, 5):
+                for remaining in range(0, total + 1):
+                    for num_items in (3, 4, 5):
+                        gate = ChecklistGate.from_budget(
+                            voting_threshold,
+                            remaining,
+                            total,
+                            num_items=num_items,
+                        )
+                        et = _checklist_effective_threshold(voting_threshold, remaining, total)
+                        assert gate.effective_threshold == et
+                        assert gate.required_true == _checklist_required_true(et, num_items=num_items)
+                        assert gate.confidence_cutoff == _checklist_confidence_cutoff(et)
+
+    def test_gate_is_frozen(self):
+        import dataclasses
+
+        from massgen.system_prompt_sections import ChecklistGate
+
+        gate = ChecklistGate.from_budget(3, 5, 5)
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            gate.effective_threshold = 9  # type: ignore[misc]
+
+
 # ---------------------------------------------------------------------------
 # Per-criterion plateau detection
 # ---------------------------------------------------------------------------

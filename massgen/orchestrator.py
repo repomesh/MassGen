@@ -1646,11 +1646,7 @@ class Orchestrator(ChatAgent):
                 )
             return
 
-        from massgen.system_prompt_sections import (
-            _checklist_confidence_cutoff,
-            _checklist_effective_threshold,
-            _checklist_required_true,
-        )
+        from massgen.system_prompt_sections import ChecklistGate
 
         tracker = getattr(self, "coordination_tracker", None)
         display_payload: dict[str, Any] | None = None
@@ -1697,7 +1693,7 @@ class Orchestrator(ChatAgent):
             threshold = getattr(self.config, "voting_threshold", 5) or 5
             total = self.config.max_new_answers_per_agent or 5
             remaining = total
-            effective_t = _checklist_effective_threshold(threshold, remaining, total)
+            gate = ChecklistGate.from_budget(threshold, remaining, total, num_items=len(items))
             # Determine active subagent types for novelty gating
             from massgen.subagent.type_scanner import DEFAULT_SUBAGENT_TYPES
 
@@ -1740,8 +1736,8 @@ class Orchestrator(ChatAgent):
                     None,
                 ),
                 # Pre-computed so stdio server doesn't need massgen imports
-                "required": _checklist_required_true(effective_t, num_items=len(items)),
-                "cutoff": _checklist_confidence_cutoff(effective_t),
+                "required": gate.required_true,
+                "cutoff": gate.confidence_cutoff,
                 # E-prefix for evaluation items (replaces legacy T-prefix)
                 "item_prefix": "E",
                 # Latest injected labels that must be re-scored before improvements can be proposed.
@@ -2755,11 +2751,7 @@ class Orchestrator(ChatAgent):
         if not prefer_local_runtime_state:
             self._sync_stdio_checklist_state_from_specs(agent_id)
 
-        from massgen.system_prompt_sections import (
-            _checklist_confidence_cutoff,
-            _checklist_effective_threshold,
-            _checklist_required_true,
-        )
+        from massgen.system_prompt_sections import ChecklistGate
 
         _cl_remaining = max(
             0,
@@ -2779,10 +2771,11 @@ class Orchestrator(ChatAgent):
             current_items[:] = list(active_items)
         else:
             agent.backend._checklist_items = list(active_items)
-        effective_t = _checklist_effective_threshold(
+        gate = ChecklistGate.from_budget(
             state.get("threshold", 5),
             _cl_remaining,
             state.get("total", 5),
+            num_items=len(getattr(agent.backend, "_checklist_items", [])) or 4,
         )
         pending_recheck_labels: list[str] = []
         if bool(getattr(agent.backend, "supports_sdk_mcp", False)):
@@ -2823,11 +2816,8 @@ class Orchestrator(ChatAgent):
                 "checklist_calls_this_round": (agent_state.checklist_calls_this_round if agent_state is not None else 0),
                 "checklist_history": (list(agent_state.checklist_history) if agent_state is not None else []),
                 "decomposition_mode": self._is_decomposition_mode(),
-                "required": _checklist_required_true(
-                    effective_t,
-                    num_items=len(getattr(agent.backend, "_checklist_items", [])) or 4,
-                ),
-                "cutoff": _checklist_confidence_cutoff(effective_t),
+                "required": gate.required_true,
+                "cutoff": gate.confidence_cutoff,
                 "require_gap_report": bool(
                     getattr(self.config, "checklist_require_gap_report", True),
                 ),

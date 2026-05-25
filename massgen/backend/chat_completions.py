@@ -46,7 +46,6 @@ from .base_with_custom_tool_and_mcp import (
 from .llm_circuit_breaker import (
     CircuitBreakerOpenError,
     LLMCircuitBreaker,
-    LLMCircuitBreakerConfig,
 )
 
 
@@ -83,23 +82,6 @@ class ChatCompletionsBackend(StreamingBufferMixin, CustomToolAndMCPBackend):
             config=cb_config,
             backend_name=self.get_provider_name(),
         )
-
-    @staticmethod
-    def _build_circuit_breaker_config(
-        kwargs: dict[str, Any],
-    ) -> LLMCircuitBreakerConfig:
-        """Extract circuit breaker settings from kwargs and build config."""
-        cb_kwargs: dict[str, Any] = {}
-        prefix = "llm_circuit_breaker_"
-        keys_to_pop: list[str] = []
-        for key in kwargs:
-            if key.startswith(prefix):
-                param = key[len(prefix) :]
-                cb_kwargs[param] = kwargs[key]
-                keys_to_pop.append(key)
-        for key in keys_to_pop:
-            kwargs.pop(key)
-        return LLMCircuitBreakerConfig(**cb_kwargs)
 
     def finalize_token_tracking(self) -> None:
         """Finalize token tracking by estimating tokens for any interrupted streams.
