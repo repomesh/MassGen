@@ -7,17 +7,17 @@
 #   Auth: ~/.gemini/google_accounts.json or GEMINI_API_KEY / GOOGLE_API_KEY
 
 agents:
-- id: agent_a
-  backend:
-    type: gemini
-    model: gemini-3.5-flash
-    cwd: workspace
-    enable_code_based_tools: true
-    exclude_file_operation_mcps: true
-    enable_mcp_command_line: true
-    shared_tools_directory: shared_tools
-    auto_discover_custom_tools: false
-    enable_web_search: false
+# - id: agent_a
+#   backend:
+#     type: gemini
+#     model: gemini-3.5-flash
+#     cwd: workspace
+#     enable_code_based_tools: true
+#     exclude_file_operation_mcps: true
+#     enable_mcp_command_line: true
+#     shared_tools_directory: shared_tools
+#     auto_discover_custom_tools: false
+#     enable_web_search: false
 - id: agent_b
   backend:
     type: antigravity_cli

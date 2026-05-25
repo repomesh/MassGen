@@ -21,7 +21,81 @@ downstream in ``criteria_from_inline``.
 
 from __future__ import annotations
 
+from statistics import pstdev
 from typing import Any
+
+from massgen.score_utils import extract_score
+
+
+def criterion_score_spread(
+    per_agent_scores: dict[str, dict[str, Any]],
+) -> dict[str, float]:
+    """Population std-dev of each criterion's scores across agents.
+
+    ``per_agent_scores`` maps agent label -> {criterion_id -> score}, where score
+    is a number or a ``{"score": N}`` dict (the shape produced by the checklist
+    server's per-agent summary). Criteria scored by fewer than two agents are
+    omitted (discrimination is undefined with a single data point).
+    """
+    by_criterion: dict[str, list[float]] = {}
+    for agent_scores in per_agent_scores.values():
+        if not isinstance(agent_scores, dict):
+            continue
+        for cid, raw in agent_scores.items():
+            score = extract_score(raw, default=None)
+            if score is None:
+                continue
+            by_criterion.setdefault(cid, []).append(float(score))
+
+    return {cid: pstdev(vals) for cid, vals in by_criterion.items() if len(vals) >= 2}
+
+
+def find_nondiscriminative_criteria(
+    per_agent_scores: dict[str, dict[str, Any]],
+    *,
+    min_spread: float = 0.75,
+    protect_floor: int = 2,
+) -> list[str]:
+    """Return criterion IDs that fail to discriminate between agents.
+
+    A criterion is non-discriminative when its score spread (population std-dev
+    across agents) is below ``min_spread`` — every agent scored it nearly the
+    same, so it provides no gradient. To avoid hollowing out the gate, never
+    return more than ``total - protect_floor`` IDs; when more criteria qualify,
+    the least-discriminative (lowest-spread) ones are chosen. Returns [] when
+    fewer than two agents scored (discrimination is undefined).
+    """
+    spreads = criterion_score_spread(per_agent_scores)
+    if not spreads:
+        return []
+    total = len(spreads)
+    max_droppable = max(0, total - protect_floor)
+    if max_droppable == 0:
+        return []
+    candidates = [cid for cid, s in spreads.items() if s < min_spread]
+    if len(candidates) > max_droppable:
+        candidates = sorted(candidates, key=lambda c: spreads[c])[:max_droppable]
+    return sorted(candidates)
+
+
+def demote_categories(
+    categories: dict[str, str],
+    ids: list[str],
+    *,
+    demote_to: str = "stretch",
+) -> dict[str, str]:
+    """Return a copy of ``categories`` with the given IDs reclassified.
+
+    Demotion (vs. deletion) keeps non-discriminative criteria visible while
+    removing their power to act as hard gates. The input dict is not mutated.
+    """
+    if not ids:
+        return categories
+    demoted = dict(categories)
+    for cid in ids:
+        if cid in demoted:
+            demoted[cid] = demote_to
+    return demoted
 
 
 def merge_proposals(

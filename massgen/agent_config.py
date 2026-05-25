@@ -496,7 +496,9 @@ class AgentConfig:
 
     # Voting behavior configuration
     voting_sensitivity: str = "lenient"
-    voting_threshold: int | None = None  # Numeric threshold for ROI-style voting (e.g., 15 = 15% improvement required)
+    voting_threshold: int | None = (
+        None  # Strictness on a 0-10 scale (configs typically use 2-3). Higher = stricter base bar; also drives checklist gate relaxation as the answer budget tightens. NOTE: not a percentage.
+    )
     max_new_answers_per_agent: int | None = None
     max_new_answers_global: int | None = None
     checklist_require_gap_report: bool = True

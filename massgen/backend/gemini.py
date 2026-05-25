@@ -54,7 +54,6 @@ from .gemini_utils import (
 from .llm_circuit_breaker import (
     CircuitBreakerOpenError,
     LLMCircuitBreaker,
-    LLMCircuitBreakerConfig,
 )
 from .rate_limiter import GlobalRateLimiter
 
@@ -348,23 +347,6 @@ class GeminiBackend(StreamingBufferMixin, CustomToolAndMCPBackend):
             # No rate limiting - use a pass-through limiter
             self.rate_limiter = None
             logger.info(f"[Gemini] Rate limiting disabled for '{model_name}'")
-
-    @staticmethod
-    def _build_circuit_breaker_config(
-        kwargs: dict[str, Any],
-    ) -> LLMCircuitBreakerConfig:
-        """Extract circuit breaker settings from kwargs and build config."""
-        cb_kwargs: dict[str, Any] = {}
-        prefix = "llm_circuit_breaker_"
-        keys_to_pop: list[str] = []
-        for key in kwargs:
-            if key.startswith(prefix):
-                param = key[len(prefix) :]
-                cb_kwargs[param] = kwargs[key]
-                keys_to_pop.append(key)
-        for key in keys_to_pop:
-            kwargs.pop(key)
-        return LLMCircuitBreakerConfig(**cb_kwargs)
 
     def _normalize_and_resolve_tool_name(self, tool_name: str) -> str:
         """Normalize Gemini tool names and resolve MCP aliases.

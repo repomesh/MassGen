@@ -29,24 +29,24 @@ agents:
 - id: agent_a
   backend:
     type: gemini
-    model: gemini-3.1-pro-preview
-    # model: gemini-3-flash-preview
+    # model: gemini-3.1-pro-preview
+    model: gemini-3-flash-preview
     cwd: workspace
     enable_code_based_tools: false
     exclude_file_operation_mcps: true
     enable_mcp_command_line: true
-    command_line_execution_mode: docker
-    # command_line_docker_image: ghcr.io/massgen/mcp-runtime-sudo:latest
-    command_line_docker_image: massgen/mcp-runtime-sudo:latest
-    command_line_docker_network_mode: bridge
-    command_line_docker_enable_sudo: true
-    command_line_docker_credentials:
-      env_file: .env
-      env_vars_from_file:
-      - OPENAI_API_KEY
-      - ANTHROPIC_API_KEY
-      - GOOGLE_API_KEY
-      - GEMINI_API_KEY
+    # command_line_execution_mode: docker
+    # # command_line_docker_image: ghcr.io/massgen/mcp-runtime-sudo:latest
+    # command_line_docker_image: massgen/mcp-runtime-sudo:latest
+    # command_line_docker_network_mode: bridge
+    # command_line_docker_enable_sudo: true
+    # command_line_docker_credentials:
+    #   env_file: .env
+    #   env_vars_from_file:
+    #   - OPENAI_API_KEY
+    #   - ANTHROPIC_API_KEY
+    #   - GOOGLE_API_KEY
+    #   - GEMINI_API_KEY
     shared_tools_directory: shared_tools
     auto_discover_custom_tools: false
     enable_web_search: false

@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.89
+**Current Version:** v0.1.90
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** May 22, 2026
+**Last Updated:** May 25, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,10 +42,28 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.90** | 05/25/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.86-v0.1.89 ([#959](https://github.com/massgen/MassGen/issues/959)) |
-| | | Discriminative Criteria Refinements | @ncrispino | Selection, ranking, and retirement of stale criteria for long-running refinement loops |
+| **v0.1.91** | 05/27/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.86-v0.1.90 ([#959](https://github.com/massgen/MassGen/issues/959)) |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.90 - Discriminative Criteria Refinements & Checklist Calibration (Completed)
+
+**Released:** May 25, 2026
+
+### Features
+- **Discriminative-Power Pruning**: Bootstrap criteria now compute per-criterion score spread across agents and demote low-spread criteria to `stretch`, keeping low-signal checks visible without letting them act as hard gates
+- **Criterion Feedback Loop**: Checklist reasoning is extracted into a next-round feedback memo so agents see exactly which criterion gaps to address
+- **Position-Bias Calibration**: Candidate answer ordering is rotated per scoring agent, distributing the primacy slot and reducing self-preference
+- **Checklist Gate Unification**: `ChecklistGate.from_budget(...)` derives effective threshold, required-true count, and confidence cutoff from one 0-10 scale
+- **Shared Score Utilities**: `massgen/score_utils.py` centralizes score extraction and per-agent score-shape detection across checklist, quality, and bootstrap paths
+- **Fast-Iteration Config Updates**: Fast-iteration examples now default to local command execution and current Gemini/Codex/Antigravity pairings
+- **Tests**: New coverage for discriminative pruning, criterion feedback, position-bias calibration, score parsing, and checklist server behavior
+
+### Notes
+- Discriminative Criteria Refinements from the roadmap landed in this release.
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.91.
 
 ---
 
@@ -63,7 +81,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ### Notes
 - This completes the follow-up Antigravity integration pass introduced in v0.1.88.
-- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements remain deferred to v0.1.90.
+- Discriminative Criteria Refinements landed in v0.1.90; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.91.
 
 ---
 
@@ -80,7 +98,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 - **Tests**: `massgen/tests/test_antigravity_cli_backend.py` covers command construction, config isolation, MCP schema, workflow JSON envelopes, Docker/API-key constraints, hook wiring, and env passthrough
 
 ### Notes
-- Follow-up Antigravity hardening landed in v0.1.89; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements remain deferred to v0.1.90.
+- Follow-up Antigravity hardening landed in v0.1.89; Discriminative Criteria Refinements landed in v0.1.90; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.91.
 
 ---
 
@@ -97,7 +115,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 - **`bootstrap_subagent` Single-Shot Fix**: `Orchestrator._run_bootstrap_discriminator_step` passes `refine=False` to `spawn_subagent` — the canonical knob `SubagentManager` respects at the orchestrator level (the orchestrator's `max_new_answers_per_agent: 3` default was shadowing coordination-dict overrides)
 
 ### Notes
-- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements ultimately carried forward to v0.1.90.
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) ultimately carried forward to v0.1.91.
 - Closes [#1082](https://github.com/massgen/MassGen/issues/1082) (`llms.txt` + `llms-full.txt`) and [#1083](https://github.com/massgen/MassGen/issues/1083) (CrewAI / LangGraph / AutoGen comparison pages).
 
 ---
@@ -273,25 +291,21 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.90 - Image/Video Edit & Criteria Refinements (Deferred from v0.1.86-v0.1.89)
+## 📋 v0.1.91 - Image/Video Edit Capabilities (Deferred from v0.1.86-v0.1.90)
 
 ### Features
 
-**1. Image/Video Edit Capabilities** (@ncrispino)
+**Image/Video Edit Capabilities** (@ncrispino)
 - Issue: [#959](https://github.com/massgen/MassGen/issues/959)
 - Investigate and support image and video editing capabilities across providers
 - Multi-turn editing workflows with continuation IDs
 - **Use Case**: Enable iterative media editing within multi-agent workflows
 
-**2. Discriminative Criteria Refinements** (@ncrispino)
-- Build on v0.1.85/v0.1.86 criteria emergence with selection, ranking, and retirement of stale criteria
-- **Use Case**: Keep long-running refinement loops focused on the most useful current criteria
-
 ### Success Criteria
 - [ ] Image editing capabilities documented and tested
 - [ ] Video editing capabilities documented and tested
 - [ ] Multi-turn editing flow works end-to-end
-- [ ] Criteria refinement behavior is documented and covered by tests
+- [ ] Provider capability notes are updated where users discover multimodal examples
 
 ---
 

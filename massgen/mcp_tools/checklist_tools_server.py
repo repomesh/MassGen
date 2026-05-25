@@ -26,8 +26,16 @@ from typing import Any
 import fastmcp
 
 from massgen.mcp_tools.planning.planning_dataclasses import normalize_task_execution
+from massgen.score_utils import extract_score
+from massgen.score_utils import is_per_agent_scores as _is_per_agent_scores
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_score(entry: Any) -> int:
+    """Extract numeric score as an int (checklist scores are 0-10 integers)."""
+    return int(extract_score(entry, default=0))
+
 
 SERVER_NAME = "massgen_checklist"
 
@@ -172,13 +180,68 @@ def build_round_evaluator_task_mode_redirect(state: dict[str, Any]) -> str | Non
     return " ".join(parts)
 
 
-def _extract_score(entry: Any) -> int:
-    """Extract numeric score from either int or {"score": int, "reasoning": str}."""
-    if isinstance(entry, dict):
-        return entry.get("score", 0)
-    if isinstance(entry, (int, float)):
-        return int(entry)
-    return 0
+def _criterion_sort_key(cid: str) -> tuple[int, str]:
+    """Sort criterion IDs by their numeric suffix (E1, E2, ..., E10) when present."""
+    digits = "".join(ch for ch in cid if ch.isdigit())
+    return (int(digits) if digits else 1_000_000, cid)
+
+
+def extract_criterion_feedback(scores: Any, item_prefix: str = "E") -> dict[str, str]:
+    """Return {criterion_id: reasoning} from submitted checklist scores.
+
+    Handles both the flat shape ``{"E1": {"score": N, "reasoning": "..."}}`` and
+    the per-agent shape ``{"agent1.1": {"E1": {...}}, ...}``. For per-agent
+    submissions the reasoning attached to the LOWEST score per criterion is kept
+    (the most diagnostic signal for what to fix next round). Entries without a
+    usable reasoning string are skipped. Returns {} for non-dict input.
+    """
+    if not isinstance(scores, dict) or not scores:
+        return {}
+
+    best: dict[str, tuple[int, str]] = {}
+
+    def _consider(cid: str, entry: Any) -> None:
+        if not isinstance(entry, dict):
+            return
+        reasoning = str(entry.get("reasoning") or "").strip()
+        if not reasoning:
+            return
+        score = _extract_score(entry)
+        if cid not in best or score < best[cid][0]:
+            best[cid] = (score, reasoning)
+
+    if _is_per_agent_scores(scores, item_prefix):
+        for agent_scores in scores.values():
+            if isinstance(agent_scores, dict):
+                for cid, entry in agent_scores.items():
+                    _consider(cid, entry)
+    else:
+        for cid, entry in scores.items():
+            _consider(cid, entry)
+
+    return {cid: reasoning for cid, (_score, reasoning) in best.items()}
+
+
+def format_criterion_feedback_memo(
+    feedback: dict[str, str],
+    failed_ids: list[str] | None = None,
+) -> str:
+    """Render per-criterion feedback into a round-start memo (Reflexion gradient).
+
+    Returns "" when there is no feedback. Failed criteria are marked so the next
+    round's generator knows which gaps are blocking, not just which exist.
+    """
+    if not feedback:
+        return ""
+    failed = set(failed_ids or [])
+    lines = [
+        "<CRITERION FEEDBACK from last round — address these gaps before your next answer>",
+    ]
+    for cid in sorted(feedback, key=_criterion_sort_key):
+        marker = " (FAILED)" if cid in failed else ""
+        lines.append(f"- {cid}{marker}: {feedback[cid]}")
+    lines.append("<END OF CRITERION FEEDBACK>")
+    return "\n".join(lines)
 
 
 def _find_plateaued_criteria(
@@ -720,13 +783,6 @@ def _evaluate_gap_report(report_path: str, state: dict[str, Any]) -> dict[str, A
     return result
 
 
-def _is_per_agent_scores(scores: dict[str, Any], item_prefix: str) -> bool:
-    """Return True if scores is per-agent format (keyed by agent label, not E/T-prefixed)."""
-    if not scores:
-        return False
-    return not any(k.startswith(item_prefix) or k.startswith("T") or k.startswith("E") for k in scores)
-
-
 def _extract_submitted_agent_labels(scores_payload: Any, item_prefix: str = "E") -> set[str]:
     """Extract top-level agent labels from submit_checklist scores payload."""
     if not isinstance(scores_payload, dict) or not scores_payload:
@@ -772,7 +828,10 @@ def _extract_flat_scores(
         total = sum(_extract_score(agent_scores.get(f"{item_prefix}{i+1}", agent_scores.get(f"E{i+1}", 0))) for i in range(n_items))
         summary = {f"{item_prefix}{i+1}": _extract_score(agent_scores.get(f"{item_prefix}{i+1}", agent_scores.get(f"E{i+1}", 0))) for i in range(n_items)}
         per_agent_summary[agent_label] = summary
-        if total > best_total:
+        # Position-bias fix: break ties deterministically by label (lexicographically
+        # smallest wins) rather than by dict iteration order, so the selected best
+        # agent does not depend on submission/insertion order.
+        if total > best_total or (total == best_total and (not best_label or agent_label < best_label)):
             best_total = total
             best_label = agent_label
             best_scores = agent_scores
