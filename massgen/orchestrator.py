@@ -16448,16 +16448,18 @@ Your answer:"""
             agent_mapping = self.coordination_tracker.get_reverse_agent_mapping()
             answer_label_mapping = self.coordination_tracker.get_answer_label_mapping()
             _is_decomp = getattr(self.config, "coordination_mode", "voting") == "decomposition"
-            # Position-bias counterbalancing: rotate candidate presentation by this
-            # scoring agent's own anonymous label index, which places its OWN answer
-            # last in its view and distributes the primacy slot across agents
-            # (reduces both first-position bias and self-preference). Deterministic.
+            # Position-bias counterbalancing: rotate candidate presentation so this
+            # scoring agent's OWN answer lands last in its view, distributing the
+            # primacy slot across agents (reduces first-position bias + self-preference).
+            # Derived from the answering subset so it stays correct when only some
+            # agents have answered. Deterministic.
             _order_seed = None
             if normalized_answers and len(normalized_answers) > 1:
-                _own_label = agent_mapping.get(agent_id, "")
-                _label_digits = "".join(ch for ch in _own_label if ch.isdigit())
-                if _label_digits:
-                    _order_seed = int(_label_digits)
+                _order_seed = self.message_templates.compute_own_last_order_seed(
+                    agent_id,
+                    list(normalized_answers.keys()),
+                    agent_mapping,
+                )
             # Gather changedocs from coordination tracker if enabled
             _agent_changedocs = self._gather_agent_changedocs()
             if conversation_context and conversation_context.get(

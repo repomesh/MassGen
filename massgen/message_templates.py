@@ -127,6 +127,31 @@ IMPORTANT: You are responding to the latest message in an ongoing conversation. 
 (no answers available yet)
 <END OF CURRENT ANSWERS>"""
 
+    @staticmethod
+    def compute_own_last_order_seed(
+        agent_id: str,
+        answer_ids: list[str],
+        agent_mapping: dict[str, str] | None = None,
+    ) -> int:
+        """Order seed that rotates ``agent_id``'s own answer into the LAST slot.
+
+        ``format_current_answers_with_summaries`` sorts candidates by anonymous label
+        then left-rotates by ``order_seed % n``; passing ``position + 1`` (where
+        ``position`` is ``agent_id``'s index in that label-sorted order) places its own
+        answer last — counterbalancing both first-position bias and self-preference.
+
+        The seed is derived from the *answering subset* (``answer_ids``), not the global
+        roster, so it stays correct when only a non-contiguous subset has answered. When
+        ``agent_id`` has no answer in the set, falls back to its anonymous-label index
+        for general primacy counterbalancing.
+        """
+        mapping = agent_mapping or {}
+        ordered = sorted(answer_ids, key=lambda a: mapping.get(a, a))
+        if agent_id in ordered:
+            return ordered.index(agent_id) + 1
+        digits = "".join(ch for ch in mapping.get(agent_id, "") if ch.isdigit())
+        return int(digits) if digits else 0
+
     def format_current_answers_with_summaries(
         self,
         agent_summaries: dict[str, str],

@@ -147,3 +147,45 @@ class TestOrderSeedWiring:
             order_seed=2,
         )
         assert self._first_label(conv["user_message"]) == "agent3"
+
+
+class TestOwnLastOrderSeed:
+    """compute_own_last_order_seed must place the scoring agent's own answer LAST,
+    derived from the answering subset (not the global roster) so it stays correct
+    when only a non-contiguous subset has answered."""
+
+    mapping = {"agent_a": "agent1", "agent_b": "agent2", "agent_c": "agent3"}
+
+    def _own_block_is_last(self, summaries, agent_id, mapping):
+        mt = MessageTemplates()
+        seed = MessageTemplates.compute_own_last_order_seed(agent_id, list(summaries.keys()), mapping)
+        out = mt.format_current_answers_with_summaries(summaries, mapping, order_seed=seed)
+        body = out.split("<CURRENT ANSWERS from the agents>", 1)[1]
+        own_label = mapping[agent_id]
+        own_pos = body.find(f"<{own_label}>")
+        others = [body.find(f"<{lbl}>") for aid, lbl in mapping.items() if aid in summaries and aid != agent_id]
+        return all(own_pos > p for p in others)
+
+    def test_full_roster_each_agent_sees_own_answer_last(self):
+        summaries = {"agent_a": "A", "agent_b": "B", "agent_c": "C"}
+        for aid in summaries:
+            assert self._own_block_is_last(summaries, aid, self.mapping), aid
+
+    def test_noncontiguous_subset_still_places_own_last(self):
+        # Only agent_a and agent_c have answered; agent_b has not. This is the case
+        # the global-label seed got WRONG (agent3's own answer landed first).
+        summaries = {"agent_a": "A", "agent_c": "C"}
+        assert self._own_block_is_last(summaries, "agent_c", self.mapping)
+        assert self._own_block_is_last(summaries, "agent_a", self.mapping)
+
+    def test_seed_independent_of_answer_dict_order(self):
+        s1 = {"agent_a": "A", "agent_c": "C"}
+        s2 = {"agent_c": "C", "agent_a": "A"}
+        assert MessageTemplates.compute_own_last_order_seed("agent_c", list(s1), self.mapping) == MessageTemplates.compute_own_last_order_seed("agent_c", list(s2), self.mapping)
+
+    def test_agent_not_in_answer_set_falls_back_to_label_index(self):
+        # Scoring agent hasn't answered -> no own answer to place last; falls back
+        # to its anonymous-label index for general counterbalancing.
+        summaries = {"agent_a": "A", "agent_b": "B"}
+        seed = MessageTemplates.compute_own_last_order_seed("agent_c", list(summaries), self.mapping)
+        assert seed == 3  # agent3's label index
