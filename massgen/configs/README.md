@@ -227,7 +227,23 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.89 - Latest
+### v0.1.90 - Latest
+**New Features:** Discriminative Criteria Refinements & Checklist Calibration
+
+**Key Features:**
+- **Discriminative-Power Pruning**: Bootstrap criteria compute score spread across agents and demote non-discriminative criteria to `stretch`
+- **Criterion Feedback Loop**: Checklist reasoning is carried into the next round as targeted criterion feedback
+- **Position-Bias Calibration**: Candidate ordering rotates per scoring agent, and equal aggregate scores break deterministically
+- **Unified Checklist Gate**: `ChecklistGate.from_budget(...)` keeps required-true count and confidence cutoff on one 0-10 scale
+- **Fast-Iteration Config Updates**: `fast_iteration.yaml` now defaults to local command execution and current Gemini + Codex pairings
+
+**Try It:**
+```bash
+pip install massgen==0.1.90
+uv run massgen --config massgen/configs/features/fast_iteration.yaml "Create an svg of an AI agent coding."
+```
+
+### v0.1.89
 **New Features:** Antigravity CLI Full Integration & Hardening
 
 **Key Features:**

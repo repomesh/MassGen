@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.90 (May 25, 2026)** - Discriminative Criteria Refinements & Checklist Calibration
+Improves checklist-gated refinement quality with discriminative-power pruning, per-criterion feedback carried into the next round, position-bias counterbalancing, deterministic tie-breaking, a unified checklist gate on a single 0-10 scale, shared score parsing utilities, and fast-iteration config updates.
+
 **v0.1.89 (May 22, 2026)** - Antigravity CLI Full Integration & Hardening
 Completes the follow-up Antigravity integration pass with workflow-mode parity, early auth and binary health checks, workspace-root file writes via `--add-dir`, `.antigravitycli/` project-root anchoring, standalone `hooks.json` wiring with `enableJsonHooks`, prompt affordance gating for disabled subagents, and expanded regression coverage.
 
@@ -26,6 +29,39 @@ New `orchestrator.coordination.criteria_mode` option lets evaluation criteria em
 
 **v0.1.84 (May 8, 2026)** - TUI Consensus Map
 A compact visual map below the agent status ribbon during multi-agent runs. Shows agent nodes with latest answer labels, vote arrows, current vote leader, winner state, and waiting/working indicators — driven by existing coordination events without backend schema changes. Hidden on welcome and single-agent runs.
+
+---
+
+## [0.1.90] - 2026-05-25
+
+### Added
+- **Discriminative-Power Criteria Pruning**: Bootstrap criteria now compute per-criterion score spread across agents and demote low-spread, non-discriminative criteria to `stretch` while preserving a protected floor so the gate is not hollowed out.
+- **Per-Criterion Feedback Loop**: Checklist score reasoning is extracted into a `<CRITERION FEEDBACK ...>` memo and queued into the next round, preserving the diagnostic gradient instead of reducing failures to numeric scores only.
+- **Position-Bias Calibration**: Candidate answer presentation is deterministically rotated per scoring agent, distributing the primacy slot and placing the scorer's own answer last in its view.
+- **Canonical Score Utilities**: New `massgen/score_utils.py` centralizes score extraction and per-agent score-shape detection across checklist, quality, and bootstrap-criteria paths.
+
+### Changed
+- **Checklist Gate Unification**: `ChecklistGate.from_budget(...)` derives effective threshold, required-true count, and confidence cutoff from one 0-10 scale, replacing drift-prone duplicate calculations.
+- **Tie-Break Determinism**: Equal aggregate checklist scores now resolve independently of dictionary insertion order.
+- **Backend Circuit-Breaker Config**: Shared `llm_circuit_breaker_*` kwarg parsing moved into `CustomToolAndMCPBackend`, removing duplicate backend implementations.
+- **Fast-Iteration Configs**: Fast-iteration examples are updated for local command execution by default and current Gemini/Codex/Antigravity pairings.
+- **Criteria Generation Fallback Signaling**: Generic fallback criteria now log and display as a warning so users can see when domain-specific generation failed.
+
+### Tests
+- `massgen/tests/test_discriminative_pruning.py` covers score-spread calculation, non-discriminative criterion demotion, protected floors, and orchestrator wiring.
+- `massgen/tests/test_criterion_feedback.py` covers reasoning extraction from flat/per-agent score shapes and next-round feedback memo delivery.
+- `massgen/tests/test_position_bias_calibration.py` covers deterministic tie-breaking and answer-order counterbalancing.
+- `massgen/tests/test_score_utils.py` covers canonical score parsing behavior and per-agent score-shape detection.
+- `massgen/tests/test_checklist_tools_server.py` updated for shared score parsing, feedback extraction, and checklist gate behavior.
+
+### Notes
+- Discriminative Criteria Refinements from the v0.1.90 roadmap landed in this release.
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.91.
+
+### Technical Details
+- **Major Focus**: Make checklist-gated refinement a stronger optimization loop by improving the loss signal, reducing scoring bias, and preventing low-signal criteria from dominating later rounds.
+- **Commits**: `96e9aff7`, `62cf4bf0`
+- **Contributors**: @ncrispino, @HenryQi and the MassGen team
 
 ---
 
@@ -48,7 +84,7 @@ A compact visual map below the agent status ribbon during multi-agent runs. Show
 
 ### Notes
 - This release completes the follow-up Antigravity integration pass that v0.1.88 introduced as a first version.
-- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements remain deferred to v0.1.90.
+- Discriminative Criteria Refinements landed in v0.1.90; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.91.
 
 ### Technical Details
 - **Major Focus**: Make Antigravity CLI reliable in real MassGen coordination runs by hardening auth, workspace isolation, workflow-tool semantics, hook integration, and prompt affordance boundaries.
@@ -79,7 +115,7 @@ A compact visual map below the agent status ribbon during multi-agent runs. Show
 ### Notes
 - Antigravity CLI (`agy`) must be installed separately with `curl -fsSL https://antigravity.google/cli/install.sh | bash`.
 - Local mode can use existing Google OAuth state at `~/.gemini/google_accounts.json`; Docker mode requires `GEMINI_API_KEY` or `GOOGLE_API_KEY` because OAuth state does not cross container boundaries.
-- Follow-up Antigravity hardening landed in v0.1.89; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) and Discriminative Criteria Refinements remain deferred to v0.1.90.
+- Follow-up Antigravity hardening landed in v0.1.89; Discriminative Criteria Refinements landed in v0.1.90; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.91.
 
 ### Technical Details
 - **Major Focus**: Add Google Antigravity CLI as a first-class MassGen backend while keeping project-local isolation and MassGen workflow/tool semantics intact.
