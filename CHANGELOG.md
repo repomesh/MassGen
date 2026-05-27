@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Recent Releases
 
+**v0.1.91 (May 27, 2026)** - Config Reliability & Hook Safety
+Hardens release-critical configuration paths with centralized coordination, timeout, and orchestrator runtime parsing; strict unknown-key validation for typo detection; checklist runtime control wiring; and safer Gemini/Codex native hook path permission precedence.
+
 **v0.1.90 (May 25, 2026)** - Discriminative Criteria Refinements & Checklist Calibration
 Improves checklist-gated refinement quality with discriminative-power pruning, per-criterion feedback carried into the next round, position-bias counterbalancing, deterministic tie-breaking, a unified checklist gate on a single 0-10 scale, shared score parsing utilities, and fast-iteration config updates.
 
@@ -27,8 +30,30 @@ Variant B (`criteria_mode: bootstrap_subagent`) is now functional: the orchestra
 **v0.1.85 (May 11, 2026)** - Discriminative Criteria Emergence (`criteria_mode`)
 New `orchestrator.coordination.criteria_mode` option lets evaluation criteria emerge from observed gaps across rounds instead of being pre-authored. `bootstrap_inline` variant is fully functional on all backends with checklist tool support — agents emit `proposed_criteria` alongside `submit_checklist`, the accumulator dedupes/caps, and the next round's checklist is augmented automatically.
 
-**v0.1.84 (May 8, 2026)** - TUI Consensus Map
-A compact visual map below the agent status ribbon during multi-agent runs. Shows agent nodes with latest answer labels, vote arrows, current vote leader, winner state, and waiting/working indicators — driven by existing coordination events without backend schema changes. Hidden on welcome and single-agent runs.
+---
+
+## [0.1.91] - 2026-05-27
+
+### Added
+- **Config Drift Detection**: Config validation now warns on unknown `orchestrator.coordination.*`, top-level `orchestrator.*`, and `timeout_settings.*` keys so YAML typos are visible, and strict config validation treats those warnings as release-blocking.
+- **Native Hook Permission Specificity**: Gemini CLI and Codex standalone hook scripts now enforce more-specific managed paths and protected paths before broader writable parents, preventing nested read-only paths from being masked by workspace-level write access.
+
+### Changed
+- **Centralized Config Wiring**: `CoordinationConfig.from_dict()` and `TimeoutConfig.from_dict()` now own YAML parsing for their surfaces, while `AgentConfig.apply_orchestrator_config()` owns top-level orchestrator runtime field application. CLI helpers remain as compatibility wrappers.
+- **Checklist Runtime Controls**: `max_checklist_calls_per_round` and `checklist_first_answer` now flow through the centralized top-level orchestrator runtime helper instead of being validation-only settings.
+- **Claude Native Hook Injection Contract**: Claude Code native hook tests and docs now match the adapter's SDK-native `additionalContext` injection format.
+
+### Tests
+- Added parser/validator parity coverage for coordination config fields, timeout settings, top-level orchestrator runtime fields, nested `standalone_checkpoint` aliases, documented YAML field coverage, and strict `scripts/validate_all_configs.py` behavior.
+- Added native hook regression coverage for nested read-only path precedence, protected-path enforcement, and Claude Code `additionalContext` injection conversion.
+
+### Notes
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.92.
+
+### Technical Details
+- **Major Focus**: Make release-critical YAML configuration surfaces typo-resistant and parser-complete while hardening native hook path authorization.
+- **Commits**: `3d25441e`, `47449c69`
+- **Contributors**: @ncrispino, @HenryQi and the MassGen team
 
 ---
 
@@ -56,7 +81,7 @@ A compact visual map below the agent status ribbon during multi-agent runs. Show
 
 ### Notes
 - Discriminative Criteria Refinements from the v0.1.90 roadmap landed in this release.
-- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.91.
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.92.
 
 ### Technical Details
 - **Major Focus**: Make checklist-gated refinement a stronger optimization loop by improving the loss signal, reducing scoring bias, and preventing low-signal criteria from dominating later rounds.
@@ -84,7 +109,7 @@ A compact visual map below the agent status ribbon during multi-agent runs. Show
 
 ### Notes
 - This release completes the follow-up Antigravity integration pass that v0.1.88 introduced as a first version.
-- Discriminative Criteria Refinements landed in v0.1.90; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.91.
+- Discriminative Criteria Refinements landed in v0.1.90; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.92.
 
 ### Technical Details
 - **Major Focus**: Make Antigravity CLI reliable in real MassGen coordination runs by hardening auth, workspace isolation, workflow-tool semantics, hook integration, and prompt affordance boundaries.
@@ -115,7 +140,7 @@ A compact visual map below the agent status ribbon during multi-agent runs. Show
 ### Notes
 - Antigravity CLI (`agy`) must be installed separately with `curl -fsSL https://antigravity.google/cli/install.sh | bash`.
 - Local mode can use existing Google OAuth state at `~/.gemini/google_accounts.json`; Docker mode requires `GEMINI_API_KEY` or `GOOGLE_API_KEY` because OAuth state does not cross container boundaries.
-- Follow-up Antigravity hardening landed in v0.1.89; Discriminative Criteria Refinements landed in v0.1.90; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.91.
+- Follow-up Antigravity hardening landed in v0.1.89; Discriminative Criteria Refinements landed in v0.1.90; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.92.
 
 ### Technical Details
 - **Major Focus**: Add Google Antigravity CLI as a first-class MassGen backend while keeping project-local isolation and MassGen workflow/tool semantics intact.

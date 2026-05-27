@@ -127,6 +127,7 @@ class TestPreToolUsePermissionManifest:
         workspace: Path,
         writable: Path,
         readonly: Path,
+        protected: Path | None = None,
     ) -> None:
         hook_dir.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -144,6 +145,7 @@ class TestPreToolUsePermissionManifest:
                     "permission": "write",
                     "path_type": "context",
                     "is_file": False,
+                    "protected_paths": [str(protected.resolve())] if protected else [],
                 },
                 {
                     "path": str(readonly.resolve()),
@@ -180,6 +182,64 @@ class TestPreToolUsePermissionManifest:
 
         result = _run_hook_script(str(tmp_path), "PreToolUse", stdin_data=stdin)
         assert result["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert "read-only context path" in result["hookSpecificOutput"]["permissionDecisionReason"]
+
+    def test_denies_bash_write_to_nested_readonly_context_even_when_workspace_is_writable(self, tmp_path: Path) -> None:
+        """More-specific read-only paths must override broader writable parents."""
+        workspace = tmp_path / "workspace"
+        writable = tmp_path / "writable"
+        readonly = workspace / "readonly"
+        for path in (workspace, writable, readonly):
+            path.mkdir(parents=True)
+
+        self._write_permission_manifest(
+            tmp_path,
+            workspace=workspace,
+            writable=writable,
+            readonly=readonly,
+        )
+        stdin = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": "echo hi > notes.txt",
+                    "cwd": str(readonly),
+                },
+            },
+        )
+
+        result = _run_hook_script(str(tmp_path), "PreToolUse", stdin_data=stdin)
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert "read-only context path" in result["hookSpecificOutput"]["permissionDecisionReason"]
+
+    def test_denies_bash_write_to_protected_path_inside_writable_context(self, tmp_path: Path) -> None:
+        """Protected paths in a writable context must remain read-only."""
+        workspace = tmp_path / "workspace"
+        writable = tmp_path / "writable"
+        protected = writable / "protected"
+        readonly = tmp_path / "readonly"
+        for path in (workspace, writable, protected, readonly):
+            path.mkdir(parents=True)
+
+        self._write_permission_manifest(
+            tmp_path,
+            workspace=workspace,
+            writable=writable,
+            readonly=readonly,
+            protected=protected,
+        )
+        stdin = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": "echo hi > notes.txt",
+                    "cwd": str(protected),
+                },
+            },
+        )
+
+        result = _run_hook_script(str(tmp_path), "PreToolUse", stdin_data=stdin)
         assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
         assert "read-only context path" in result["hookSpecificOutput"]["permissionDecisionReason"]
 

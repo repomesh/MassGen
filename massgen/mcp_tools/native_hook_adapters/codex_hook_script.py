@@ -212,12 +212,27 @@ def _matches_managed_path(path: Path, managed_path: dict[str, object]) -> bool:
 
 
 def _get_permission(path: Path, managed_paths: list[dict[str, object]]) -> str | None:
+    best_match: tuple[int, str] | None = None
     for managed_path in managed_paths:
+        protected_paths = managed_path.get("protected_paths") or []
+        if isinstance(protected_paths, list):
+            for protected_path in protected_paths:
+                protected = Path(str(protected_path)).resolve()
+                try:
+                    path.relative_to(protected)
+                    return "read"
+                except ValueError:
+                    if path == protected:
+                        return "read"
+
         if _matches_managed_path(path, managed_path):
             permission = managed_path.get("permission")
             if isinstance(permission, str):
-                return permission
-    return None
+                managed = Path(str(managed_path.get("path", ""))).resolve()
+                score = len(managed.parts)
+                if best_match is None or score > best_match[0]:
+                    best_match = (score, permission)
+    return best_match[1] if best_match else None
 
 
 def _extract_paths_from_command(command: str) -> list[str]:

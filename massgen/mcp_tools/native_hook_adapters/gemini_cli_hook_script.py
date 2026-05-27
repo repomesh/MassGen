@@ -215,10 +215,26 @@ def _matches_managed_path(path: Path, managed_path: dict) -> bool:
 
 
 def _get_permission(path: Path, managed_paths: list[dict]) -> str | None:
+    best_match: tuple[int, str] | None = None
     for managed_path in managed_paths:
+        for protected_path in managed_path.get("protected_paths") or []:
+            protected = Path(str(protected_path)).resolve()
+            try:
+                path.relative_to(protected)
+                return "read"
+            except ValueError:
+                if path == protected:
+                    return "read"
+
         if _matches_managed_path(path, managed_path):
-            return managed_path.get("permission")
-    return None
+            permission = managed_path.get("permission")
+            if not isinstance(permission, str):
+                continue
+            managed = Path(str(managed_path.get("path", ""))).resolve()
+            score = len(managed.parts)
+            if best_match is None or score > best_match[0]:
+                best_match = (score, permission)
+    return best_match[1] if best_match else None
 
 
 def _extract_file_path(tool_args: dict) -> str | None:

@@ -1028,6 +1028,18 @@ Coordination Configuration
      - string
      - No
      - Custom instruction added to agent prompts when planning mode is enabled. Should explain to agents that they should describe intended actions without executing them.
+   * - ``plan_depth``
+     - string or null
+     - No
+     - Task planning granularity for plan/spec modes. Supported values: ``dynamic``, ``shallow``, ``medium``, ``deep``. Omit or set ``null`` for runtime defaults.
+   * - ``plan_target_steps``
+     - integer or null
+     - No
+     - Optional explicit target number of tasks/steps for planning. Omit or set ``null`` for dynamic sizing.
+   * - ``plan_target_chunks``
+     - integer or null
+     - No
+     - Optional explicit target number of plan/spec chunks. Omit or set ``null`` for dynamic sizing.
    * - ``max_orchestration_restarts``
      - integer
      - No
@@ -1100,6 +1112,10 @@ Coordination Configuration
      - boolean
      - No
      - Streamline post-candidate phases so agents submit faster and iterate across rounds instead of over-polishing within a single round (default: ``false``). Only applies to ``checklist_gated`` voting sensitivity. When enabled: Phase 4 (subagent spawning for plateaued criteria) is skipped, the Substantiveness Test is replaced with a Quick Impact Check, and agents are guided to submit with Known Gaps rather than fixing everything internally. Analysis depth (Phases 1-2), verification replay, essential files manifest, and changedoc are all preserved.
+
+.. note::
+
+   Unknown keys under top-level ``orchestrator`` and nested ``orchestrator.coordination`` produce validation warnings. When running ``scripts/validate_all_configs.py --strict``, these warnings are treated as release-blocking failures so spelling mistakes do not silently change behavior.
 
 .. note::
 
@@ -1290,6 +1306,8 @@ true``). Override by setting these fields explicitly in
 
 Timeout Configuration
 ~~~~~~~~~~~~~~~~~~~~~
+
+Global runtime timeouts are configured with top-level ``timeout_settings``. Unknown keys under ``timeout_settings`` produce validation warnings, and ``scripts/validate_all_configs.py --strict`` treats those warnings as release-blocking failures.
 
 .. list-table::
    :header-rows: 1

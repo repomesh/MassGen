@@ -68,7 +68,7 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🆕 Latest Features</h3></summary>
 
-- [v0.1.81 Features](#-latest-features-v0181)
+- [v0.1.91 Features](#-latest-features-v0191)
 </details>
 
 <details open>
@@ -121,15 +121,15 @@ This project started with the "threads of thought" and "iterative refinement" id
 <details open>
 <summary><h3>🗺️ Roadmap</h3></summary>
 
-- [Recent Achievements (v0.1.90)](#recent-achievements-v0190)
-- [Previous Achievements (v0.0.3 - v0.1.89)](#previous-achievements-v003---v0189)
+- [Recent Achievements (v0.1.91)](#recent-achievements-v0191)
+- [Previous Achievements (v0.0.3 - v0.1.90)](#previous-achievements-v003---v0190)
 - [Key Future Enhancements](#key-future-enhancements)
   - Bug Fixes & Backend Improvements
   - Advanced Agent Collaboration
   - Expanded Model, Tool & Agent Integrations
   - Improved Performance & Scalability
   - Enhanced Developer Experience
-- [v0.1.91 Roadmap](#v0191-roadmap)
+- [v0.1.92 Roadmap](#v0192-roadmap)
 </details>
 
 <details open>
@@ -154,18 +154,18 @@ This project started with the "threads of thought" and "iterative refinement" id
 
 ---
 
-## 🆕 Latest Features (v0.1.90)
+## 🆕 Latest Features (v0.1.91)
 
-**🎉 Released: May 25, 2026**
+**🎉 Released: May 27, 2026**
 
-**What's New in v0.1.90:**
-- **🎯 Discriminative Criteria Pruning** - Low-signal criteria that do not distinguish agents are demoted to `stretch`, preserving the gate while reducing free-pass checks.
-- **🧠 Criterion Feedback Loop** - Checklist reasoning is carried into the next round as targeted criterion feedback, giving agents a sharper improvement gradient.
-- **⚖️ Checklist Calibration** - Position-bias counterbalancing, deterministic tie-breaks, and a unified 0-10 checklist gate make scored decisions more stable.
+**What's New in v0.1.91:**
+- **🧭 Centralized Config Wiring** - Coordination, timeout, and top-level orchestrator runtime settings now parse through single source-of-truth helpers.
+- **🔎 Config Drift Detection** - Unknown YAML keys in release-critical config surfaces now produce validation warnings, and strict config validation treats them as release blockers.
+- **🛡️ Native Hook Permission Safety** - Gemini CLI and Codex standalone hooks now apply nested protected/read-only paths before broader writable workspace rules.
 
-**Try v0.1.90 Features:**
+**Try v0.1.91 Features:**
 ```bash
-pip install massgen==0.1.90
+pip install massgen==0.1.91
 uv run massgen --config massgen/configs/features/fast_iteration.yaml "Create an svg of an AI agent coding."
 ```
 
@@ -1241,19 +1241,20 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 ⚠️ **Early Stage Notice:** As MassGen is in active development, please expect upcoming breaking architecture changes as we continue to refine and improve the system.
 
-### Recent Achievements (v0.1.90)
+### Recent Achievements (v0.1.91)
 
-**🎉 Released: May 25, 2026**
+**🎉 Released: May 27, 2026**
 
-#### Discriminative Criteria Refinements & Checklist Calibration
-- **Discriminative-Power Pruning**: Bootstrap criteria compute per-criterion score spread across agents and demote non-discriminative criteria to `stretch`
-- **Criterion Feedback Loop**: Checklist reasoning is extracted into a next-round feedback memo so agents see exactly which criterion gaps to address
-- **Position-Bias Calibration**: Candidate answer ordering is rotated per scoring agent, distributing the primacy slot and reducing self-preference
-- **Unified Checklist Gate**: `ChecklistGate.from_budget(...)` derives required-true count and confidence cutoff from one 0-10 scale
-- **Shared Score Utilities**: `massgen/score_utils.py` centralizes numeric score extraction across checklist, quality, and bootstrap paths
-- **Tests**: New coverage for discriminative pruning, criterion feedback, position-bias calibration, and shared score parsing
+#### Config Reliability & Hook Safety
+- **Centralized Config Wiring**: `CoordinationConfig.from_dict()`, `TimeoutConfig.from_dict()`, and `AgentConfig.apply_orchestrator_config()` now own their respective YAML/runtime surfaces
+- **Config Drift Detection**: Unknown coordination, orchestrator, and timeout keys produce validation warnings, and strict validation treats them as release-blocking
+- **Checklist Runtime Controls**: `max_checklist_calls_per_round` and `checklist_first_answer` now flow through the centralized orchestrator runtime helper
+- **Native Hook Permission Safety**: Gemini CLI and Codex standalone hooks enforce nested protected/read-only paths before broader writable parents
+- **Tests**: New parser/validator parity coverage and native hook regression tests guard the release-critical paths
 
-### Previous Achievements (v0.0.3 - v0.1.89)
+### Previous Achievements (v0.0.3 - v0.1.90)
+
+✅ **Discriminative Criteria Refinements & Checklist Calibration (v0.1.90)**: Improved checklist-gated refinement quality with discriminative-power pruning, per-criterion feedback, position-bias counterbalancing, deterministic tie-breaking, a unified checklist gate, shared score parsing utilities, and fast-iteration config updates.
 
 ✅ **Antigravity CLI Full Integration & Hardening (v0.1.89)**: Completed the follow-up Antigravity integration pass with workflow-mode parity, auth checks, workspace project anchoring, standalone `hooks.json`, and prompt affordance gating.
 
@@ -1578,9 +1579,9 @@ MassGen is currently in its foundational stage, with a focus on parallel, asynch
 
 We welcome community contributions to achieve these goals.
 
-### v0.1.91 Roadmap
+### v0.1.92 Roadmap
 
-Version 0.1.91 picks up the multimodal work deferred from v0.1.86-v0.1.90 and continues provider-parity work:
+Version 0.1.92 picks up the image/video edit work deferred from v0.1.86-v0.1.91 and continues multimodal provider-parity work:
 
 #### Planned Features
 - **Image/Video Edit Capabilities** ([#959](https://github.com/massgen/MassGen/issues/959)): Image and video editing across providers with multi-turn editing workflows via continuation IDs
