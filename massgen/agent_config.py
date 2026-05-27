@@ -9,7 +9,7 @@ deprecated patterns. Update to reflect current backend architecture.
 import copy
 import logging
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import TYPE_CHECKING, Any, Optional
 
 from .evaluation_criteria_generator import EvaluationCriteriaGeneratorConfig
@@ -57,6 +57,22 @@ class TimeoutConfig:
     subsequent_round_timeout_seconds: int | None = None  # None = disabled
     round_timeout_grace_seconds: int = 120  # Grace period before hard block
 
+    @classmethod
+    def yaml_timeout_keys(cls) -> set[str]:
+        """Top-level timeout_settings keys accepted from YAML."""
+        return {field.name for field in fields(cls)}
+
+    @staticmethod
+    def _as_dict(value: Any) -> dict[str, Any]:
+        return value if isinstance(value, dict) else {}
+
+    @classmethod
+    def from_dict(cls, timeout_settings: dict[str, Any] | None) -> "TimeoutConfig":
+        """Parse a timeout_settings YAML dictionary into a TimeoutConfig."""
+        timeout_settings = cls._as_dict(timeout_settings)
+        timeout_kwargs = {key: timeout_settings[key] for key in cls.yaml_timeout_keys() if key in timeout_settings}
+        return cls(**timeout_kwargs)
+
 
 @dataclass
 class PromptImproverConfig:
@@ -68,6 +84,9 @@ class PromptImproverConfig:
 
     enabled: bool = False
     persist_across_turns: bool = False
+
+
+_STANDALONE_CHECKPOINT_VALID_MODES = ("generate", "verify")
 
 
 @dataclass
@@ -289,6 +308,273 @@ class CoordinationConfig:
     max_verifications_per_round: int | None = None  # None = unlimited; e.g. 1 = one verify pass then submit
     max_internal_fix_loops: int | None = None  # None = unlimited; 0 = no fix-after-verify loops within a round
     skip_redundant_scaffolding: bool = False  # When True + scaffolding files exist, prompt agents to continue instead of recreating
+
+    @classmethod
+    def yaml_coordination_keys(cls) -> set[str]:
+        """Top-level YAML keys that map directly to CoordinationConfig fields."""
+        return {
+            "enable_planning_mode",
+            "planning_mode_instruction",
+            "plan_depth",
+            "plan_target_steps",
+            "plan_target_chunks",
+            "max_orchestration_restarts",
+            "enable_agent_task_planning",
+            "max_tasks_per_plan",
+            "broadcast",
+            "broadcast_sensitivity",
+            "response_depth",
+            "broadcast_timeout",
+            "broadcast_wait_by_default",
+            "max_broadcasts_per_agent",
+            "task_planning_filesystem_mode",
+            "enable_memory_filesystem_mode",
+            "learning_capture_mode",
+            "disable_final_only_round_capture_fallback",
+            "compression_target_ratio",
+            "use_skills",
+            "massgen_skills",
+            "skills_directory",
+            "load_previous_session_skills",
+            "persona_generator",
+            "evaluation_criteria_generator",
+            "prompt_improver",
+            "pre_collab_voting_threshold",
+            "enable_subagents",
+            "subagent_default_timeout",
+            "subagent_min_timeout",
+            "subagent_max_timeout",
+            "subagent_max_concurrent",
+            "subagent_round_timeouts",
+            "subagent_runtime_mode",
+            "subagent_runtime_fallback_mode",
+            "subagent_host_launch_prefix",
+            "subagent_orchestrator",
+            "background_subagents",
+            "use_two_tier_workspace",
+            "task_decomposer",
+            "write_mode",
+            "enable_changedoc",
+            "drift_conflict_policy",
+            "subagent_types",
+            "round_evaluator_before_checklist",
+            "orchestrator_managed_round_evaluator",
+            "round_evaluator_skip_synthesis",
+            "round_evaluator_refine",
+            "round_evaluator_transformation_pressure",
+            "enable_quality_rethink_on_iteration",
+            "enable_novelty_on_iteration",
+            "enable_execution_trace_analyzer",
+            "auto_trace_analysis",
+            "evolving_criteria",
+            "evolving_criteria_score_threshold",
+            "evolving_criteria_max_evolutions",
+            "evolving_criteria_min_high_score_count",
+            "evolving_criteria_timeout",
+            "enable_evaluator_personas",
+            "novelty_injection",
+            "improvements",
+            "checklist_criteria_preset",
+            "checklist_criteria_inline",
+            "criteria_mode",
+            "bootstrap_max_per_agent_per_round",
+            "bootstrap_max_total",
+            "resume_from_log",
+            "checkpoint_enabled",
+            "checkpoint_mode",
+            "checkpoint_guidance",
+            "checkpoint_gated_patterns",
+            "web_review",
+            "fast_iteration_mode",
+            "max_verifications_per_round",
+            "max_internal_fix_loops",
+            "skip_redundant_scaffolding",
+        }
+
+    @classmethod
+    def nested_coordination_field_aliases(cls) -> dict[str, set[str]]:
+        """Nested YAML keys that populate flattened CoordinationConfig fields."""
+        return {
+            "standalone_checkpoint": {
+                "standalone_checkpoint_enabled",
+                "standalone_checkpoint_team_config",
+                "standalone_checkpoint_mode",
+                "standalone_checkpoint_single",
+                "standalone_checkpoint_include_workspace_context",
+            },
+        }
+
+    @classmethod
+    def non_yaml_coordination_fields(cls) -> set[str]:
+        """CoordinationConfig fields that are intentionally not YAML-addressable."""
+        return set()
+
+    @classmethod
+    def valid_coordination_keys(cls) -> set[str]:
+        """All top-level keys accepted under orchestrator.coordination."""
+        return cls.yaml_coordination_keys() | set(cls.nested_coordination_field_aliases())
+
+    @staticmethod
+    def _as_dict(value: Any) -> dict[str, Any]:
+        return value if isinstance(value, dict) else {}
+
+    @classmethod
+    def _parse_standalone_checkpoint(cls, raw: Any) -> dict[str, Any]:
+        raw = cls._as_dict(raw)
+        mode = raw.get("mode", "generate")
+        if mode not in _STANDALONE_CHECKPOINT_VALID_MODES:
+            from loguru import logger as loguru_logger
+
+            loguru_logger.warning(
+                f"[StandaloneCheckpoint] coordination.standalone_checkpoint.mode={mode!r} " f"is not in {_STANDALONE_CHECKPOINT_VALID_MODES}; falling back to 'generate'",
+            )
+            mode = "generate"
+        return {
+            "standalone_checkpoint_enabled": bool(raw.get("enabled", False)),
+            "standalone_checkpoint_team_config": raw.get("team_config"),
+            "standalone_checkpoint_mode": mode,
+            "standalone_checkpoint_single": bool(raw.get("single_checkpoint", False)),
+            "standalone_checkpoint_include_workspace_context": bool(
+                raw.get("include_workspace_context", False),
+            ),
+        }
+
+    @classmethod
+    def from_dict(cls, coord_cfg: dict[str, Any] | None) -> "CoordinationConfig":
+        """Parse a coordination YAML dictionary into a CoordinationConfig."""
+        from .subagent.models import SubagentOrchestratorConfig
+
+        coord_cfg = cls._as_dict(coord_cfg)
+
+        persona_generator_config = PersonaGeneratorConfig()
+        if "persona_generator" in coord_cfg:
+            pg_cfg = cls._as_dict(coord_cfg["persona_generator"])
+            persona_generator_config = PersonaGeneratorConfig(
+                enabled=pg_cfg.get("enabled", False),
+                diversity_mode=pg_cfg.get("diversity_mode", "perspective"),
+                persona_guidelines=pg_cfg.get("persona_guidelines"),
+                persist_across_turns=pg_cfg.get("persist_across_turns", False),
+                after_first_answer=pg_cfg.get("after_first_answer", "drop"),
+            )
+
+        eval_criteria_config = EvaluationCriteriaGeneratorConfig()
+        if "evaluation_criteria_generator" in coord_cfg:
+            ec_cfg = cls._as_dict(coord_cfg["evaluation_criteria_generator"])
+            eval_criteria_config = EvaluationCriteriaGeneratorConfig(
+                enabled=ec_cfg.get("enabled", False),
+                persist_across_turns=ec_cfg.get("persist_across_turns", False),
+                min_criteria=ec_cfg.get("min_criteria", 4),
+                max_criteria=ec_cfg.get("max_criteria", 10),
+            )
+
+        prompt_improver_config = PromptImproverConfig()
+        if "prompt_improver" in coord_cfg:
+            pi_cfg = cls._as_dict(coord_cfg["prompt_improver"])
+            prompt_improver_config = PromptImproverConfig(
+                enabled=pi_cfg.get("enabled", False),
+                persist_across_turns=pi_cfg.get("persist_across_turns", False),
+            )
+
+        task_decomposer_config = TaskDecomposerConfig()
+        if "task_decomposer" in coord_cfg:
+            td_cfg = cls._as_dict(coord_cfg["task_decomposer"])
+            task_decomposer_config = TaskDecomposerConfig(
+                enabled=td_cfg.get("enabled", True),
+                decomposition_guidelines=td_cfg.get("decomposition_guidelines"),
+                timeout_seconds=td_cfg.get("timeout_seconds", 300),
+            )
+
+        subagent_orchestrator_config = None
+        if "subagent_orchestrator" in coord_cfg and coord_cfg["subagent_orchestrator"] is not None:
+            subagent_orchestrator_config = SubagentOrchestratorConfig.from_dict(
+                cls._as_dict(coord_cfg["subagent_orchestrator"]),
+            )
+
+        return cls(
+            enable_planning_mode=coord_cfg.get("enable_planning_mode", False),
+            planning_mode_instruction=coord_cfg.get(
+                "planning_mode_instruction",
+                "During coordination, describe what you would do without actually executing actions. Only provide concrete implementation details without calling external APIs or tools.",
+            ),
+            plan_depth=coord_cfg.get("plan_depth"),
+            plan_target_steps=coord_cfg.get("plan_target_steps"),
+            plan_target_chunks=coord_cfg.get("plan_target_chunks"),
+            max_orchestration_restarts=coord_cfg.get("max_orchestration_restarts", 0),
+            enable_agent_task_planning=coord_cfg.get("enable_agent_task_planning", False),
+            max_tasks_per_plan=coord_cfg.get("max_tasks_per_plan", 10),
+            broadcast=coord_cfg.get("broadcast", False),
+            broadcast_sensitivity=coord_cfg.get("broadcast_sensitivity", "medium"),
+            response_depth=coord_cfg.get("response_depth", "medium"),
+            broadcast_timeout=coord_cfg.get("broadcast_timeout", 300),
+            broadcast_wait_by_default=coord_cfg.get("broadcast_wait_by_default", True),
+            max_broadcasts_per_agent=coord_cfg.get("max_broadcasts_per_agent", 10),
+            task_planning_filesystem_mode=coord_cfg.get("task_planning_filesystem_mode", False),
+            enable_memory_filesystem_mode=coord_cfg.get("enable_memory_filesystem_mode", False),
+            learning_capture_mode=coord_cfg.get("learning_capture_mode", "round"),
+            disable_final_only_round_capture_fallback=coord_cfg.get(
+                "disable_final_only_round_capture_fallback",
+                False,
+            ),
+            compression_target_ratio=coord_cfg.get("compression_target_ratio", 0.20),
+            use_skills=coord_cfg.get("use_skills", False),
+            massgen_skills=coord_cfg.get("massgen_skills", []),
+            skills_directory=coord_cfg.get("skills_directory", ".agent/skills"),
+            load_previous_session_skills=coord_cfg.get("load_previous_session_skills", False),
+            persona_generator=persona_generator_config,
+            evaluation_criteria_generator=eval_criteria_config,
+            prompt_improver=prompt_improver_config,
+            pre_collab_voting_threshold=coord_cfg.get("pre_collab_voting_threshold"),
+            enable_subagents=coord_cfg.get("enable_subagents", False),
+            subagent_default_timeout=coord_cfg.get("subagent_default_timeout", 300),
+            subagent_min_timeout=coord_cfg.get("subagent_min_timeout", 60),
+            subagent_max_timeout=coord_cfg.get("subagent_max_timeout", 600),
+            subagent_max_concurrent=coord_cfg.get("subagent_max_concurrent", 3),
+            subagent_round_timeouts=coord_cfg.get("subagent_round_timeouts"),
+            subagent_runtime_mode=coord_cfg.get("subagent_runtime_mode", "isolated"),
+            subagent_runtime_fallback_mode=coord_cfg.get("subagent_runtime_fallback_mode"),
+            subagent_host_launch_prefix=coord_cfg.get("subagent_host_launch_prefix"),
+            subagent_orchestrator=subagent_orchestrator_config,
+            background_subagents=coord_cfg.get("background_subagents"),
+            use_two_tier_workspace=coord_cfg.get("use_two_tier_workspace", False),
+            task_decomposer=task_decomposer_config,
+            write_mode=coord_cfg.get("write_mode"),
+            drift_conflict_policy=coord_cfg.get("drift_conflict_policy", "skip"),
+            enable_changedoc=coord_cfg.get("enable_changedoc", True),
+            subagent_types=coord_cfg.get("subagent_types"),
+            round_evaluator_before_checklist=coord_cfg.get("round_evaluator_before_checklist", False),
+            orchestrator_managed_round_evaluator=coord_cfg.get("orchestrator_managed_round_evaluator", False),
+            round_evaluator_skip_synthesis=coord_cfg.get("round_evaluator_skip_synthesis", False),
+            round_evaluator_refine=coord_cfg.get("round_evaluator_refine", False),
+            round_evaluator_transformation_pressure=coord_cfg.get("round_evaluator_transformation_pressure", "balanced"),
+            enable_execution_trace_analyzer=coord_cfg.get("enable_execution_trace_analyzer", False),
+            auto_trace_analysis=coord_cfg.get("auto_trace_analysis", False),
+            evolving_criteria=coord_cfg.get("evolving_criteria", False),
+            evolving_criteria_score_threshold=coord_cfg.get("evolving_criteria_score_threshold", 8),
+            evolving_criteria_max_evolutions=coord_cfg.get("evolving_criteria_max_evolutions", 2),
+            evolving_criteria_min_high_score_count=coord_cfg.get("evolving_criteria_min_high_score_count", 2),
+            evolving_criteria_timeout=coord_cfg.get("evolving_criteria_timeout", 300),
+            enable_evaluator_personas=coord_cfg.get("enable_evaluator_personas", False),
+            enable_quality_rethink_on_iteration=coord_cfg.get("enable_quality_rethink_on_iteration", False),
+            enable_novelty_on_iteration=coord_cfg.get("enable_novelty_on_iteration", False),
+            novelty_injection=coord_cfg.get("novelty_injection", "none"),
+            improvements=coord_cfg.get("improvements", {}) or {},
+            checklist_criteria_preset=coord_cfg.get("checklist_criteria_preset"),
+            checklist_criteria_inline=coord_cfg.get("checklist_criteria_inline"),
+            resume_from_log=coord_cfg.get("resume_from_log"),
+            checkpoint_enabled=coord_cfg.get("checkpoint_enabled", False),
+            checkpoint_mode=coord_cfg.get("checkpoint_mode", "conversation"),
+            checkpoint_guidance=coord_cfg.get("checkpoint_guidance", ""),
+            checkpoint_gated_patterns=coord_cfg.get("checkpoint_gated_patterns", []),
+            **cls._parse_standalone_checkpoint(coord_cfg.get("standalone_checkpoint", {})),
+            web_review=coord_cfg.get("web_review", False),
+            fast_iteration_mode=coord_cfg.get("fast_iteration_mode", False),
+            max_verifications_per_round=coord_cfg.get("max_verifications_per_round"),
+            max_internal_fix_loops=coord_cfg.get("max_internal_fix_loops"),
+            skip_redundant_scaffolding=coord_cfg.get("skip_redundant_scaffolding", False),
+            criteria_mode=coord_cfg.get("criteria_mode", "static"),
+            bootstrap_max_per_agent_per_round=coord_cfg.get("bootstrap_max_per_agent_per_round", 3),
+            bootstrap_max_total=coord_cfg.get("bootstrap_max_total", 30),
+        )
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -567,6 +853,105 @@ class AgentConfig:
     enable_nlip: bool = False
     nlip_config: dict[str, Any] | None = None
     _nlip_router: Any = field(default=None, init=False, repr=False)
+
+    @classmethod
+    def orchestrator_runtime_direct_fields(cls) -> tuple[str, ...]:
+        """Orchestrator YAML keys copied directly to AgentConfig runtime fields."""
+        return (
+            "voting_sensitivity",
+            "voting_threshold",
+            "max_new_answers_per_agent",
+            "max_new_answers_global",
+            "answer_novelty_requirement",
+            "fairness_enabled",
+            "fairness_lead_cap_answers",
+            "max_midstream_injections_per_round",
+            "defer_peer_updates_until_restart",
+            "allow_midstream_peer_updates_before_checklist_submit",
+            "defer_voting_until_all_answered",
+            "coordination_mode",
+            "presenter_agent",
+            "final_answer_strategy",
+            "max_checklist_calls_per_round",
+            "checklist_first_answer",
+        )
+
+    @classmethod
+    def orchestrator_runtime_bool_fields(cls) -> tuple[str, ...]:
+        """Orchestrator YAML keys coerced to booleans for legacy compatibility."""
+        return (
+            "skip_final_presentation",
+            "skip_voting",
+            "disable_injection",
+            "skip_coordination_rounds",
+        )
+
+    @classmethod
+    def orchestrator_runtime_keys(cls) -> set[str]:
+        """Top-level orchestrator keys that affect AgentConfig runtime behavior."""
+        return (
+            set(cls.orchestrator_runtime_direct_fields())
+            | set(cls.orchestrator_runtime_bool_fields())
+            | {
+                "checklist_require_gap_report",
+                "gap_report_mode",
+                "debug_final_answer",
+            }
+        )
+
+    @classmethod
+    def non_runtime_orchestrator_keys(cls) -> set[str]:
+        """Top-level orchestrator keys handled outside AgentConfig runtime fields."""
+        return {
+            "agent_temporary_workspace",
+            "audio_generation_backend",
+            "context_paths",
+            "coordination",
+            "docker",
+            "dspy",
+            "enable_multimodal_tools",
+            "enable_nlip",
+            "image_generation_backend",
+            "interactive_mode",
+            "max_orchestration_restarts",
+            "max_turns",
+            "multimodal_config",
+            "nlip",
+            "nlip_config",
+            "skills_directory",
+            "snapshot_storage",
+            "timeout",
+            "type",
+            "video_generation_backend",
+        }
+
+    @classmethod
+    def valid_orchestrator_keys(cls) -> set[str]:
+        """All top-level keys accepted under orchestrator."""
+        return cls.orchestrator_runtime_keys() | cls.non_runtime_orchestrator_keys()
+
+    def apply_orchestrator_config(self, orchestrator_cfg: dict[str, Any] | None) -> None:
+        """Apply orchestrator-level runtime params from YAML onto this config."""
+        if not orchestrator_cfg:
+            return
+
+        for field_name in self.orchestrator_runtime_direct_fields():
+            if field_name in orchestrator_cfg:
+                setattr(self, field_name, orchestrator_cfg[field_name])
+
+        if "checklist_require_gap_report" in orchestrator_cfg:
+            self.checklist_require_gap_report = orchestrator_cfg["checklist_require_gap_report"]
+        if "gap_report_mode" in orchestrator_cfg:
+            self.gap_report_mode = orchestrator_cfg["gap_report_mode"]
+        elif "checklist_require_gap_report" in orchestrator_cfg:
+            self.gap_report_mode = "separate" if orchestrator_cfg["checklist_require_gap_report"] else "none"
+
+        if orchestrator_cfg.get("debug_final_answer"):
+            self.debug_final_answer = orchestrator_cfg["debug_final_answer"]
+
+        for bool_field in self.orchestrator_runtime_bool_fields():
+            if bool_field in orchestrator_cfg:
+                setattr(self, bool_field, bool(orchestrator_cfg[bool_field]))
 
     @property
     def custom_system_instruction(self) -> str | None:
@@ -1329,7 +1714,7 @@ class AgentConfig:
         timeout_config = TimeoutConfig()
         timeout_data = data.get("timeout_config", {})
         if timeout_data:
-            timeout_config = TimeoutConfig(**timeout_data)
+            timeout_config = TimeoutConfig.from_dict(timeout_data)
 
         # Handle coordination_config
         coordination_config = CoordinationConfig()

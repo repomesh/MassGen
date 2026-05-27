@@ -453,42 +453,7 @@ def _apply_orchestrator_runtime_params(
     orchestrator_cfg: dict[str, Any] | None,
 ) -> None:
     """Apply orchestrator-level runtime params from config onto an AgentConfig."""
-    if not orchestrator_cfg:
-        return
-
-    direct_fields = (
-        "voting_sensitivity",
-        "voting_threshold",
-        "max_new_answers_per_agent",
-        "max_new_answers_global",
-        "answer_novelty_requirement",
-        "fairness_enabled",
-        "fairness_lead_cap_answers",
-        "max_midstream_injections_per_round",
-        "defer_peer_updates_until_restart",
-        "allow_midstream_peer_updates_before_checklist_submit",
-        "defer_voting_until_all_answered",
-        "coordination_mode",
-        "presenter_agent",
-        "final_answer_strategy",
-    )
-    for field_name in direct_fields:
-        if field_name in orchestrator_cfg:
-            setattr(orchestrator_config, field_name, orchestrator_cfg[field_name])
-
-    if "checklist_require_gap_report" in orchestrator_cfg:
-        orchestrator_config.checklist_require_gap_report = orchestrator_cfg["checklist_require_gap_report"]
-    if "gap_report_mode" in orchestrator_cfg:
-        orchestrator_config.gap_report_mode = orchestrator_cfg["gap_report_mode"]
-    elif "checklist_require_gap_report" in orchestrator_cfg and "gap_report_mode" not in orchestrator_cfg:
-        orchestrator_config.gap_report_mode = "separate" if orchestrator_cfg["checklist_require_gap_report"] else "none"
-
-    if orchestrator_cfg.get("debug_final_answer"):
-        orchestrator_config.debug_final_answer = orchestrator_cfg["debug_final_answer"]
-
-    for bool_field in ("skip_final_presentation", "skip_voting", "disable_injection", "skip_coordination_rounds"):
-        if bool_field in orchestrator_cfg:
-            setattr(orchestrator_config, bool_field, bool(orchestrator_cfg[bool_field]))
+    orchestrator_config.apply_orchestrator_config(orchestrator_cfg)
 
 
 def _is_planning_turn(
@@ -3556,9 +3521,6 @@ def _build_cli_overrides_dict(args: argparse.Namespace) -> dict[str, Any]:
     return overrides
 
 
-_STANDALONE_CHECKPOINT_VALID_MODES = ("generate", "verify")
-
-
 def _parse_standalone_checkpoint(raw: dict[str, Any]) -> dict[str, Any]:
     """Parse the `coordination.standalone_checkpoint` block into kwargs.
 
@@ -3568,23 +3530,9 @@ def _parse_standalone_checkpoint(raw: dict[str, Any]) -> dict[str, Any]:
     surfacing to the user. The fallback (rather than raising) keeps malformed
     configs forgiving at parse time.
     """
-    if not isinstance(raw, dict):
-        raw = {}
-    mode = raw.get("mode", "generate")
-    if mode not in _STANDALONE_CHECKPOINT_VALID_MODES:
-        logger.warning(
-            f"[StandaloneCheckpoint] coordination.standalone_checkpoint.mode={mode!r} " f"is not in {_STANDALONE_CHECKPOINT_VALID_MODES}; falling back to 'generate'",
-        )
-        mode = "generate"
-    return {
-        "standalone_checkpoint_enabled": bool(raw.get("enabled", False)),
-        "standalone_checkpoint_team_config": raw.get("team_config"),
-        "standalone_checkpoint_mode": mode,
-        "standalone_checkpoint_single": bool(raw.get("single_checkpoint", False)),
-        "standalone_checkpoint_include_workspace_context": bool(
-            raw.get("include_workspace_context", False),
-        ),
-    }
+    from .agent_config import CoordinationConfig
+
+    return CoordinationConfig._parse_standalone_checkpoint(raw)
 
 
 def _parse_coordination_config(coord_cfg: dict[str, Any]) -> "CoordinationConfig":
@@ -3593,140 +3541,14 @@ def _parse_coordination_config(coord_cfg: dict[str, Any]) -> "CoordinationConfig
     Centralizes the parsing logic used by run_question_with_history,
     run_single_question, and run_textual_interactive_mode.
     """
-    from .agent_config import CoordinationConfig, PromptImproverConfig
-    from .evaluation_criteria_generator import EvaluationCriteriaGeneratorConfig
-    from .persona_generator import PersonaGeneratorConfig
-    from .subagent.models import SubagentOrchestratorConfig
-    from .task_decomposer import TaskDecomposerConfig
+    from .agent_config import CoordinationConfig
 
-    # Parse persona_generator config if present
-    persona_generator_config = PersonaGeneratorConfig()
-    if "persona_generator" in coord_cfg:
-        pg_cfg = coord_cfg["persona_generator"]
-        persona_generator_config = PersonaGeneratorConfig(
-            enabled=pg_cfg.get("enabled", False),
-            diversity_mode=pg_cfg.get("diversity_mode", "perspective"),
-            persona_guidelines=pg_cfg.get("persona_guidelines"),
-            persist_across_turns=pg_cfg.get("persist_across_turns", False),
-            after_first_answer=pg_cfg.get("after_first_answer", "drop"),
-        )
+    return CoordinationConfig.from_dict(coord_cfg)
 
-    # Parse evaluation_criteria_generator config if present
-    eval_criteria_config = EvaluationCriteriaGeneratorConfig()
-    if "evaluation_criteria_generator" in coord_cfg:
-        ec_cfg = coord_cfg["evaluation_criteria_generator"]
-        eval_criteria_config = EvaluationCriteriaGeneratorConfig(
-            enabled=ec_cfg.get("enabled", False),
-            persist_across_turns=ec_cfg.get("persist_across_turns", False),
-            min_criteria=ec_cfg.get("min_criteria", 4),
-            max_criteria=ec_cfg.get("max_criteria", 10),
-        )
 
-    # Parse prompt_improver config if present
-    prompt_improver_config = PromptImproverConfig()
-    if "prompt_improver" in coord_cfg:
-        pi_cfg = coord_cfg["prompt_improver"]
-        prompt_improver_config = PromptImproverConfig(
-            enabled=pi_cfg.get("enabled", False),
-            persist_across_turns=pi_cfg.get("persist_across_turns", False),
-        )
-
-    # Parse task_decomposer config if present
-    task_decomposer_config = TaskDecomposerConfig()
-    if "task_decomposer" in coord_cfg:
-        td_cfg = coord_cfg["task_decomposer"]
-        task_decomposer_config = TaskDecomposerConfig(
-            enabled=td_cfg.get("enabled", True),
-            decomposition_guidelines=td_cfg.get("decomposition_guidelines"),
-            timeout_seconds=td_cfg.get("timeout_seconds", 300),
-        )
-
-    # Parse subagent_orchestrator config if present
-    subagent_orchestrator_config = None
-    if "subagent_orchestrator" in coord_cfg:
-        so_cfg = coord_cfg["subagent_orchestrator"]
-        subagent_orchestrator_config = SubagentOrchestratorConfig.from_dict(so_cfg)
-
-    return CoordinationConfig(
-        enable_planning_mode=coord_cfg.get("enable_planning_mode", False),
-        planning_mode_instruction=coord_cfg.get(
-            "planning_mode_instruction",
-            "During coordination, describe what you would do without actually executing actions. Only provide concrete implementation details without calling external APIs or tools.",
-        ),
-        max_orchestration_restarts=coord_cfg.get("max_orchestration_restarts", 0),
-        enable_agent_task_planning=coord_cfg.get("enable_agent_task_planning", False),
-        max_tasks_per_plan=coord_cfg.get("max_tasks_per_plan", 10),
-        broadcast=coord_cfg.get("broadcast", False),
-        broadcast_sensitivity=coord_cfg.get("broadcast_sensitivity", "medium"),
-        response_depth=coord_cfg.get("response_depth", "medium"),
-        broadcast_timeout=coord_cfg.get("broadcast_timeout", 300),
-        broadcast_wait_by_default=coord_cfg.get("broadcast_wait_by_default", True),
-        max_broadcasts_per_agent=coord_cfg.get("max_broadcasts_per_agent", 10),
-        task_planning_filesystem_mode=coord_cfg.get("task_planning_filesystem_mode", False),
-        enable_memory_filesystem_mode=coord_cfg.get("enable_memory_filesystem_mode", False),
-        learning_capture_mode=coord_cfg.get("learning_capture_mode", "round"),
-        disable_final_only_round_capture_fallback=coord_cfg.get(
-            "disable_final_only_round_capture_fallback",
-            False,
-        ),
-        compression_target_ratio=coord_cfg.get("compression_target_ratio", 0.20),
-        use_skills=coord_cfg.get("use_skills", False),
-        massgen_skills=coord_cfg.get("massgen_skills", []),
-        skills_directory=coord_cfg.get("skills_directory", ".agent/skills"),
-        load_previous_session_skills=coord_cfg.get("load_previous_session_skills", False),
-        persona_generator=persona_generator_config,
-        evaluation_criteria_generator=eval_criteria_config,
-        prompt_improver=prompt_improver_config,
-        pre_collab_voting_threshold=coord_cfg.get("pre_collab_voting_threshold"),
-        enable_subagents=coord_cfg.get("enable_subagents", False),
-        subagent_default_timeout=coord_cfg.get("subagent_default_timeout", 300),
-        subagent_max_concurrent=coord_cfg.get("subagent_max_concurrent", 3),
-        subagent_round_timeouts=coord_cfg.get("subagent_round_timeouts"),
-        subagent_runtime_mode=coord_cfg.get("subagent_runtime_mode", "isolated"),
-        subagent_runtime_fallback_mode=coord_cfg.get("subagent_runtime_fallback_mode"),
-        subagent_host_launch_prefix=coord_cfg.get("subagent_host_launch_prefix"),
-        subagent_orchestrator=subagent_orchestrator_config,
-        background_subagents=coord_cfg.get("background_subagents"),
-        use_two_tier_workspace=coord_cfg.get("use_two_tier_workspace", False),
-        task_decomposer=task_decomposer_config,
-        write_mode=coord_cfg.get("write_mode"),
-        drift_conflict_policy=coord_cfg.get("drift_conflict_policy", "skip"),
-        enable_changedoc=coord_cfg.get("enable_changedoc", True),
-        subagent_types=coord_cfg.get("subagent_types"),
-        round_evaluator_before_checklist=coord_cfg.get("round_evaluator_before_checklist", False),
-        orchestrator_managed_round_evaluator=coord_cfg.get("orchestrator_managed_round_evaluator", False),
-        round_evaluator_skip_synthesis=coord_cfg.get("round_evaluator_skip_synthesis", False),
-        round_evaluator_refine=coord_cfg.get("round_evaluator_refine", False),
-        round_evaluator_transformation_pressure=coord_cfg.get("round_evaluator_transformation_pressure", "balanced"),
-        enable_execution_trace_analyzer=coord_cfg.get("enable_execution_trace_analyzer", False),
-        auto_trace_analysis=coord_cfg.get("auto_trace_analysis", False),
-        evolving_criteria=coord_cfg.get("evolving_criteria", False),
-        evolving_criteria_score_threshold=coord_cfg.get("evolving_criteria_score_threshold", 8),
-        evolving_criteria_max_evolutions=coord_cfg.get("evolving_criteria_max_evolutions", 2),
-        evolving_criteria_min_high_score_count=coord_cfg.get("evolving_criteria_min_high_score_count", 2),
-        evolving_criteria_timeout=coord_cfg.get("evolving_criteria_timeout", 300),
-        enable_evaluator_personas=coord_cfg.get("enable_evaluator_personas", False),
-        enable_quality_rethink_on_iteration=coord_cfg.get("enable_quality_rethink_on_iteration", False),
-        enable_novelty_on_iteration=coord_cfg.get("enable_novelty_on_iteration", False),
-        novelty_injection=coord_cfg.get("novelty_injection", "none"),
-        improvements=coord_cfg.get("improvements", {}) or {},
-        checklist_criteria_preset=coord_cfg.get("checklist_criteria_preset"),
-        checklist_criteria_inline=coord_cfg.get("checklist_criteria_inline"),
-        resume_from_log=coord_cfg.get("resume_from_log"),
-        checkpoint_enabled=coord_cfg.get("checkpoint_enabled", False),
-        checkpoint_mode=coord_cfg.get("checkpoint_mode", "conversation"),
-        checkpoint_guidance=coord_cfg.get("checkpoint_guidance", ""),
-        checkpoint_gated_patterns=coord_cfg.get("checkpoint_gated_patterns", []),
-        **_parse_standalone_checkpoint(coord_cfg.get("standalone_checkpoint", {})),
-        web_review=coord_cfg.get("web_review", False),
-        fast_iteration_mode=coord_cfg.get("fast_iteration_mode", False),
-        max_verifications_per_round=coord_cfg.get("max_verifications_per_round"),
-        max_internal_fix_loops=coord_cfg.get("max_internal_fix_loops"),
-        skip_redundant_scaffolding=coord_cfg.get("skip_redundant_scaffolding", False),
-        criteria_mode=coord_cfg.get("criteria_mode", "static"),
-        bootstrap_max_per_agent_per_round=coord_cfg.get("bootstrap_max_per_agent_per_round", 3),
-        bootstrap_max_total=coord_cfg.get("bootstrap_max_total", 30),
-    )
+def _parse_timeout_config(timeout_settings: dict[str, Any] | None) -> TimeoutConfig:
+    """Parse top-level timeout_settings into a TimeoutConfig object."""
+    return TimeoutConfig.from_dict(timeout_settings)
 
 
 def inject_prompt_context_paths(
@@ -10121,7 +9943,7 @@ async def main(args):
 
         # Create timeout config from settings and put it in kwargs
         timeout_settings = config.get("timeout_settings", {})
-        timeout_config = TimeoutConfig(**timeout_settings) if timeout_settings else TimeoutConfig()
+        timeout_config = _parse_timeout_config(timeout_settings)
 
         kwargs = {
             "timeout_config": timeout_config,
@@ -10218,8 +10040,7 @@ async def main(args):
             # Build orchestrator config (mirrors the normal path)
             orchestrator_config = AgentConfig()
             timeout_settings = config.get("timeout_settings", {})
-            if timeout_settings:
-                orchestrator_config.timeout_config = TimeoutConfig(**timeout_settings)
+            orchestrator_config.timeout_config = _parse_timeout_config(timeout_settings)
             _apply_orchestrator_runtime_params(orchestrator_config, orchestrator_cfg)
             if "coordination" in orchestrator_cfg:
                 orchestrator_config.coordination_config = _parse_coordination_config(

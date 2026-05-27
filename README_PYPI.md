@@ -1583,6 +1583,8 @@ We welcome community contributions to achieve these goals.
 Version 0.1.91 picks up the multimodal work deferred from v0.1.86-v0.1.90 and continues provider-parity work:
 
 #### Planned Features
+- **Config Reliability**: Centralized parsing and strict validation for coordination, timeout, and orchestrator runtime settings so release configs catch typos and parser drift before runtime
+- **Native Hook Permission Safety**: Hardening for standalone hook scripts so protected and nested read-only paths cannot be masked by broader writable parent paths
 - **Image/Video Edit Capabilities** ([#959](https://github.com/massgen/MassGen/issues/959)): Image and video editing across providers with multi-turn editing workflows via continuation IDs
 
 ---

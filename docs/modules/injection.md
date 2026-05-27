@@ -143,7 +143,7 @@ Claude Code SDK has native `PreToolUse` and `PostToolUse` hook support via `Hook
 3. `HookResult` is converted to SDK format:
    - Deny → `{"hookSpecificOutput": {"permissionDecision": "deny", ...}}`
    - Modified input → `{"hookSpecificOutput": {"updatedInput": {...}}}`
-   - Injection → `{"hookSpecificOutput": {"modifiedOutput": "..."}}`
+   - Injection → `{"hookSpecificOutput": {"additionalContext": "..."}}`
 4. Permission hooks (from filesystem manager) and MassGen hooks are merged via `merge_native_configs()`
 5. The merged config is passed to `ClaudeAgentOptions(hooks=config)`
 

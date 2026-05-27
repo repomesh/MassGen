@@ -88,6 +88,87 @@ class TestConfigValidator:
         assert result.is_valid()
         assert not result.has_errors()
 
+    def test_unknown_coordination_key_warns(self):
+        """Typos under orchestrator.coordination should be visible."""
+        config = {
+            "agent": {
+                "id": "test-agent",
+                "backend": {"type": "openai", "model": "gpt-4o"},
+            },
+            "orchestrator": {
+                "coordination": {
+                    "fast_interation_mode": True,
+                },
+            },
+        }
+
+        validator = ConfigValidator()
+        result = validator.validate_config(config)
+
+        assert result.is_valid()
+        assert any("Unknown coordination config key" in warning.message for warning in result.warnings)
+        assert any(warning.location == "orchestrator.coordination.fast_interation_mode" for warning in result.warnings)
+
+    def test_unknown_orchestrator_key_warns(self):
+        """Typos under orchestrator should be visible."""
+        config = {
+            "agent": {
+                "id": "test-agent",
+                "backend": {"type": "openai", "model": "gpt-4o"},
+            },
+            "orchestrator": {
+                "voting_sensitivty": "balanced",
+            },
+        }
+
+        validator = ConfigValidator()
+        result = validator.validate_config(config)
+
+        assert result.is_valid()
+        assert any("Unknown orchestrator config key" in warning.message for warning in result.warnings)
+        assert any(warning.location == "orchestrator.voting_sensitivty" for warning in result.warnings)
+
+    def test_unknown_timeout_settings_key_warns(self):
+        """Typos under timeout_settings should be visible."""
+        config = {
+            "agent": {
+                "id": "test-agent",
+                "backend": {"type": "openai", "model": "gpt-4o"},
+            },
+            "timeout_settings": {
+                "orchestrator_timout_seconds": 60,
+            },
+        }
+
+        validator = ConfigValidator()
+        result = validator.validate_config(config)
+
+        assert result.is_valid()
+        assert any("Unknown timeout_settings key" in warning.message for warning in result.warnings)
+        assert any(warning.location == "timeout_settings.orchestrator_timout_seconds" for warning in result.warnings)
+
+    def test_subagent_timeout_bounds_are_validated(self):
+        """Documented subagent timeout controls should fail fast when invalid."""
+        config = {
+            "agent": {
+                "id": "test-agent",
+                "backend": {"type": "openai", "model": "gpt-4o"},
+            },
+            "orchestrator": {
+                "coordination": {
+                    "subagent_default_timeout": 120,
+                    "subagent_min_timeout": 300,
+                    "subagent_max_timeout": 60,
+                },
+            },
+        }
+
+        validator = ConfigValidator()
+        result = validator.validate_config(config)
+
+        assert not result.is_valid()
+        assert any("subagent_min_timeout" in error.location for error in result.errors)
+
     def test_valid_config_with_ui(self):
         """Test validation of config with UI settings."""
         config = {

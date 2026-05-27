@@ -321,6 +321,55 @@ class ConfigValidator:
         if "hooks" in config:
             self._validate_hooks(config["hooks"], "hooks", result)
 
+        if "timeout_settings" in config:
+            self._validate_timeout_settings(config["timeout_settings"], result)
+
+    def _validate_timeout_settings(self, timeout_settings: Any, result: ValidationResult) -> None:
+        """Validate top-level timeout_settings config."""
+        location = "timeout_settings"
+        if not isinstance(timeout_settings, dict):
+            result.add_error(
+                f"'timeout_settings' must be a dictionary, got {type(timeout_settings).__name__}",
+                location,
+                "Use timeout fields like orchestrator_timeout_seconds",
+            )
+            return
+
+        from .agent_config import TimeoutConfig
+
+        known_timeout_keys = TimeoutConfig.yaml_timeout_keys()
+        for field_name in sorted(set(timeout_settings) - known_timeout_keys):
+            result.add_warning(
+                f"Unknown timeout_settings key: '{field_name}'",
+                f"{location}.{field_name}",
+                "Check the spelling or update TimeoutConfig parser metadata if this is a new supported field.",
+            )
+
+        positive_number_fields = (
+            "orchestrator_timeout_seconds",
+            "initial_round_timeout_seconds",
+            "subsequent_round_timeout_seconds",
+        )
+        for field_name in positive_number_fields:
+            if field_name not in timeout_settings or timeout_settings[field_name] is None:
+                continue
+            value = timeout_settings[field_name]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+                result.add_error(
+                    f"'{field_name}' must be a positive number or null, got {value!r}",
+                    f"{location}.{field_name}",
+                    "Use a positive number of seconds, or null for round soft timeouts.",
+                )
+
+        if "round_timeout_grace_seconds" in timeout_settings:
+            value = timeout_settings["round_timeout_grace_seconds"]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                result.add_error(
+                    f"'round_timeout_grace_seconds' must be a non-negative number, got {value!r}",
+                    f"{location}.round_timeout_grace_seconds",
+                    "Use a non-negative number of seconds.",
+                )
+
     def _validate_agents(self, config: dict[str, Any], result: ValidationResult) -> None:
         """Validate agent configurations (Level 2)."""
         # Get agents list (normalize single agent to list)
@@ -913,6 +962,16 @@ class ConfigValidator:
             )
             return
 
+        from .agent_config import AgentConfig
+
+        known_orchestrator_keys = AgentConfig.valid_orchestrator_keys()
+        for field_name in sorted(set(orchestrator_config) - known_orchestrator_keys):
+            result.add_warning(
+                f"Unknown orchestrator config key: '{field_name}'",
+                f"{location}.{field_name}",
+                "Check the spelling or update AgentConfig orchestrator key metadata if this is a new supported field.",
+            )
+
         # Validate coordination_mode if present
         if "coordination_mode" in orchestrator_config:
             coordination_mode = orchestrator_config["coordination_mode"]
@@ -992,6 +1051,17 @@ class ConfigValidator:
                     "Use coordination fields like enable_planning_mode, max_orchestration_restarts, etc.",
                 )
             else:
+                from .agent_config import CoordinationConfig
+
+                known_removed_keys = {"async_subagents"}
+                known_coordination_keys = CoordinationConfig.valid_coordination_keys() | known_removed_keys
+                for field_name in sorted(set(coordination) - known_coordination_keys):
+                    result.add_warning(
+                        f"Unknown coordination config key: '{field_name}'",
+                        f"{location}.coordination.{field_name}",
+                        "Check the spelling or update CoordinationConfig parser metadata if this is a new supported field.",
+                    )
+
                 # Validate boolean fields
                 boolean_fields = [
                     "enable_planning_mode",
@@ -1028,6 +1098,32 @@ class ConfigValidator:
                                 f"{location}.coordination.{field_name}",
                                 "Use a non-negative integer (e.g., 0, 1, 2) or omit the field for unlimited.",
                             )
+
+                positive_timeout_fields = [
+                    "subagent_default_timeout",
+                    "subagent_min_timeout",
+                    "subagent_max_timeout",
+                ]
+                for field_name in positive_timeout_fields:
+                    if field_name in coordination:
+                        value = coordination[field_name]
+                        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                            result.add_error(
+                                f"'{field_name}' must be a positive integer, got {value!r}",
+                                f"{location}.coordination.{field_name}",
+                                "Use a positive integer number of seconds.",
+                            )
+
+                min_timeout = coordination.get("subagent_min_timeout")
+                max_timeout = coordination.get("subagent_max_timeout")
+                min_timeout_is_int = isinstance(min_timeout, int) and not isinstance(min_timeout, bool)
+                max_timeout_is_int = isinstance(max_timeout, int) and not isinstance(max_timeout, bool)
+                if min_timeout_is_int and max_timeout_is_int and min_timeout > max_timeout:
+                    result.add_error(
+                        "subagent_min_timeout must be less than or equal to subagent_max_timeout",
+                        f"{location}.coordination.subagent_min_timeout",
+                        "Set subagent_min_timeout <= subagent_max_timeout.",
+                    )
 
                 # Deprecation warning for use_two_tier_workspace
                 if coordination.get("use_two_tier_workspace"):

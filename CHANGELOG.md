@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Config Drift Detection**: Config validation now warns on unknown `orchestrator.coordination.*`, top-level `orchestrator.*`, and `timeout_settings.*` keys so YAML typos are visible, and strict config validation treats those warnings as release-blocking.
+- **Native Hook Permission Specificity**: Gemini CLI and Codex standalone hook scripts now enforce more-specific managed paths and protected paths before broader writable parents, preventing nested read-only paths from being masked by workspace-level write access.
+
+### Changed
+- **Centralized Config Wiring**: `CoordinationConfig.from_dict()` and `TimeoutConfig.from_dict()` now own YAML parsing for their surfaces, while `AgentConfig.apply_orchestrator_config()` owns top-level orchestrator runtime field application. CLI helpers remain as compatibility wrappers.
+- **Checklist Runtime Controls**: `max_checklist_calls_per_round` and `checklist_first_answer` now flow through the centralized top-level orchestrator runtime helper instead of being validation-only settings.
+- **Claude Native Hook Injection Contract**: Claude Code native hook tests and docs now match the adapter's SDK-native `additionalContext` injection format.
+
+### Tests
+- Added parser/validator parity coverage for coordination config fields, timeout settings, top-level orchestrator runtime fields, nested `standalone_checkpoint` aliases, documented YAML field coverage, and strict `scripts/validate_all_configs.py` behavior.
+- Added native hook regression coverage for nested read-only path precedence, protected-path enforcement, and Claude Code `additionalContext` injection conversion.
+
 ## Recent Releases
 
 **v0.1.90 (May 25, 2026)** - Discriminative Criteria Refinements & Checklist Calibration
