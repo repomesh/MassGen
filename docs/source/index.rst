@@ -209,6 +209,10 @@ Key Features
 Recent Releases
 ---------------
 
+**v0.1.91 (May 27, 2026)** - Config Reliability & Hook Safety
+
+Hardens release-critical YAML configuration paths with centralized coordination, timeout, and orchestrator runtime parsing; strict unknown-key validation for typo detection; checklist runtime control wiring; and safer Gemini/Codex native hook path permission precedence.
+
 **v0.1.90 (May 25, 2026)** - Discriminative Criteria Refinements & Checklist Calibration
 
 Improves checklist-gated refinement quality with discriminative-power pruning, per-criterion feedback carried into the next round, position-bias counterbalancing, deterministic tie-breaking, a unified checklist gate on a single 0-10 scale, shared score parsing utilities, and fast-iteration config updates.

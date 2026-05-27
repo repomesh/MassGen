@@ -1,10 +1,10 @@
 # MassGen Roadmap
 
-**Current Version:** v0.1.90
+**Current Version:** v0.1.91
 
 **Release Schedule:** Mondays, Wednesdays, Fridays @ 9am PT
 
-**Last Updated:** May 25, 2026
+**Last Updated:** May 27, 2026
 
 This roadmap outlines MassGen's development priorities for upcoming releases. Each release focuses on specific capabilities with real-world use cases.
 
@@ -42,9 +42,26 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 | Release | Target | Feature | Owner | Use Case |
 |---------|--------|---------|-------|----------|
-| **v0.1.91** | 05/27/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.86-v0.1.90 ([#959](https://github.com/massgen/MassGen/issues/959)) |
+| **v0.1.92** | 05/29/26 | Image/Video Edit Capabilities | @ncrispino | Check and support img/video editing capabilities — deferred from v0.1.86-v0.1.91 ([#959](https://github.com/massgen/MassGen/issues/959)) |
 
 *All releases ship on MWF @ 9am PT when ready*
+
+---
+
+## ✅ v0.1.91 - Config Reliability & Hook Safety (Completed)
+
+**Released:** May 27, 2026
+
+### Features
+- **Centralized Config Wiring**: `CoordinationConfig.from_dict()` and `TimeoutConfig.from_dict()` now own YAML parsing for coordination and timeout settings, while `AgentConfig.apply_orchestrator_config()` owns top-level orchestrator runtime field application
+- **Config Drift Detection**: Unknown `orchestrator.coordination.*`, top-level `orchestrator.*`, and `timeout_settings.*` keys now produce validation warnings, and strict config validation treats those warnings as release-blocking
+- **Checklist Runtime Controls**: `max_checklist_calls_per_round` and `checklist_first_answer` now flow through the centralized top-level orchestrator runtime helper instead of being validation-only settings
+- **Native Hook Permission Safety**: Gemini CLI and Codex standalone hook scripts now enforce more-specific managed paths and protected paths before broader writable parents
+- **Claude Hook Contract Alignment**: Claude Code native hook tests and docs now match the SDK-native `additionalContext` injection format
+- **Tests**: New parser/validator parity coverage and native hook regression tests protect these release-critical paths
+
+### Notes
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.92.
 
 ---
 
@@ -63,7 +80,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ### Notes
 - Discriminative Criteria Refinements from the roadmap landed in this release.
-- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.91.
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.92.
 
 ---
 
@@ -81,7 +98,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ### Notes
 - This completes the follow-up Antigravity integration pass introduced in v0.1.88.
-- Discriminative Criteria Refinements landed in v0.1.90; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.91.
+- Discriminative Criteria Refinements landed in v0.1.90; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.92.
 
 ---
 
@@ -98,7 +115,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 - **Tests**: `massgen/tests/test_antigravity_cli_backend.py` covers command construction, config isolation, MCP schema, workflow JSON envelopes, Docker/API-key constraints, hook wiring, and env passthrough
 
 ### Notes
-- Follow-up Antigravity hardening landed in v0.1.89; Discriminative Criteria Refinements landed in v0.1.90; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.91.
+- Follow-up Antigravity hardening landed in v0.1.89; Discriminative Criteria Refinements landed in v0.1.90; Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) remain deferred to v0.1.92.
 
 ---
 
@@ -115,7 +132,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 - **`bootstrap_subagent` Single-Shot Fix**: `Orchestrator._run_bootstrap_discriminator_step` passes `refine=False` to `spawn_subagent` — the canonical knob `SubagentManager` respects at the orchestrator level (the orchestrator's `max_new_answers_per_agent: 3` default was shadowing coordination-dict overrides)
 
 ### Notes
-- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) ultimately carried forward to v0.1.91.
+- Image/Video Edit Capabilities ([#959](https://github.com/massgen/MassGen/issues/959)) ultimately carried forward to v0.1.92.
 - Closes [#1082](https://github.com/massgen/MassGen/issues/1082) (`llms.txt` + `llms-full.txt`) and [#1083](https://github.com/massgen/MassGen/issues/1083) (CrewAI / LangGraph / AutoGen comparison pages).
 
 ---
@@ -291,7 +308,7 @@ Want to contribute or collaborate on a specific track? Reach out to the track ow
 
 ---
 
-## 📋 v0.1.91 - Image/Video Edit Capabilities (Deferred from v0.1.86-v0.1.90)
+## 📋 v0.1.92 - Image/Video Edit Capabilities (Deferred from v0.1.86-v0.1.91)
 
 ### Features
 

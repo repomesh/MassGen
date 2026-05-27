@@ -227,7 +227,22 @@ Most configurations use environment variables for API keys:so
 
 ## Release History & Examples
 
-### v0.1.90 - Latest
+### v0.1.91 - Latest
+**New Features:** Config Reliability & Hook Safety
+
+**Key Features:**
+- **Centralized Config Wiring**: Coordination, timeout, and top-level orchestrator runtime settings parse through single source-of-truth helpers
+- **Config Drift Detection**: Unknown release-critical YAML keys produce validation warnings, and strict validation treats them as release blockers
+- **Checklist Runtime Controls**: `max_checklist_calls_per_round` and `checklist_first_answer` now flow through the centralized runtime helper
+- **Native Hook Permission Safety**: Gemini CLI and Codex standalone hooks enforce nested protected/read-only paths before broader writable parents
+
+**Try It:**
+```bash
+pip install massgen==0.1.91
+uv run massgen --config massgen/configs/features/fast_iteration.yaml "Create an svg of an AI agent coding."
+```
+
+### v0.1.90
 **New Features:** Discriminative Criteria Refinements & Checklist Calibration
 
 **Key Features:**
